@@ -14,19 +14,19 @@
 /** @satisfies {{ window: 'left' | 'right' | 'far', [key: string]: unknown }} the walls layoutRoom (room.js) takes */
 export const ROOM = {
   /** Its door's id in the Hallway (?from=<id> leads back to it) and its page in a shared session: 1–32 of a–z, 0–9 and '-'. */
-  id: 'roomtemplateempty',
+  id: 'instruments',
   /** Its name: the page's <title> and the card's heading. */
-  title: 'Empty room',
+  title: 'instruments',
   /** The page's <meta name="description">, word for word: the Hallway's plaque by its door shows it. */
-  description: "An empty room behind one of the Hallway's doors, made to be copied: a floor, four walls, a ceiling, a window onto the afternoon sky, and the doorway back. Walk it in VR on a Meta Quest, on a desktop or on a phone.",
+  description: "An empty room behind the Hallway's door, soon a room of instruments to play: a keyboard, a synth, an electric guitar and drums. Walk it in VR on a Meta Quest, on a desktop or on a phone.",
   /** What kind of place it is, on the sign over its door in the Hallway. */
-  sign: 'Room',
+  sign: 'Band Room',
   /** Where it is published, on GitHub Pages: https://ariamokr.github.io/<repository>/. */
-  url: 'https://ariamokr.github.io/RoomTemplateEmpty/',
-  /** The room inside, in metres: across (x), in from the doorway's wall to the far wall (z), and floor to ceiling. */
-  size: { width: 6, depth: 7, height: 3.2 },
-  /** Its colours, as #rrggbb: the floor, the walls, the ceiling, the wood (skirting, casings), and the lamps' light. */
-  colors: { floor: '#9a7350', walls: '#d8ccb3', ceiling: '#eee7d9', trim: '#5e3f28', light: '#ffe8cc' },
+  url: 'https://ariamokr.github.io/instruments/',
+  /** The room inside, in metres: across (x), in from the doorway's wall to the far wall (z), and floor to ceiling. Room for four instruments and the players round them. */
+  size: { width: 7, depth: 8, height: 3.2 },
+  /** Its colours, as #rrggbb: the floor, the walls, the ceiling, the wood (skirting, casings), and the lamps' light. A rehearsal room's: a dark wooden floor and warm clay walls. */
+  colors: { floor: '#7a5539', walls: '#c8a891', ceiling: '#ece4d8', trim: '#46301f', light: '#ffe2bd' },
   /** The wall the window is in, facing in from the doorway: 'left', 'right' or 'far'. */
   window: 'left',
   /**
@@ -36,10 +36,10 @@ export const ROOM = {
    * wall -π/2; in the far wall 0.
    */
   skyYaw: Math.PI / 2,
-  /** The dev server's port (npm start), clear of the other sites': the hallway 8088–8089, outside 8090–8091, layersharedsession 8092, music 8093. */
-  port: 8094,
+  /** The dev server's port (npm start), clear of the other sites': the hallway 8088–8089, outside 8090–8091, layersharedsession 8092, music 8093, RoomTemplateEmpty 8094, art 8096, video 8098–8099, arcade 8102. */
+  port: 8100,
   /** The doorway's glow when the Hallway's link gives none: the colour of this room's door there. */
-  glow: '#7fb4d6',
+  glow: '#5cc8a8',
   /**
    * What hangs on its walls (README, "On the walls"), none in an empty room: framed pictures with
    * their titles under them, each perhaps a way to another place and back. A test checks they fit.

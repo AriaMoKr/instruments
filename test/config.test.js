@@ -60,9 +60,9 @@ test('what hangs on its walls fits there, each with its picture in public/ (none
   for (const p of ROOM.pieces) assert.ok(existsSync(join(here, 'public', decodeURIComponent(p.image.split(/[?#]/)[0]))), `${p.id}: ${p.image} is not in public/`);
 });
 
-test("its dev server's port is its own: clear of the hallway's, outside's, the shared session's and music's", () => {
+test("its dev server's port is its own: clear of the hallway's, outside's, the shared session's, music's, the template's, art's, video's and arcade's", () => {
   assert.ok(Number.isInteger(ROOM.port) && ROOM.port >= 1024 && ROOM.port <= 65535);
-  assert.ok(![8088, 8089, 8090, 8091, 8092, 8093].includes(ROOM.port), `${ROOM.port} is another site's`);
+  assert.ok(![8088, 8089, 8090, 8091, 8092, 8093, 8094, 8096, 8098, 8099, 8102].includes(ROOM.port), `${ROOM.port} is another site's`);
 });
 
 test('the page says what config.js says: its title, its description and its address, for link previews too', () => {

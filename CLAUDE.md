@@ -4,31 +4,38 @@ Guidance for Claude Code in this repository.
 
 ## What this is
 
-An empty WebXR room behind one of the Hallway's doors, made to be copied (three.js 0.186, plain ES
-modules, no bundler or build step): a floor, four walls, a ceiling with lamps, a window onto
-common's afternoon sky, the doorway back to the Hallway, and the control panel beside it. Rooms
-(`art`, `video`, …) are made from it, so it holds everything a room needs and nothing a particular
-room has; README's "Making a room from this template" is the checklist. It follows the Hallway
+`instruments`: an empty WebXR room behind the Hallway's door, soon a room of instruments to play, a
+keyboard, a synth, an electric guitar and drums (three.js 0.186, plain ES modules, no bundler or
+build step). For now it is exactly what AriaMoKr/RoomTemplateEmpty makes (a checkout at
+`../RoomTemplateEmpty`): a floor, four walls, a ceiling with lamps, a window onto common's afternoon
+sky, the doorway back to the Hallway, and the control panel beside it. The instruments come once the
+user has agreed to a proposal of them, so add none until then. What makes it this room is
+`config.js` (id `instruments`, sign Band Room, 7 × 8 × 3.2 m, a dark wooden floor and clay walls,
+the window in the left wall, port 8100, glow `#5cc8a8`), and `index.html`, `package.json`,
+`.claude/launch.json` and the pictures to match. Like the template it follows the Hallway
 (https://ariamokr.github.io/hallway/, AriaMoKr/hallway, a checkout at `../hallway`) and outside
-(AriaMoKr/outside, `../outside`, the closest model: much of the code here is outside's or the
-hallway's, said so at the top of each such file). `public/` is the whole site. The user asked for
-the hallway to be left alone, so change `../hallway` only when asked.
+(AriaMoKr/outside, `../outside`): much of the code here is outside's or the hallway's, said so at
+the top of each such file. `public/` is the whole site. The user asked for the hallway to be left
+alone, so change `../hallway` only when asked; its door to here (README, "The Hallway's door") is
+the hallway's to add, through pv. Common and the template change in their own sessions too: if the
+room needs something there, tell the user.
 
-Published at https://ariamokr.github.io/RoomTemplateEmpty/ from `main` of AriaMoKr/RoomTemplateEmpty
-(a template repository) by `.github/workflows/pages.yml`.
+Published at https://ariamokr.github.io/instruments/ from `main` of AriaMoKr/instruments by
+`.github/workflows/pages.yml`. Its history starts at the template's first commit, and the template
+is the remote `template` (push disabled), merged for its fixes (README, "Made from the template").
 
 ## Commands
 
 ```bash
 npm install          # postinstall: common's tools/vendor.mjs copies what vendor.json lists into public/vendor/ (gitignored)
-npm start            # tools/serve.mjs (common's) on config.js's port, 8094
+npm start            # tools/serve.mjs (common's) on config.js's port, 8100
 npm test             # node --test "test/*.test.js", tsc's check among them (test/types.test.js)
 npm run types        # tsc -p tsconfig.json, then -p tsconfig.strict.json, alone
 npm run preview      # tools/preview.mjs: public/hallway-preview.jpg and public/social.jpg (headless Chrome)
 ```
 
 Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2 UCRT64 here
-(`MSYSTEM=UCRT64 /c/msys64/usr/bin/bash -lc 'cd /c/git/my/claude/RoomTemplateEmpty && …'`).
+(`MSYSTEM=UCRT64 /c/msys64/usr/bin/bash -lc 'cd /c/git/my/claude/instruments && …'`).
 
 ## Layout
 
@@ -142,4 +149,4 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   nav, access with the vignette, fade, gamepad, portal, sky, tv, controls, and the tools
   `serve.mjs`, `vendor.mjs`, `chrome.mjs`, and the Pages workflow) and AriaMoKr/layersharedsession
   (`v0.3.0`). Change them there, then move the tag here and `npm install`.
-- `.claude/launch.json`: `room` (8094) and `hallway` (`../hallway/public` on 8088).
+- `.claude/launch.json`: `room` (8100) and `hallway` (`../hallway/public` on 8088).

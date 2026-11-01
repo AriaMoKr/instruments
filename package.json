@@ -1,15 +1,15 @@
 {
-  "name": "roomtemplateempty",
+  "name": "instruments",
   "version": "0.1.0",
-  "description": "An empty WebXR room behind one of the Hallway's doors, made to be copied: a floor, four walls, a ceiling, a window onto the afternoon sky, and the doorway back. In VR, on a desktop or on a phone.",
-  "keywords": ["webxr", "virtual-reality", "threejs", "meta-quest", "template"],
-  "homepage": "https://ariamokr.github.io/RoomTemplateEmpty/",
+  "description": "An empty WebXR room behind the Hallway's door, soon a room of instruments to play: a keyboard, a synth, an electric guitar and drums. In VR, on a desktop or on a phone.",
+  "keywords": ["webxr", "virtual-reality", "threejs", "meta-quest", "music", "instruments"],
+  "homepage": "https://ariamokr.github.io/instruments/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AriaMoKr/RoomTemplateEmpty.git"
+    "url": "git+https://github.com/AriaMoKr/instruments.git"
   },
   "bugs": {
-    "url": "https://github.com/AriaMoKr/RoomTemplateEmpty/issues"
+    "url": "https://github.com/AriaMoKr/instruments/issues"
   },
   "type": "module",
   "private": true,
