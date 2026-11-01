@@ -4,12 +4,15 @@ Guidance for Claude Code in this repository.
 
 ## What this is
 
-`instruments`: an empty WebXR room behind the Hallway's door, soon a room of instruments to play, a
-keyboard, a synth, an electric guitar and drums (three.js 0.186, plain ES modules, no bundler or
-build step). For now it is exactly what AriaMoKr/RoomTemplateEmpty makes (a checkout at
+`instruments`: a WebXR room of instruments behind the Hallway's door (three.js 0.186, plain ES
+modules, no bundler or build step). Its room is what AriaMoKr/RoomTemplateEmpty makes (a checkout at
 `../RoomTemplateEmpty`): a floor, four walls, a ceiling with lamps, a window onto common's afternoon
-sky, the doorway back to the Hallway, and the control panel beside it. The instruments come once the
-user has agreed to a proposal of them, so add none until then. What makes it this room is
+sky, the doorway back to the Hallway, and the control panel beside it. Its first instrument is the
+drum board: twelve analog drums synthesized with Web Audio (no samples), played on every device. The
+plan the user agreed to ("patch the whole band"): next the board's clock, a 16-step pattern per pad
+and the first jacks and cables; then a synth (poly with a mono switch, semi-modular, a rack later), a
+keyboard and an electric guitar, all patchable. Add an instrument only once the user has agreed to
+it. What makes it this room is
 `config.js` (id `instruments`, sign Band Room, 7 × 8 × 3.2 m, a dark wooden floor and clay walls,
 the window in the left wall, port 8100, glow `#5cc8a8`), and `index.html`, `package.json`,
 `.claude/launch.json` and the pictures to match. Like the template it follows the Hallway
@@ -79,12 +82,31 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   option), the panel (`onPanel`, `hoverPanel`, `_press`) and the pieces (`onPiece`, `hoverPiece`,
   a reticle at 1.3) in `usable`, `use`, `_setHover` and `reticleScale`, then `super`'s; `walkInto`
   (`_startWalk` with `turn` false: facing the doorway from the first step) and `walkUpTo(i, done)`
-  (a teleport in VR).
+  (a teleport in VR). The board: `castRay` adds board.js `hitBoard` (a `BandHit`: `pad`, `knob`),
+  `clampWalk` walks round it, `walkToBoard` (on a screen to `boardFront`, clear of `over()`, the
+  page's rects over the view, then `playing`; in VR a teleport to `boardStand`), `leaveBoard`,
+  `onPad(i, velocity)`, `onKnob(k, by)`, `onPick(dc, dr)` (a TV's arrows, `arrowsPick`),
+  `onPlaying(on)`, `hoverPad`/`hoverKnob`, and common's hooks `takeKey` (the pads' keys, Escape),
+  `takeWheel` and `takeHand` (a knob), and presses on pads as they go down (`_bindBoard`).
+- The drums: `sound.js` (one AudioContext, `latencyHint: 'interactive'`, made or woken only in a
+  press's event; a channel per instrument, volume and mute, a WaveShaper soft clipper; `add(note,
+  group)` cuts a group's last note and the oldest past `MAX_NOTES`; volume and mute in
+  `localStorage` `instruments.sound`), `drums.js` (`PADS`: row, column, key by `code`, General MIDI
+  notes, decay, colour, choke; `KNOBS` pitch/decay/tone 0…1, 0.5 as it comes; `playDrum`'s recipes,
+  sines, noise and the 808's six squares; `Drums` keeps the knobs, `instruments.drums`), `board.js`
+  (pure: `layoutBoard`, its pads, knobs, strip and sign at eye height; `hitBoard`, `boardBlocks`,
+  `clampBoard`, `boardFront` and `inView`, `boardStand`, `strikeAt` and `strikeVelocity`),
+  `kit.js` (the board in 3D, lit as the room is, the pads' glow in vertex colours, the strip's
+  canvas, the sign, the sticks and fingertips in VR; it imports builder.js and textures.js, so it is
+  not in strict), and `midi.js` (Web MIDI: `noteOn`, `listenMidi`, asked for only from the card's
+  button, at once when `granted`).
 - `panel.js`: the control panel on the wall (outside's), redrawn only on a change. `overlay.js`: the
   card (the page's `<nav>`: the title, ← Hallway, the description, On the walls (a link to where
   each piece leads, `pieceHref`, else a button, `onPiece`), Start / Leave shared session, in
   a session its status and the visitor's name (`onName`), and Settings with the panel's choices as
-  radio buttons and checkboxes), the hint (`#hint`, kept clear of the buttons, `_placeHint`), Wave,
+  radio buttons and checkboxes, and Drums: the pads as buttons, the selected pad's knobs as sliders,
+  As it comes, the volume and Mute, and Play from a MIDI device), the hint (`#hint`, kept clear of
+  the buttons, `_placeHint`; at the board `BOARD_HINTS`, `setPlaying`), Wave,
   Copy invite link, Fullscreen, Enter VR, the aiming dot, and toasts (`role="status"`, polite). With
   `tv`, Wave is in the card and the invite is text there (`inviteText`), and the hints are the
   remote's (`tv`, `tv-card`). With pieces, the hints name the pictures (`PIECE_HINTS`, else an
@@ -102,9 +124,12 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   (layersharedsession's `createTogether`, page `ROOM.id`), the accessibility settings (common's
   `access.js`: `applyAccess`, `setAccess`, re-read on `storage` and `pageshow`; the `reduce-motion`
   class on `<html>`), the TV (common's `tv.js`: `tvMode()`, the `tv` class on `<html>`, a `Remote`
-  over the card and the canvas with `use` = `controls.useMiddle()` and `step` = `stepBack`, the
-  room's own step back for Back, none in an empty room; `answerApp`; no fullscreen or XR), and the
-  frame loop.
+  over the card and the canvas with `use` = `controls.useMiddle()`, or the selected pad while
+  playing, `step` = `stepBack`, the room's own step back for Back (away from the board), and
+  `first`, the knobs while playing; `answerApp`; no fullscreen or XR), the drums (`play(i,
+  velocity)`, `select(i)`, `setKnob`, the overlay's and the controls' callbacks, the kit's strikes
+  with a haptic pulse, MIDI, the sound woken by presses and put to sleep on `pagehide` or when
+  hidden), and the frame loop.
 - `style.css`: the page over the view, and the 10-foot view under `html.tv` (the hallway's: 960 × 540
   at a pixel ratio of 2, 18 px text, 4 px focus rings, the TV's safe margins, the hint and toasts
   beside the card).
@@ -120,15 +145,19 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   rather than skips without TypeScript. What TypeScript's DOM library leaves out (WebKit's
   fullscreen names, `window.__room`, `window.roomXrGranted`) is in `types/globals.d.ts`, never
   served. `strict` comes a file at a time: `tsconfig.strict.json` (it, with `strict` on) includes
-  only the files that pass it, `config.js`, `presence.js`, `room.js` and `controls.js` so far, and
+  only the files that pass it, `config.js`, `presence.js`, `room.js`, `controls.js`, `sound.js`,
+  `drums.js`, `board.js` and `midi.js` so far, and
   `test/types.test.js` runs it too. A file joins its `include` when a change makes it pass; what an
   included file imports is checked strictly with it. The rest has a few hundred errors with it,
   mostly untyped parameters and values that may be null (a canvas's 2D context). `tools/` and
   `test/` wait for `@types/node`.
 - Scripted testing: `window.__room` (THREE, renderer, scene, camera, rig, room, layout, controls,
-  overlay, fade, vignette, xrDevice, go, enterVR, together, remote, tv, way, visit, setAccess, access,
+  overlay, fade, vignette, xrDevice, go, enterVR, together, remote, tv, way, visit, setAccess,
+  sound, drums, board, kit, `play(i, velocity)`, `select(i)`, `setKnob(name, value)`, access,
   `preview()`, `social()`, `tick(dt, n)`, `ready`, true once the pieces' pictures have loaded or
-  failed). A hidden browser pane gets no animation frames:
+  failed). Tests fake Web Audio with `test/helpers/audio.js` (`FakeContext`, whose params refuse
+  what a browser's would) and the page with `test/helpers/dom.js`. A hidden browser pane gets no
+  animation frames:
   drive it with `tick()`. XR frames under `?xr=emulate` need frames too; headless Chrome (below)
   has them.
 - Headless Chrome is common's `tools/chrome.mjs` (`launchChrome`): it writes the fresh profile's

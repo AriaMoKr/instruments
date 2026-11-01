@@ -1,13 +1,17 @@
-// instruments: an empty room behind the Hallway's door, soon a room of instruments to play, as
-// RoomTemplateEmpty makes it (a copy changes config.js). Coming in through the door, the visitor
-// carries on from how they went through it (the Hallway's link: where in the doorway, which way
-// they faced); behind them the doorway glows and shows the hall, and going back through it leads
-// back to the Hallway, in front of this room's door (common's door.js). In the room: a floor, four
-// walls, a ceiling, the lamps, a window onto common's afternoon sky, and the control panel by the
-// doorway. What hangs on its walls (config.js's pieces) may lead to other places, and back to stand
-// in front of it again (common's hallLink). The shared session (layersharedsession's together.js)
-// comes in here too, and goes back out. In the Android TV app (common's tv.js) it is the 10-foot
-// view, walked with the remote.
+// instruments: a room of instruments to play behind the Hallway's door, made from
+// RoomTemplateEmpty (a copy changes config.js). Coming in through the door, the visitor carries on
+// from how they went through it (the Hallway's link: where in the doorway, which way they faced);
+// behind them the doorway glows and shows the hall, and going back through it leads back to the
+// Hallway, in front of this room's door (common's door.js). In the room: a floor, four walls, a
+// ceiling, the lamps, a window onto common's afternoon sky, and the control panel by the doorway.
+// What hangs on its walls (config.js's pieces) may lead to other places, and back to stand in front
+// of it again (common's hallLink). The shared session (layersharedsession's together.js) comes in
+// here too, and goes back out. In the Android TV app (common's tv.js) it is the 10-foot view, walked
+// with the remote.
+// The first instrument is the drum board against the far wall (board.js lays it out, kit.js draws
+// it): analog drums, each made as it is played (drums.js, into sound.js's Web Audio), with their
+// knobs. One walks up to it to play it with the keys, a click or a tap, a gamepad or the remote;
+// in VR with sticks, a forefinger or a ray; from a MIDI device (midi.js); and in the card.
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -15,6 +19,11 @@ import { DOOR, doorCrossed, doorSpawn, layoutRoom, pieceSpawn } from './room.js'
 import { buildRoom } from './scene.js';
 import { Controls } from './controls.js';
 import { Overlay } from './overlay.js';
+import { layoutBoard } from './board.js';
+import { Kit } from './kit.js';
+import { Sound } from './sound.js';
+import { Drums, movePad, padForNote } from './drums.js';
+import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { setAnisotropy } from './textures.js';
 import { renderPreview, renderSocial, previewView, socialView } from './preview.js';
@@ -99,11 +108,99 @@ const overlay = new Overlay(ROOM, way, {
   tv,
 });
 
+// ── The sound, and the drums in the card ─────────────────────────────────────
+// One Web Audio context for every instrument (sound.js), the volume and mute kept for the next
+// visit, as each pad's knobs are (drums.js). Browsers let a page sound only once the visitor has
+// pressed something on it: the context is made at the first pad played (a walk up to the board
+// began with a press), and a press after the page was put away wakes it again (an iPhone wants the
+// end of a tap). The drums play from the card, and from a MIDI device, even with no 3D view.
+
+const sound = new Sound({ key: `${ROOM.id}.sound` });
+const drums = new Drums(sound, { key: `${ROOM.id}.drums` });
+/** The drum board in 3D (kit.js), once the scene is made. @type {Kit | null} */
+let kit = null;
+
+/** Pad i is the one the knobs turn: on the board and in the card. */
+function select(i) {
+  drums.selected = i;
+  kit?.select(i, drums.knobs[i]);
+  overlay.setKnobs(i, drums.knobs[i]);
+}
+/** Plays pad i, `velocity` 0…1 loud: heard, lit up on the board, and the one the knobs turn. */
+function play(i, velocity) {
+  drums.hit(i, velocity);
+  if (kit) kit.flash(i, velocity, reduce);
+  if (i !== drums.selected) select(i);
+}
+/** A knob of the pad the knobs turn, set 0…1: heard from its next note on. */
+function setKnob(name, value) {
+  const i = drums.selected;
+  drums.setKnob(i, name, value);
+  kit?.setKnobs(drums.knobs[i]);
+  overlay.setKnobs(i, drums.knobs[i]);
+}
+overlay.onPad = play;
+overlay.onKnob = setKnob;
+overlay.onResetKnobs = () => {
+  drums.reset(drums.selected);
+  select(drums.selected);
+};
+overlay.onVolume = (volume) => {
+  sound.setVolume(volume);
+  overlay.setSound(sound);
+};
+overlay.onMute = (muted) => {
+  sound.setMuted(muted);
+  overlay.setSound(sound);
+};
+overlay.setSound(sound);
+select(drums.selected);
+for (const type of ['pointerup', 'touchend', 'keydown']) {
+  addEventListener(type, () => {
+    if (sound.ctx) sound.wake();
+  }, { capture: true, passive: true });
+}
+addEventListener('pagehide', () => sound.sleep());
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) sound.sleep();
+});
+
+// From a MIDI device (midi.js): asked for with the card's button, or at once when the visitor has
+// let this site use MIDI before. Its notes are the General MIDI drums' (drums.js padForNote), on any
+// channel. A note isn't a press: until the page has had one, the browser keeps it quiet, and says so.
+let midi = null;
+let toldQuiet = false;
+async function listen() {
+  if (midi) return;
+  overlay.setMidi('Asking the browser…');
+  try {
+    midi = await listenMidi((note, velocity) => {
+      const i = padForNote(note);
+      if (i < 0) return;
+      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
+        if (!toldQuiet) overlay.toast('Click or tap the page once, and the drums are heard', 5);
+        toldQuiet = true;
+        return;
+      }
+      play(i, velocity);
+    }, (names) => overlay.setMidi(names.length ? `Playing from ${names.join(', ')}` : 'No MIDI device is plugged in: plug one in to play from it'));
+  } catch (err) {
+    overlay.setMidi(`No MIDI: the browser said ${err instanceof Error ? err.message : err}`);
+  }
+}
+if (hasMidi()) {
+  overlay.showMidi();
+  overlay.onMidi = listen;
+  midiGranted().then((granted) => {
+    if (granted) listen();
+  });
+}
+
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ antialias: true });
 } catch (err) {
-  overlay.noWebGL('This browser cannot show the room in 3D. The way back to the Hallway is above.');
+  overlay.noWebGL('This browser cannot show the room in 3D, but its drums play here in the card. The way back to the Hallway is above.');
   throw err;
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -113,7 +210,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board of twelve pads against the far wall, ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -137,6 +234,11 @@ scene.add(rig);
 const L = layoutRoom(ROOM, { doorWidth, doorHeight });
 const room = buildRoom(L, { colors: ROOM.colors, skyYaw: ROOM.skyYaw, glow, name: leadsTo, anisotropy });
 scene.add(room.group);
+// The drum board against the far wall, in the room's light.
+const board = layoutBoard(L);
+kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
+scene.add(kit.group);
+select(drums.selected);
 // Through the doorway, the view the Hallway publishes from its door to here (its views.json); until
 // it has loaded, or when there is none (a Hallway without this door yet), its glow and name.
 const views = hallwayViews(way, ROOM.id);
@@ -147,7 +249,12 @@ room.loadPictures().then(() => {
   pictured = true;
 });
 
-const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L });
+const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board });
+// In VR: a stick in each hand that holds a controller, and the hands' joints, for a forefinger to
+// play with (kit.js), moving with the rig as the controllers do.
+kit.holdSticks(controls.hands);
+const fingers = [renderer.xr.getHand(0), renderer.xr.getHand(1)];
+rig.add(...fingers);
 const nav = loadNav();
 controls.setNav(nav);
 // The accessibility settings every site on the origin shares (common/access.js, hallway.access):
@@ -235,23 +342,75 @@ overlay.setHint(tv ? 'tv' : matchMedia('(pointer: coarse)').matches ? 'touch' : 
 // room's own step back (stepBack), else the app goes back a page, to this room's door in the hallway.
 
 /**
- * Back on a TV while walking: the room's own step back, true when it took one. An empty room has
- * none. A room with something to step back from (sitting down, a picture looked at close up, a
- * text open) undoes it here and returns true; one the page's history has an entry for is the app's
- * back, not a step (common's README, "The TV app").
+ * Back on a TV while walking: the room's own step back, true when it took one: playing at the drum
+ * board, a step away from it. (A step the page's history has an entry for is the app's back, not
+ * one of these: common's README, "The TV app".)
  */
 function stepBack() {
-  return false;
+  if (!controls.playing) return false;
+  controls.leaveBoard();
+  return true;
 }
 
 let remote = null;
 if (tv) {
   controls.aimMiddle = true;
   renderer.domElement.setAttribute('aria-describedby', overlay.hint.id);
-  remote = new Remote({ root: overlay.root, view: renderer.domElement, use: () => controls.useMiddle(), step: stepBack });
+  // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its knobs.
+  remote = new Remote({
+    root: overlay.root,
+    view: renderer.domElement,
+    use: () => (controls.playing ? play(drums.selected, 0.85) : controls.useMiddle()),
+    step: stepBack,
+    first: () => (controls.playing ? overlay.knobsBox : null),
+  });
   remote.onMode = (inCard) => overlay.setHint(inCard ? 'tv-card' : 'tv');
   remote.answerApp(tv);
 }
+
+// ── The drum board ───────────────────────────────────────────────────────────
+// A pad played: a press on it, its key, a trigger, A or OK on it, and in VR a stick or a forefinger
+// coming down on it (which the controller feels). A knob turned: a drag, the wheel, a stick. On a
+// TV a pad chosen with the arrows. Walking up to the board to play it, and stepping away.
+
+controls.onPad = play;
+controls.onKnob = (k, by) => {
+  const name = board.knobs[k].name;
+  setKnob(name, drums.knobs[drums.selected][name] + by);
+};
+controls.onPick = (dc, dr) => select(movePad(drums.selected, dc, dr));
+controls.arrowsPick = tv;
+// Played clear of what the page shows over the view: the card as it is with nothing open in it (a
+// panel opened can be closed again), and the buttons at its foot. On a TV the card down to the
+// screen's foot, as the remote opens the drums in it to play.
+controls.over = () => {
+  const w = innerWidth, h = innerHeight;
+  const rect = (r) => ({ x0: (r.left / w) * 2 - 1, x1: (r.right / w) * 2 - 1, y0: 1 - (r.bottom / h) * 2, y1: 1 - (r.top / h) * 2 });
+  const card = overlay.card.getBoundingClientRect();
+  const bottom = tv ? h : Math.min(card.bottom, overlay.inRoom.querySelector('.actions').getBoundingClientRect().bottom + 12);
+  const rects = [rect({ left: card.left, right: card.right, top: card.top, bottom })];
+  for (const b of overlay.buttons.children) if (!b.hidden) rects.push(rect(b.getBoundingClientRect()));
+  return rects;
+};
+controls.onPlaying = (on) => {
+  overlay.setPlaying(on);
+  if (on) sound.wake(); // ready for the first pad: the walk here began with a press
+  if (on && remote) {
+    overlay.openDrums(true);
+    remote.forget(); // Menu goes to the knobs now
+  }
+};
+overlay.onPlay = () => {
+  if (controls.playing) controls.leaveBoard();
+  else {
+    controls.walkToBoard();
+    remote?.walk(); // on a TV the arrows choose the pads there, and OK plays them
+  }
+};
+kit.onStrike = (i, velocity, source) => {
+  play(i, velocity);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.2 + 0.6 * velocity, 18);
+};
 
 // ── Fullscreen, and the gamepad ──────────────────────────────────────────────
 
@@ -282,6 +441,7 @@ controls.onPadActive = (on) => {
 };
 controls.onPadBack = () => {
   if (remote) remote.padBack();
+  else if (controls.playing) controls.leaveBoard();
   else if (fullscreenElement()) toggleFullscreen();
 };
 
@@ -310,10 +470,12 @@ let vrSupported = false;
 renderer.xr.addEventListener('sessionstart', () => {
   overlay.setVR(true);
   showPanel();
+  sound.wake(); // ready for the drums: entering VR was a press
 });
 renderer.xr.addEventListener('sessionend', () => {
   overlay.setVR(false);
   showPanel();
+  kit.endXR();
 });
 // Not on a TV, which has no headset (nor, so far, a WebXR in its WebView): the panel says so.
 if (!tv) navigator.xr?.isSessionSupported?.('immersive-vr').then((ok) => {
@@ -475,8 +637,13 @@ function step(dt) {
   room.update(time, dt, head, controls.hoverDoor);
   together.update(performance.now());
   room.panel.setHover(controls.hoverPanel);
-  // The dot: a gamepad's aim, or on a TV the remote's OK while walking.
-  overlay.setAim((controls.padActive || (remote !== null && !remote.inCard)) && !renderer.xr.isPresenting, !!controls.hover);
+  // The board: in VR its sticks and the forefingers (after the controls, which moved the hands),
+  // the pad pointed at, and the pads' glow.
+  if (renderer.xr.isPresenting) kit.updateXR(controls.hands, fingers, dt);
+  kit.hover(controls.hoverPad);
+  kit.update(dt);
+  // The dot: a gamepad's aim, or on a TV the remote's OK while walking (playing, the arrows choose a pad).
+  overlay.setAim((controls.padActive || (remote !== null && !remote.inCard && !controls.playing)) && !renderer.xr.isPresenting, !!controls.hover);
   // On a TV, walking, the hint says what OK does with the dot on something on the walls.
   if (remote) overlay.setAimed(remote.inCard ? -1 : controls.hoverPiece);
   if (!leaving && doorCrossed(L, head.x, head.z)) go();
@@ -501,6 +668,7 @@ fade.to(0, blink(0.8));
 // For scripted testing, and tools/preview.mjs. A hidden page gets no animation frames: drive it with tick().
 window.__room = {
   THREE, renderer, scene, camera, rig, room, layout: L, controls, overlay, fade, vignette, xrDevice, go, enterVR, together, remote, tv, way, visit, setAccess,
+  sound, drums, board, kit, play, select, setKnob,
   /** The accessibility settings now, and whether motion is reduced. */
   get access() {
     return { ...access, reduce };

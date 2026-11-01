@@ -18,7 +18,7 @@ export const ROOM = {
   /** Its name: the page's <title> and the card's heading. */
   title: 'instruments',
   /** The page's <meta name="description">, word for word: the Hallway's plaque by its door shows it. */
-  description: "An empty room behind the Hallway's door, soon a room of instruments to play: a keyboard, a synth, an electric guitar and drums. Walk it in VR on a Meta Quest, on a desktop or on a phone.",
+  description: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads to play, and soon a keyboard, a synth and an electric guitar. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
   /** What kind of place it is, on the sign over its door in the Hallway. */
   sign: 'Band Room',
   /** Where it is published, on GitHub Pages: https://ariamokr.github.io/<repository>/. */

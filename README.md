@@ -2,13 +2,15 @@
 
 **https://ariamokr.github.io/instruments/**
 
-An empty room behind the [Hallway](https://ariamokr.github.io/hallway/)'s door, soon a room of
-instruments to play: a keyboard, a synth, an electric guitar and drums. For now it is the room
-[AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty) makes, and nothing more:
-a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the doorway back
-to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay walls, and is a
-little larger than the template, 7 by 8 metres, to leave room for the instruments and the players
-round them. Walk it in VR on a Meta Quest, on a desktop or on a phone. There is nothing to install.
+A room of instruments behind the [Hallway](https://ariamokr.github.io/hallway/)'s door. The first is
+a drum board against the far wall: twelve analog drums, synthesized in the browser as they are
+played, each with its knobs (below, "The drums"). A keyboard, a synth and an electric guitar come
+next. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
+makes: a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the
+doorway back to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay
+walls, and is a little larger than the template, 7 by 8 metres, to leave room for the instruments
+and the players round them. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.
+There is nothing to install.
 
 ![The room as one comes in through the door](public/hallway-preview.jpg)
 
@@ -16,6 +18,50 @@ Behind you as you come in is the doorway you came through, glowing teal, with th
 through it. Walk back through it (or click or tap it, or point at it in VR and pull the trigger) and
 you are back in the Hallway, in front of this room's door. Beside it, on the wall, is the control
 panel.
+
+## The drums
+
+Against the far wall, under a sign that says **Drums**, stands a board of twelve pads in three rows,
+and behind them a strip with the name of the pad last played and its three knobs. Choose the board
+or its sign (click or tap it, point at it in VR and pull the trigger, or put the dot on it and press
+A or OK) and you walk up to it to play. On a screen the view comes down over the board, clear of the
+card, and the hint says how to play it.
+
+| | Play a pad | Turn a knob | Step away |
+|---|---|---|---|
+| Desktop | click it (it sounds as the button goes down), or its key: 1–4, Q–R and A–F, the board's rows from the far one, wherever those keys are on your keyboard's layout; Shift plays harder | drag it up or down, or scroll over it | Esc, or walk off |
+| Phone | tap it, with as many fingers at once as you like | drag it up or down | tap the floor |
+| Headset | hit it with a stick (a hand holding a controller has one near the board) or a forefinger, as hard as it comes down | point at it and push the stick up or down | walk off |
+| Gamepad | the dot on it and A | in the card | B |
+| TV remote | the arrows choose a pad, OK plays it | in the card: Menu goes to them | Back |
+| MIDI drum pad | General MIDI's drum notes: a pad controller's first bank, 36–51, plays all but the cowbell, 56 | | |
+
+The card's **Drums** has the same twelve pads as buttons, each with its key, the knobs of the pad
+last played as sliders (**As it comes** sets them back), and **Sound**: the volume and **Mute**, over
+every instrument. On a TV it opens when you walk up to play, and the board stands beside it. Where
+the browser has Web MIDI (Chrome, Edge and Firefox on a computer or an Android phone; not Safari, nor
+the Quest's browser), **Play from a MIDI device** asks for the devices plugged in; once you have said
+yes, the room listens to them on every visit, on any channel, and to any plugged in later. The knobs
+are kept for the next visit (`localStorage`, `instruments.drums`), as are the volume and mute
+(`instruments.sound`).
+
+Every sound is made in the browser as it is played (Web Audio), the way the drum machines of the
+early 1980s made theirs, so there are no samples to download or credit: a sine whose pitch falls
+for the kick and the toms, noise through filters for the snare and the clap, six square waves at
+clashing pitches through filters for the hi-hats and the cymbals (the 808's), and two for the
+cowbell. The knobs are those machines' too: pitch, decay and tone, the middle the drum as it comes.
+A drum played again cuts its last note short, as a machine's one circuit for each drum does, and the
+two hi-hats share one, so the closed one stops the open one ringing.
+
+A pad sounds in the event that plays it (the key, the press, the stick, the MIDI note), at the audio
+clock's current time, with no scheduler in between: what you wait for is the device's own output
+latency (`latencyHint: 'interactive'`), measured on a desktop at 10 ms in the browser and 32 ms on to
+the speakers. Many hits at once bend in a soft clipper rather than crackle (a WaveShaper: no
+look-ahead to wait on), and at most 32 notes sound at once. Browsers play sound only after a click,
+a tap or a key on the page, so the first one starts it; a MIDI note before then asks for one. On an
+iPhone the page plays as a media player does (`navigator.audioSession.type = 'playback'`), which the
+silent switch doesn't mute. With less motion, the walk up to the board is a jump and the pads light
+up more softly.
 
 ## Moving about
 
@@ -85,7 +131,7 @@ is the config's `hallwayDoor()`:
 {
   id: 'instruments',
   title: 'instruments',
-  subtitle: "An empty room behind the Hallway's door, soon a room of instruments to play: a keyboard, a synth, an electric guitar and drums. Walk it in VR on a Meta Quest, on a desktop or on a phone.",
+  subtitle: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads to play, and soon a keyboard, a synth and an electric guitar. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
   sign: 'Band Room',
   url: 'https://ariamokr.github.io/instruments/',
   preview: 'https://ariamokr.github.io/instruments/hallway-preview.jpg',
@@ -109,7 +155,7 @@ the session into the Hallway.
 
 ## On the walls
 
-What hangs on a room's walls is in its config, `pieces`: none in this empty room. Each is a framed
+What hangs on a room's walls is in its config, `pieces`: none in this room so far. Each is a framed
 picture with its title on a label under it (over it when it hangs low), and it may lead somewhere.
 Choose one (click or tap it, point at it in VR and pull the trigger, or put the dot on it and press A
 or OK) and you walk up to it; one with a `link` then takes you there as the doorway takes you back,
@@ -153,8 +199,9 @@ site full screen in a WebView whose user agent ends ` HallwayTV/<version>`), or 
 `?tv=emulate`, the room is walked with the TV's remote, as common's README has it ("The TV app"),
 through its `tv.js`:
 
-- The arrows walk and turn. OK uses what the dot in the middle of the view is on: the doorway, a
-  picture on the walls, a button on the panel, or the floor (it walks there). With the dot on a
+- The arrows walk and turn. OK uses what the dot in the middle of the view is on: the drums (the
+  board, or the sign over it, which is at the dot's height: it walks up to play them), the doorway,
+  a picture on the walls, a button on the panel, or the floor (it walks there). With the dot on a
   picture, the hint says what OK does there: `OK: The studio` for one that leads somewhere,
   `OK: walk up to …` for the rest. It comes back for that if it had faded, and fades again when the
   dot leaves.
@@ -165,6 +212,8 @@ through its `tv.js`:
   again.
 - Stepping onto your name keeps the TV's keyboard down, so the arrows go on past it. OK brings the
   keyboard up to type, and Enter keeps the name.
+- At the drums, the card opens on them and the board stands to the right of it: the arrows choose a
+  pad, OK plays it, Menu goes to its knobs in the card, and Back steps away from the board.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -172,7 +221,7 @@ through its `tv.js`:
 - The hint is also the view's description, which TalkBack reads. Once it has faded, it leaves the
   reading order, so TalkBack doesn't stop on an empty spot.
 
-When the instruments come in, the room keeps the remote working if:
+The remote keeps working as long as each instrument keeps to these, as the drums do:
 
 - **What it adds in 3D works with OK.** Anything a click or a tap uses, OK uses too, when
   `controls.js`'s `use` handles it (the room's subclass of common's `Controls`: its own first, then
@@ -200,7 +249,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the board, MIDI, the card), and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -216,7 +265,8 @@ IPv4 (`npm start -- --host 127.0.0.1`).
 Nothing is built: the page is served as it is, and the import map stays. What TypeScript's DOM
 library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `tsconfig.strict.json` checks only the files that pass it (so far `config.js`, `presence.js`,
-`room.js` and `controls.js`), and `npm test` runs it too. A file joins its `include` when a change
+`room.js`, `controls.js`, `sound.js`, `drums.js`, `board.js` and `midi.js`), and `npm test` runs it
+too. A file joins its `include` when a change
 makes it pass. `tools/` and `test/` come later.
 
 To try the way in and out locally, serve the Hallway's checkout as well (on 8088) and open the room
@@ -249,7 +299,9 @@ is [`public/js/config.js`](public/js/config.js) (the id `instruments`, its title
 Band Room and address, its size and colours, the window in the left wall and the sky's yaw, the port
 8100, the teal glow), with `package.json`, `index.html`, `.claude/launch.json`, the pictures and
 these notes to match; `npm test` checks the page and the package say what the config says. The rest
-of `public/js/` is still the template's, ready to take the instruments.
+of `public/js/` is the template's with the instruments added: `sound.js`, `drums.js`, `board.js`,
+`kit.js` and `midi.js` are this room's own, and `controls.js`, `overlay.js`, `main.js` and
+`style.css` take the drums in.
 
 The template's fixes come here by merging it: this room's history starts at the template's first
 commit, so with the template as a remote named `template`
@@ -261,8 +313,8 @@ git merge template/main
 ```
 
 In a merge, the room keeps its own `config.js` values, `index.html`, `package.json`'s name and
-description, the two pictures, the port 8100 and `main.js`'s opening comment, and its README says
-what the template's says in this room's words. If `package.json` or `package-lock.json` conflict, it
+description, the two pictures, the port 8100, `main.js`'s opening comment and the drums, and its
+README says what the template's says in this room's words. If `package.json` or `package-lock.json` conflict, it
 keeps its name and description and takes the template's dependencies, and `npm install` makes the
 lockfile again.
 

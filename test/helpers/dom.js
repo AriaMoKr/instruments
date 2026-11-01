@@ -79,9 +79,9 @@ class Element {
     (this.listeners[type] ??= []).push(fn);
   }
 
-  /** Fires `type` at it: a click, or a change (an input's). */
-  fire(type) {
-    for (const fn of this.listeners[type] ?? []) fn({ type, target: this, preventDefault() {} });
+  /** Fires `type` at it: a click, or a change (an input's), with what else the event has (`props`: a press's button, its timeStamp). */
+  fire(type, props = {}) {
+    for (const fn of this.listeners[type] ?? []) fn({ type, target: this, preventDefault() {}, ...props });
   }
 
   getBoundingClientRect() {
