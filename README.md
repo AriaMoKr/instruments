@@ -10,7 +10,10 @@ analog voices, poly or mono, with thirty-seven keys, twenty-five knobs, eight so
 an arpeggiator, and a patch bay of its own, cabled to the board's (below, "The synth"). Beside that
 stands its rack, a case of modules: a clock, a sixteen-step sequencer that plays the synth in time
 with the drums, a delay of its own, and an LFO in time with the clock to patch into the synth (below,
-"The rack"). More modules, a keyboard and an electric guitar come next, all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
+"The rack"). To the left of the board stands a keyboard of sixty-one keys with two sounds, an organ
+with nine drawbars and a rotary speaker, and an electric piano, or both at once (below, "The
+keyboard"). More modules, the keyboard's jacks and an electric guitar come next, all patchable. The
+room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
 makes: a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the
 doorway back to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay
 walls, and is a little larger than the template, 7 by 8 metres, to leave room for the instruments
@@ -53,8 +56,8 @@ and the hint says how to play it.
 
 A keyboard's play/pause key starts and stops the clock too, anywhere on the page. While you carry a
 cable, the controls of the instrument you play still play, a jack on the synth or the rack takes it
-as one on the board does, choosing the synth or the rack walks you over with it, and choosing
-anything else puts it away.
+as one on the board does, choosing another instrument walks you over with it, and choosing anything
+else puts it away.
 
 The card's **Drums** has the same twelve pads as buttons, each with its key, the clock, the steps
 and the knobs of the pad last played (**As it comes** sets the knobs back), the delay and the cables
@@ -256,6 +259,73 @@ in**, **Cutoff in** and **Amp in**, under **Synth**). The line and its octave ar
 visit (`instruments.seq`), the delay's knobs and the LFO's too (`instruments.rackdelay` and
 `instruments.lfo`), and the rack's cables with the rest (`instruments.patch`).
 
+## The keyboard
+
+To the left of the board, under a sign that says **Keys**, stands a stage keyboard with two sounds,
+an organ and an electric piano, or both at once: sixty-one keys along its front, from C2 to C7;
+behind them the organ's nine drawbars and the knobs of both, a section each; and at the back a panel
+with its display (the sound, the drawbars as an organist writes them, the percussion, the rotary
+speaker, the octave, and the knob turned last), the sounds' buttons (**ORGAN**, **E.PIANO**,
+**BOTH**), the percussion's (**PERC**, **3RD**, **FAST**), the rotary speaker's **FAST**,
+**SUSTAIN**, and the octave's **−** and **+**. Choose it or its sign, as the board, and you walk up
+to play; on a screen the view comes down over it, clear of the card and of the board (on a phone
+held upright, over the two octaves from C3).
+
+| | Play a key | Pull a drawbar, turn a knob | A button on its panel | Step away |
+|---|---|---|---|---|
+| Desktop | click it and hold (drag along the keys to slide from one to the next), or its key, as the synth's: the row from A plays the white keys from middle C, the row above the black ones; Shift plays harder; Z and X: an octave down and up | drag a drawbar's tab out or in, or click along its slot; drag a knob up or down; or scroll over either | click it | Esc, or walk off |
+| Phone | touch it and hold, with as many fingers as you like, and slide along them | drag it | tap it | tap the floor |
+| Headset | press it down with a stick (it shows near the keyboard too) or a forefinger, as hard as you like, and slide along them; or point at it and pull the trigger | point along a drawbar's slot and pull the trigger; point at either and push the stick up or down | point at it and pull the trigger | walk off |
+| Gamepad | the dot on it and A | the dot along a drawbar's slot and A; the knobs in the card | the dot on it and A | B |
+| TV remote | the arrows choose a key (up and down an octave), OK plays it | in the card: Menu goes to its sounds | in the card | Back |
+| MIDI keyboard | any channel but 10, the drums', while you play at the keys (elsewhere they play the synth); its sustain pedal too | | | |
+
+A key held sounds until it is let go; a click, A, OK or a trigger plays it a moment. With
+**SUSTAIN** lit, or a MIDI keyboard's sustain pedal down, the notes let go ring on until it is let
+go too. Each sound plays sixteen notes at once at most (a seventeenth cuts the oldest short).
+
+The **organ** is made as the tonewheel organs of the 1950s and 60s made theirs. A key plays nine sine
+waves at once, one a drawbar: **16′** an octave under the note, **5⅓′** a fifth over that, **8′** the
+note, then **4′**, **2⅔′**, **2′**, **1⅗′**, **1⅓′** and **1′**, three octaves over it, each pulled
+out from 0 (pushed in) to 8, 3 dB louder a step. An organist writes them as they lie, in groups:
+88 8000 000, a jazz organ's, is the keyboard's as it comes, and the display and the card say them so.
+**PERC** strikes the second harmonic (with **3RD**, the third) as a key goes down, dying away slowly
+(with **FAST**, fast), on the first key of a phrase only (one pressed while none is held), as on the
+organs it comes from. Its knobs:
+
+- **CHORUS**: the scanner's vibrato, a short delay swaying six or seven times a second, beside the
+  sound as it was (off at 0).
+- **CLICK**: the click of a key's contacts as they close and open.
+- **DRIVE**: its amplifier driven into a soft clip.
+- **ROTARY**: how much goes through the rotary speaker, a horn for the highs and a drum for the lows
+  going round, slowly or (with the **FAST** under **ROTARY**) fast, each speeding up and slowing
+  down at its own pace, so that on each side the sound comes and goes and its pitch rises and falls.
+- **LEVEL**: how loud it is.
+
+An organ isn't played harder or softer, so every key is as loud, Shift or not.
+
+The **electric piano** is a tine piano of the 1970s, made by FM as the digital pianos of the 1980s
+made theirs: a sine at the note whose pitch another moves, the more the harder a key is struck (so it
+barks), dying back to a purer tone, with the tine's short ring over it. Harder keys are louder; held,
+a note dies away over seconds, lower notes more slowly; let go, a damper stops it. Its knobs:
+
+- **TONE**: how bright it is.
+- **BARK**: how much brighter a harder strike makes it.
+- **DECAY**: how long a note held rings (middle C, from about two seconds to half a minute).
+- **TREMOLO** and **RATE**: how far it pans from side to side, and how fast (1.5 to 9 times a
+  second).
+- **LEVEL**: how loud it is.
+
+**BOTH** plays the two at once, each as its knobs set it. The card's **Keys** has the same: its keys as
+buttons (as the synth's: each sounds while it is pressed, one stop among them; not on a TV), its
+**Sound** (**Organ**, **Electric piano** or **Both**, **Sustain**, **As it comes**, and the octave the
+computer's keys play in), **Drawbars** (sliders in eighths, the drawbars as an organist writes them
+over them), **Percussion** (**Percussion**, **Third harmonic**, **Fast decay**), and the organ's knobs
+(with **Rotary speaker fast**) and the electric piano's as sliders. The drawbars, the knobs, the
+switches, the sound and the octave are kept for the next visit (`instruments.keys`). Its sound goes
+out through **Sound**'s volume with the rest, and is made in the browser as it is played: nothing to
+download.
+
 ## Moving about
 
 As in the Hallway:
@@ -324,7 +394,7 @@ the config's `hallwayDoor()`:
 {
   id: 'instruments',
   title: 'instruments',
-  subtitle: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads and a six-voice analog synth to play, and soon a keyboard and an electric guitar. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
+  subtitle: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads, a six-voice analog synth with a rack of modules, and a keyboard with an organ and an electric piano to play, and soon an electric guitar. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
   sign: 'Band Room',
   url: 'https://ariamokr.github.io/instruments/',
   preview: 'https://ariamokr.github.io/instruments/hallway-preview.jpg',
@@ -394,7 +464,7 @@ site full screen in a WebView whose user agent ends ` HallwayTV/<version>`), or 
 through its `tv.js`:
 
 - The arrows walk and turn. OK uses what the dot in the middle of the view is on: the drums, the
-  synth or the rack (it, or the sign over it, which is at the dot's height: it walks up to play),
+  synth, the rack or the keys (it, or the sign over it, which is at the dot's height: it walks up to play),
   the doorway, a picture on the walls, a button on the panel, or the floor (it walks there). With
   the dot on a picture, the hint says what OK does there: `OK: The studio` for one that leads
   somewhere, `OK: walk up to …` for the rest. It comes back for that if it had faded, and fades
@@ -418,6 +488,9 @@ through its `tv.js`:
   sets it or rests it, Menu goes to the sequencer's steps in the card (each with its note, its
   accent and its slide; the octave, the delay, the LFO and the cables follow), play/pause starts and
   stops the clock, and Back steps away.
+- At the keys likewise, the card open on them: the arrows choose a key (the one chosen lit; up and
+  down an octave), OK plays it a moment, Menu goes to its sounds in the card (its drawbars, its
+  percussion and its knobs follow), and Back steps away. The card's keys aren't there either.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -453,7 +526,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, its LFO, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, its LFO, where it stands and its keys), the keyboard (its organ and its electric piano, its drawbars and knobs, where it stands and what a ray meets on it), MIDI, the card, and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -470,8 +543,8 @@ Nothing is built: the page is served as it is, and the import map stays. What Ty
 library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `tsconfig.strict.json` checks only the files that pass it (so far `config.js`, `presence.js`,
 `room.js`, `controls.js`, `sound.js`, `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`,
-`board.js`, `midi.js`, `synth.js`, `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js` and
-`lfo.js`), and
+`board.js`, `midi.js`, `synth.js`, `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js`, `lfo.js`,
+`keys.js` and `keysboard.js`), and
 `npm test` runs it too. A file joins its `include` when a change makes it pass. `tools/` and
 `test/` come later.
 
@@ -507,7 +580,8 @@ Band Room and address, its size and colours, the window in the left wall and the
 these notes to match; `npm test` checks the page and the package say what the config says. The rest
 of `public/js/` is the template's with the instruments added: `sound.js`, `drums.js`, `clock.js`,
 `pattern.js`, `patch.js`, `delay.js`, `board.js`, `kit.js`, `synth.js`, `arp.js`, `synthboard.js`,
-`synthkit.js`, `seq.js`, `lfo.js`, `rackboard.js`, `rackkit.js` and `midi.js` are this room's own, and
+`synthkit.js`, `seq.js`, `lfo.js`, `rackboard.js`, `rackkit.js`, `keys.js`, `keysboard.js`, `keyskit.js`
+and `midi.js` are this room's own, and
 `controls.js`, `overlay.js`, `main.js` and `style.css` take the instruments in.
 
 The template's fixes come here by merging it: this room's history starts at the template's first

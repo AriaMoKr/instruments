@@ -284,7 +284,7 @@ export function hitRack(R, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
     }
   }
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
-  out.pad = out.step = out.knob = out.key = out.dial = out.button = -1;
+  out.pad = out.step = out.knob = out.key = out.dial = out.button = out.keys = -1;
   out.jack = jack;
   out.seq = seq;
   out.rack = rack;

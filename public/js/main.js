@@ -29,6 +29,10 @@
 // clock in, its notes out into the synth's notes in (synth.js seqStep); a delay of its own (delay.js
 // again) and an LFO in time with the clock (lfo.js), whose out goes into the synth's pitch, cutoff or
 // amp.
+// Left of the board the keyboard (keysboard.js lays it out, keyskit.js draws it): an organ, with its
+// drawbars, percussion and rotary speaker, and an electric piano, or both at once (keys.js), played
+// with its sixty-one keys on every device as the synth's are, from a computer's keys and a MIDI
+// keyboard, and in the card.
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -52,6 +56,9 @@ import { SynthKit } from './synthkit.js';
 import { SEQ_GATE, SEQ_RANGE, SEQ_VELOCITY, Seq } from './seq.js';
 import { RACK, layoutRack } from './rackboard.js';
 import { RackKit } from './rackkit.js';
+import { KEYS_COUNT, KEYS_LOWEST, KEYS_SWITCHES, Keys, isDrawbar, keysText, switchWords } from './keys.js';
+import { layoutKeyboard } from './keysboard.js';
+import { KeysKit } from './keyskit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { setAnisotropy } from './textures.js';
@@ -633,8 +640,8 @@ function setRange(n) {
   synth.setRange(n);
   showSynth();
 }
-/** The keys' notes, in words (for a toast). */
-const keysText = () => `Keys ${noteName(synth.lowest)} to ${noteName(synth.lowest + KEYS - 1)}`;
+/** The synth's keys' notes, in words (for a toast). */
+const synthKeysText = () => `Keys ${noteName(synth.lowest)} to ${noteName(synth.lowest + KEYS - 1)}`;
 overlay.onKeyDown = keyDown;
 overlay.onKeyUp = keyUp;
 overlay.onKeyTap = (k) => tapNote(synth.lowest + k);
@@ -722,6 +729,102 @@ overlay.onClearSeq = clearSeq;
 overlay.onResetSeq = resetSeq;
 showSeq();
 
+// ── The keyboard ─────────────────────────────────────────────────────────────
+// Its organ and its electric piano into the same sound, its drawbars, knobs and switches, the sound
+// chosen and the octave the computer's keys play in kept for the next visit (keys.js). A key held
+// sounds until it is let go: a press on it (on the keyboard, in the card), a computer's key at it, a
+// MIDI keyboard's while playing at it, in VR a stick or a forefinger down in it; a click, OK, A or a
+// trigger plays one a moment. SUSTAIN (its button, the card's, a MIDI keyboard's pedal while playing
+// at it) holds the notes let go. What it plays shows on it (its keys, its display, its lights) and in
+// the card.
+
+const keys = new Keys(sound, { key: `${ROOM.id}.keys` });
+/** The keyboard in 3D (keyskit.js), once the scene is made. @type {KeysKit | null} */
+let keysKit = null;
+/** Where each knob of the keyboard's was turned to, 0…1, a drawbar's before it settled on its eighth: a turn smaller than an eighth (the wheel, a stick) adds up. */
+const pulls = { ...keys.knobs };
+/** A note of the keyboard's played until it is let go (keysOff), `velocity` 0…1 (the organ's as loud however hard). */
+function keysOn(note, velocity) {
+  if (!keys.noteOn(note, velocity)) noSound();
+}
+/** A note of the keyboard's let go. */
+function keysOff(note) {
+  keys.noteOff(note);
+}
+/** A note of the keyboard's played for a moment (a click, OK, A, a trigger). */
+function tapKeys(note, velocity = 0.85) {
+  if (!keys.tap(note, velocity)) noSound();
+}
+/** The keyboard as it is, on it (its display, its lights) and in the card. */
+function showKeys() {
+  const state = { name: keys.name, choice: keys.choice, knobs: keys.knobs, switches: keys.switches, octave: keys.octave, sustain: keys.sustain };
+  keysKit?.setState(state);
+  overlay.setKeys(state);
+}
+/** Every drawbar and knob at once (as it comes): on the keyboard and in the card. */
+function showKeysKnobs() {
+  keysKit?.setKnobs(keys.knobs);
+  overlay.setKeysKnobs(keys.knobs);
+}
+/** The keys down, on the keyboard and in the card. */
+function showKeysNotes() {
+  keysKit?.setDown(keys.down);
+  overlay.setKeysNotes(keys.down);
+}
+keys.onNotes = showKeysNotes;
+/** A drawbar (to its nearest eighth) or a knob of the keyboard's set 0…1: heard at once (or from the next note), on it and its display, and in the card. */
+function setKeysKnob(id, value) {
+  if (!Number.isFinite(value)) return;
+  pulls[id] = Math.min(1, Math.max(0, value));
+  keys.setKnob(id, value);
+  const v = keys.knobs[id];
+  keysKit?.setKnob(id, v, keysText(id, v));
+  overlay.setKeysKnobs(keys.knobs);
+  if (isDrawbar(id)) showKeys(); // the drawbars as an organist writes them, on its display
+}
+/** A drawbar or a knob of the keyboard's turned by this much of its whole turn. */
+const turnKeysKnob = (id, by) => setKeysKnob(id, pulls[id] + by);
+/** What the keys play (keys.js KEYS_SOUNDS): every note let go first. */
+function chooseKeys(id) {
+  if (!keys.choose(id)) return;
+  showKeys();
+}
+/** SUSTAIN down, or let go (the notes it held let go too). */
+function setSustain(on) {
+  keys.setSustain(on);
+  showKeys();
+}
+/** A switch of the keyboard's (keys.js KEYS_SWITCHES): the percussion's, the rotary speaker's. */
+function setKeysSwitch(id, on) {
+  keys.setSwitch(id, on);
+  showKeys();
+}
+/** The octave the computer's keys play in at the keyboard (keys.js KEYS_OCTAVES). */
+function setKeysOctave(octave) {
+  keys.setOctave(octave);
+  showKeys();
+}
+/** The keyboard as it comes. */
+function resetKeys() {
+  keys.reset();
+  Object.assign(pulls, keys.knobs);
+  showKeysKnobs();
+  showKeys();
+}
+/** The computer's keys' notes at the keyboard, in words (for a toast). */
+const keysOctaveText = () => `Computer's keys ${noteName(60 + 12 * keys.octave)} to ${noteName(77 + 12 * keys.octave)}`;
+overlay.onKeysDown = (k, v) => keysOn(KEYS_LOWEST + k, v);
+overlay.onKeysUp = (k) => keysOff(KEYS_LOWEST + k);
+overlay.onKeysTap = (k) => tapKeys(KEYS_LOWEST + k);
+overlay.onKeysSound = chooseKeys;
+overlay.onSustain = setSustain;
+overlay.onKeysOctave = setKeysOctave;
+overlay.onKeysKnob = setKeysKnob;
+overlay.onKeysSwitch = setKeysSwitch;
+overlay.onResetKeys = resetKeys;
+showKeys();
+showKeysKnobs();
+
 for (const type of ['pointerup', 'touchend', 'keydown']) {
   addEventListener(type, () => {
     if (sound.ctx) sound.wake();
@@ -730,23 +833,30 @@ for (const type of ['pointerup', 'touchend', 'keydown']) {
 // Put away: every note let go (none kept sounding, nor waiting to), and the sound asleep.
 addEventListener('pagehide', () => {
   synth.allOff();
+  keys.allOff();
   sound.sleep();
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) return;
   synth.allOff();
+  keys.allOff();
   sound.sleep();
 });
 
 // From a MIDI device (midi.js): asked for with the card's button, or at once when the visitor has
 // let this site use MIDI before. Its notes on channel 10 are the General MIDI drums' (drums.js
-// padForNote); on another they are the synth's, or the drums' while the visitor plays at the board;
-// its sustain pedal, mod wheel and pitch bend the synth's. A note isn't a press: until the page has
-// had one, the browser keeps it quiet, and says so.
+// padForNote); on another they are the synth's, or the drums' while the visitor plays at the board,
+// or the keyboard's while at it (each let go where it was played); its sustain pedal the synth's, or
+// the keyboard's while at it (let go where it went down); its mod wheel and pitch bend the synth's. A
+// note isn't a press: until the page has had one, the browser keeps it quiet, and says so.
 let midi = null;
 let toldQuiet = false;
-/** Where the visitor plays (controls.js at): at the board a MIDI keyboard's notes are the drums'. @type {'board' | 'synth' | 'rack' | null} */
+/** Where the visitor plays (controls.js at): at the board a MIDI keyboard's notes are the drums', at the keyboard its. @type {'board' | 'synth' | 'rack' | 'keys' | null} */
 let playingAt = null;
+/** The MIDI notes held on the keyboard (the rest held are the synth's). */
+const midiKeys = new Set();
+/** Where a MIDI keyboard's sustain pedal went down: on the keyboard, else on the synth. */
+let pedalOnKeys = false;
 async function listen() {
   if (midi) return;
   overlay.setMidi('Asking the browser…');
@@ -761,12 +871,24 @@ async function listen() {
         if (m.channel === 9 || playingAt === 'board') {
           const i = padForNote(m.note);
           if (i >= 0) play(i, m.velocity);
+        } else if (playingAt === 'keys') {
+          midiKeys.add(m.note);
+          keysOn(m.note, m.velocity);
         } else noteOn(m.note, m.velocity);
-      } else if (m.type === 'off') noteOff(m.note);
-      else if (m.type === 'sustain') synth.setSustain(m.on);
-      else if (m.type === 'mod') synth.setMod(m.value);
+      } else if (m.type === 'off') {
+        if (midiKeys.delete(m.note)) keysOff(m.note);
+        else noteOff(m.note);
+      } else if (m.type === 'sustain') {
+        if (m.on) pedalOnKeys = playingAt === 'keys';
+        if (pedalOnKeys) setSustain(m.on);
+        else synth.setSustain(m.on);
+      } else if (m.type === 'mod') synth.setMod(m.value);
       else if (m.type === 'bend') synth.setBend(m.value);
-      else synth.allOff();
+      else {
+        synth.allOff();
+        keys.allOff();
+        midiKeys.clear();
+      }
     }, (names) => overlay.setMidi(names.length ? `Playing from ${names.join(', ')}` : 'No MIDI device is plugged in: plug one in to play from it'));
   } catch (err) {
     overlay.setMidi(`No MIDI: the browser said ${err instanceof Error ? err.message : err}`);
@@ -784,7 +906,7 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ antialias: true });
 } catch (err) {
-  overlay.noWebGL('This browser cannot show the room in 3D, but its drums, its synth and its sequencer play here in the card. The way back to the Hallway is above.');
+  overlay.noWebGL('This browser cannot show the room in 3D, but its drums, its synth, its sequencer and its keys play here in the card. The way back to the Hallway is above.');
   throw err;
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -794,7 +916,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a synth beside it (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), a rack beside that (a clock, a sequencer of sixteen steps with a knob for each note, a delay and an LFO), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a keyboard to its left (sixty-one keys, nine drawbars, and the knobs and buttons of an organ and an electric piano), a synth to its right (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), a rack beside that (a clock, a sequencer of sixteen steps with a knob for each note, a delay and an LFO), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -820,10 +942,11 @@ const room = buildRoom(L, { colors: ROOM.colors, skyYaw: ROOM.skyYaw, glow, name
 scene.add(room.group);
 // The drum board against the far wall, in the room's light, and the synth beside it, likewise, and
 // the rack beside that; the cables between their jacks, the board's kit's (its own, then the synth's,
-// then the rack's).
+// then the rack's). The keyboard on the board's other side.
 const board = layoutBoard(L);
 const synthDesk = layoutSynth(L, board);
 const rackDesk = layoutRack(L, synthDesk);
+const keysDesk = layoutKeyboard(L, board);
 kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 kit.addJacks(synthDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise));
 kit.addJacks(rackDesk, RACK.knob.h);
@@ -838,11 +961,16 @@ rackKit.setTempo(clock.tempo);
 showRackDelay();
 showLfo();
 scene.add(rackKit.group);
+keysKit = new KeysKit(keysDesk, { lit: room.lit, lightColor: room.lightColor, anisotropy });
+scene.add(keysKit.group);
 showPatch();
 showSynth();
 showSynthKnobs();
 showNotes();
 showSeq();
+showKeys();
+showKeysKnobs();
+showKeysNotes();
 // Through the doorway, the view the Hallway publishes from its door to here (its views.json); until
 // it has loaded, or when there is none (a Hallway without this door yet), its glow and name.
 const views = hallwayViews(way, ROOM.id);
@@ -853,16 +981,19 @@ room.loadPictures().then(() => {
   pictured = true;
 });
 
-const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board, synth: synthDesk, rack: rackDesk });
+const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board, synth: synthDesk, rack: rackDesk, keyboard: keysDesk });
 controls.lowest = () => synth.lowest;
+controls.keysOctave = () => keys.octave;
+controls.pulled = (id) => keys.knobs[id];
 // In VR: a stick in each hand that holds a controller, and the hands' joints, for a forefinger to
-// play with (kit.js, and the synth's keys: synthkit.js, and the rack's: rackkit.js), moving with the
-// rig as the controllers do.
+// play with (kit.js, and the synth's keys: synthkit.js, the rack's: rackkit.js, and the keyboard's:
+// keyskit.js), moving with the rig as the controllers do.
 kit.holdSticks(controls.hands);
 const fingers = [renderer.xr.getHand(0), renderer.xr.getHand(1)];
 rig.add(...fingers);
-/** In VR, whether a hand at (x, y, z) is near the synth's keys or the rack's, for its stick to show there too. */
-const nearKeys = (x, y, z) => x > synthDesk.x0 - 0.5 && x < rackDesk.x1 + 0.5 && z > synthDesk.zBack - 0.2 && z < synthDesk.zFront + 0.9 && y > 0.3;
+/** In VR, whether a hand at (x, y, z) is near the synth's keys or the rack's, or the keyboard's, for its stick to show there too. */
+const nearKeys = (x, y, z) => y > 0.3 && ((x > synthDesk.x0 - 0.5 && x < rackDesk.x1 + 0.5 && z > synthDesk.zBack - 0.2 && z < synthDesk.zFront + 0.9)
+  || (x > keysDesk.x0 - 0.5 && x < keysDesk.x1 + 0.5 && z > keysDesk.zBack - 0.2 && z < keysDesk.zFront + 0.9));
 const nav = loadNav();
 controls.setNav(nav);
 // The accessibility settings every site on the origin shares (common/access.js, hallway.access):
@@ -950,8 +1081,8 @@ overlay.setHint(tv ? 'tv' : matchMedia('(pointer: coarse)').matches ? 'touch' : 
 // room's own step back (stepBack), else the app goes back a page, to this room's door in the hallway.
 
 /**
- * Back on a TV while walking: the room's own step back, true when it took one: playing at the drum
- * board or the synth, a step away from it. (A step the page's history has an entry for is the app's
+ * Back on a TV while walking: the room's own step back, true when it took one: playing at one of the
+ * instruments, a step away from it. (A step the page's history has an entry for is the app's
  * back, not one of these: common's README, "The TV app".)
  */
 function stepBack() {
@@ -964,13 +1095,16 @@ function stepBack() {
 let chosenKey = 12;
 /** On a TV at the rack, the step the arrows chose, which OK plays or rests (and up and down turn its note). */
 let chosenStep = 0;
+/** On a TV at the keyboard, the note of the key the arrows chose, which OK plays: middle C to start with. */
+let chosenNote = 60;
 let remote = null;
 if (tv) {
   controls.aimMiddle = true;
   renderer.domElement.setAttribute('aria-describedby', overlay.hint.id);
   // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its steps; at the
   // synth, the key they chose, and Menu goes to its sounds; at the rack, OK plays or rests the step
-  // they chose, and Menu goes to the sequencer's steps.
+  // they chose, and Menu goes to the sequencer's steps; at the keyboard, the key they chose, and Menu
+  // goes to its sound.
   remote = new Remote({
     root: overlay.root,
     view: renderer.domElement,
@@ -978,10 +1112,11 @@ if (tv) {
       if (controls.at === 'board') play(drums.selected, 0.85);
       else if (controls.at === 'synth') tapNote(synth.lowest + chosenKey);
       else if (controls.at === 'rack') toggleSeqKey('seq', chosenStep);
+      else if (controls.at === 'keys') tapKeys(chosenNote);
       else controls.useMiddle();
     },
     step: stepBack,
-    first: () => (controls.at === 'board' ? overlay.stepsBox : controls.at === 'synth' ? overlay.presetsBox : controls.at === 'rack' ? overlay.seqBox : null),
+    first: () => (controls.at === 'board' ? overlay.stepsBox : controls.at === 'synth' ? overlay.presetsBox : controls.at === 'rack' ? overlay.seqBox : controls.at === 'keys' ? overlay.keysSoundBox : null),
   });
   remote.onMode = (inCard) => overlay.setHint(inCard ? 'tv-card' : 'tv');
   remote.answerApp(tv);
@@ -1083,7 +1218,8 @@ controls.onPlaying = (at) => {
   if (at && remote) {
     if (at === 'board') overlay.openDrums(true);
     else if (at === 'synth') overlay.openSynth(true);
-    else overlay.openRack(true);
+    else if (at === 'rack') overlay.openRack(true);
+    else overlay.openKeys(true);
     remote.forget(); // Menu goes to its steps, or its sounds, now
   }
 };
@@ -1122,7 +1258,7 @@ controls.onButton = (i) => {
   if (id === 'mono') setMono(!synth.mono);
   else if (id.startsWith('octave.')) {
     setOctave(synth.octave + (id === 'octave.up' ? 1 : -1));
-    overlay.toast(keysText(), 2);
+    overlay.toast(synthKeysText(), 2);
     return;
   } else if (id.startsWith('arp.')) {
     const what = id.slice('arp.'.length);
@@ -1136,7 +1272,7 @@ controls.onButton = (i) => {
 };
 controls.onOctave = (by) => {
   setOctave(synth.octave + by);
-  overlay.toast(keysText(), 2);
+  overlay.toast(synthKeysText(), 2);
 };
 controls.onKeyPick = (by) => {
   chosenKey = Math.min(KEYS - 1, Math.max(0, chosenKey + by));
@@ -1197,6 +1333,58 @@ rackKit.onKey = (row, s, source) => {
   toggleSeqKey(row, s);
   source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.35, 14);
 };
+
+// ── The keyboard's keys, drawbars, knobs and buttons ─────────────────────────
+// A key held down: a press on it, a computer's key at the keyboard, in VR a stick or a forefinger in
+// it (which the controller feels); a click, A, OK or a trigger plays one a moment. A drawbar pulled
+// out or pushed in: a press in its lane, its tab dragged, a trigger, A or OK there, the wheel, a
+// stick; a knob turned: a drag, the wheel, a stick. Its panel's buttons: the sound, the percussion's
+// switches and the rotary speaker's, SUSTAIN, the octave (Z and X too), said. Walking up to it to
+// play it, and stepping away; on a TV the arrows choose a key.
+
+controls.onKeysOn = keysOn;
+controls.onKeysOff = keysOff;
+controls.onKeysTap = tapKeys;
+controls.onDrawbar = setKeysKnob;
+controls.onKeysKnob = turnKeysKnob;
+controls.onKeysButton = (i) => {
+  const id = keysDesk.panel.buttons[i]?.id;
+  if (!id) return;
+  if (id === 'sustain') {
+    setSustain(!keys.sustain);
+    overlay.toast(keys.sustain ? 'Sustain on: the notes let go ring on' : 'Sustain off', 2);
+  } else if (id.startsWith('octave.')) {
+    setKeysOctave(keys.octave + (id === 'octave.up' ? 1 : -1));
+    overlay.toast(keysOctaveText(), 2);
+  } else if (id.startsWith('switch.')) {
+    const s = KEYS_SWITCHES.find((w) => `switch.${w.id}` === id);
+    if (!s) return;
+    setKeysSwitch(s.id, !keys.switches[s.id]);
+    overlay.toast(switchWords(s.id, keys.switches[s.id]), 2);
+  } else if (id.startsWith('sound.')) {
+    chooseKeys(id.slice('sound.'.length));
+    overlay.toast(keys.name, 2);
+  }
+};
+controls.onKeysOctave = (by) => {
+  setKeysOctave(keys.octave + by);
+  overlay.toast(keysOctaveText(), 2);
+};
+controls.onKeysPick = (by) => {
+  chosenNote = Math.min(KEYS_LOWEST + KEYS_COUNT - 1, Math.max(KEYS_LOWEST, chosenNote + by));
+};
+overlay.onPlayKeys = () => {
+  if (controls.at === 'keys') controls.stepAway();
+  else {
+    remote?.walk(); // as the synth's: the arrows choose a key there, OK plays it, Menu goes to its sound
+    controls.walkToKeys();
+  }
+};
+keysKit.onKeyDown = (k, velocity, source) => {
+  keysOn(KEYS_LOWEST + k, velocity);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.15 + 0.5 * velocity, 14);
+};
+keysKit.onKeyUp = (k) => keysOff(KEYS_LOWEST + k);
 
 // ── Fullscreen, and the gamepad ──────────────────────────────────────────────
 
@@ -1265,6 +1453,7 @@ renderer.xr.addEventListener('sessionend', () => {
   kit.endXR();
   synthKit.endXR();
   rackKit.endXR();
+  keysKit.endXR();
   putDown();
 });
 // Not on a TV, which has no headset (nor, so far, a WebXR in its WebView): the panel says so.
@@ -1439,6 +1628,7 @@ function step(dt) {
     kit.updateXR(controls.hands, fingers, dt, nearKeys);
     synthKit.updateXR(controls.hands, fingers, kit.sticks, dt);
     rackKit.updateXR(controls.hands, fingers, kit.sticks);
+    keysKit.updateXR(controls.hands, fingers, kit.sticks, dt);
   }
   kit.hover(controls.hoverPad);
   kit.hoveredStep = controls.hoverStep;
@@ -1460,6 +1650,9 @@ function step(dt) {
   const ctx = sound.ctx;
   rackKit.lfo = !ctx ? NaN : reduce ? 0 : lfo.valueAt(ctx.currentTime - (ctx.outputLatency || 0));
   rackKit.update(dt);
+  // The keyboard: its keys down and the one pointed at (on a TV at it, the one the arrows chose).
+  keysKit.hovered = remote && controls.at === 'keys' && !remote.inCard ? chosenNote - KEYS_LOWEST : controls.hoverNote;
+  keysKit.update(dt);
   // The dot: a gamepad's aim, or on a TV the remote's OK while walking (playing, the arrows choose a pad).
   overlay.setAim((controls.padActive || (remote !== null && !remote.inCard && !controls.playing)) && !renderer.xr.isPresenting, !!controls.hover);
   // On a TV, walking, the hint says what OK does with the dot on something on the walls.
@@ -1489,6 +1682,7 @@ window.__room = {
   sound, drums, board, kit, play, select, setKnob, clock, pattern, patch, delay, toggleClock, setTempo, toggleStep, setDelayKnob, schedule,
   synth, synthDesk, synthKit, noteOn, noteOff, tapNote, keyDown, keyUp, chooseSound, resetSynth, setSynthKnob, setMono, setOctave, setArp, setHold, setRange,
   seq, rackDesk, rackKit, toggleSeqKey, setSeqNote, setSeqOctave, clearSeq, resetSeq, rackDelay, setRackDelayKnob, lfo, setLfoKnob,
+  keys, keysDesk, keysKit, keysOn, keysOff, tapKeys, chooseKeys, setKeysKnob, setKeysSwitch, setSustain, setKeysOctave, resetKeys,
   /** On a TV at the synth, the key the arrows chose. */
   get chosenKey() {
     return chosenKey;
@@ -1496,6 +1690,10 @@ window.__room = {
   /** On a TV at the rack, the step the arrows chose. */
   get chosenStep() {
     return chosenStep;
+  },
+  /** On a TV at the keyboard, the note of the key the arrows chose. */
+  get chosenNote() {
+    return chosenNote;
   },
   /** The cable carried (the jack it hangs from), else null. */
   get carried() {

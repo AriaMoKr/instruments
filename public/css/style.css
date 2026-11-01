@@ -97,7 +97,7 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 .settings label, .choices label { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; font-size: 13px; cursor: pointer; }
 .settings input, .choices input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
-/* The instruments, each a part of the card (Drums, Synth, Rack) and the room's Sound: each fieldset a
+/* The instruments, each a part of the card (Drums, Synth, Rack, Keys) and the room's Sound: each fieldset a
    legend over its rows, each knob a slider with what it is set to above it. */
 .part { display: grid; gap: 10px; margin-top: 8px; }
 /* Without WebGL: each part under its name. */
@@ -150,7 +150,8 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 
 /* Synth: going to play at the synth (or stepping away); its keys as they lie on it, the black ones
    over the white, the Cs named, those down lit (a swipe along them scrolls them); its sounds (the
-   presets, poly then mono, Mono, As it comes, the octave); its knobs, a section each, two to a row. */
+   presets, poly then mono, Mono, As it comes, the octave); its knobs, a section each, two to a row.
+   Keys likewise: its keys, its sounds, its drawbars and knobs, its percussion's switches two to a row. */
 .keyboard { display: flex; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 4px; scrollbar-width: thin; }
 .key {
   flex: none; display: flex; align-items: flex-end; justify-content: center; width: 36px; height: 96px; padding: 0 0 4px;

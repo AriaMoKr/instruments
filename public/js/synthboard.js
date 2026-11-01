@@ -14,7 +14,8 @@
 // no three.js, as board.js's, so the tests run them in Node: where it stands and what is on it
 // (layoutSynth), what a ray meets on it (hitSynth: a black key over the white ones), the key at a
 // place on it, and the key a stick's tip or a finger is down in (keyUnder), and how hard it went in
-// (keyVelocity).
+// (keyVelocity). Its keys (layoutKeys), and what finds a key, a dial or a button, are the keyboard's
+// too (keysboard.js).
 //
 // Coordinates as board.js's: on the top `a` from its left edge (world +x), `b` from its front edge
 // up the slope; on the panel `a` likewise, `b` from its foot up its face.
@@ -59,9 +60,45 @@ const ROWS = [['fenv', 'aenv', 'out'], ['osc', 'lfo', 'filter']];
 
 /**
  * A key: whether it is black, and its top's place (a0…a1, b0…b1). Its note is the synth's lowest
- * now (synth.js Synth.lowest) and as many semitones up as its index.
+ * now (synth.js Synth.lowest) and as many semitones up as its index; the keyboard's (keysboard.js),
+ * its lowest's.
  * @typedef {{ black: boolean, a0: number, a1: number, b0: number, b1: number }} SynthKey
  */
+
+/**
+ * Keys along a desk's front, as layoutKeys lays them out: each key's place, which are white and which
+ * black (their indices, left to right), and the bed the white keys lie on.
+ * @typedef {{ keys: readonly SynthKey[], whites: readonly number[], blacks: readonly number[], bed: import('./board.js').Area }} KeyBed
+ */
+
+/**
+ * `count` keys from the note `lowest` (a C), as a piano's, along the top's front edge (SYNTH.key):
+ * each key's place, the white keys' and the black keys' indices, the bed, and how wide the top is
+ * for them (its margins either side).
+ * @param {number} lowest
+ * @param {number} count
+ */
+export function layoutKeys(lowest, count) {
+  const K = SYNTH.key;
+  /** @type {SynthKey[]} */
+  const keys = [];
+  /** @type {number[]} */
+  const whites = [], blacks = [];
+  for (let k = 0; k < count; k++) {
+    const note = lowest + k;
+    if (isBlack(note)) {
+      const mid = K.margin + whites.length * K.white + BLACK[note % 12] * K.black;
+      keys.push({ black: true, a0: mid - K.black / 2, a1: mid + K.black / 2, b0: K.front + K.length - K.blackLength, b1: K.front + K.length });
+      blacks.push(k);
+    } else {
+      const a0 = K.margin + whites.length * K.white;
+      keys.push({ black: false, a0, a1: a0 + K.white, b0: K.front, b1: K.front + K.length });
+      whites.push(k);
+    }
+  }
+  const bed = { a0: K.margin, a1: K.margin + whites.length * K.white, b0: K.front, b1: K.front + K.length };
+  return { keys, whites, blacks, bed, width: 2 * K.margin + whites.length * K.white };
+}
 
 /**
  * A dial: the knob it turns (synth.js), its section, its name on the top, and where it is.
@@ -94,25 +131,8 @@ const ROWS = [['fenv', 'aenv', 'out'], ['osc', 'lfo', 'filter']];
  * @param {{ x1: number, panel: { jacks: readonly unknown[] } }} B the drum board's (board.js layoutBoard)
  */
 export function layoutSynth(L, B) {
-  const { key: K, dial: R, row, panel, tilt, front, wall } = SYNTH;
-  /** @type {SynthKey[]} */
-  const keys = [];
-  /** @type {number[]} */
-  const whites = [], blacks = [];
-  for (let k = 0; k < KEYS; k++) {
-    const note = LOWEST + k;
-    if (isBlack(note)) {
-      const mid = K.margin + whites.length * K.white + BLACK[note % 12] * K.black;
-      keys.push({ black: true, a0: mid - K.black / 2, a1: mid + K.black / 2, b0: K.front + K.length - K.blackLength, b1: K.front + K.length });
-      blacks.push(k);
-    } else {
-      const a0 = K.margin + whites.length * K.white;
-      keys.push({ black: false, a0, a1: a0 + K.white, b0: K.front, b1: K.front + K.length });
-      whites.push(k);
-    }
-  }
-  const width = 2 * K.margin + whites.length * K.white;
-  const bed = { a0: K.margin, a1: K.margin + whites.length * K.white, b0: K.front, b1: K.front + K.length };
+  const { dial: R, row, panel, tilt, front, wall } = SYNTH;
+  const { keys, whites, blacks, bed, width } = layoutKeys(LOWEST, KEYS);
   // The dials, a row at a time from the front: its sections' names in a band, theirs over it, then
   // the dials; each section's dials `spacing` apart, the sections spread across the row.
   /** @type {SynthDial[]} */
@@ -231,8 +251,8 @@ export function layoutSynth(L, B) {
 /** The synth as layoutSynth lays it out. @typedef {ReturnType<typeof layoutSynth>} SynthDesk */
 
 /**
- * The black key whose top's place (a, b) is in, else -1.
- * @param {SynthDesk} S
+ * The black key whose top's place (a, b) is in, else -1: the synth's, or the keyboard's.
+ * @param {KeyBed} S
  * @param {number} a
  * @param {number} b
  */
@@ -247,7 +267,7 @@ export function blackKeyAt(S, a, b) {
 /**
  * The key at (a, b) on the top, as seen from over it: a black key's place first, else the white key
  * there (their gaps included); else -1.
- * @param {SynthDesk} S
+ * @param {KeyBed} S
  * @param {number} a
  * @param {number} b
  */
@@ -261,8 +281,8 @@ export function keyAt(S, a, b) {
 
 /**
  * The dial at (a, b) on the top (a little larger than it, to be easier to point at): its index in
- * S.dials, else -1.
- * @param {SynthDesk} S
+ * S.dials, else -1. The keyboard's knobs are as large.
+ * @param {{ dials: readonly { a: number, b: number }[] }} S
  * @param {number} a
  * @param {number} b
  */
@@ -276,8 +296,9 @@ export function dialAt(S, a, b) {
 }
 
 /**
- * The button at (a, b) on the panel: its index in S.panel.buttons, else -1.
- * @param {SynthDesk} S
+ * The button at (a, b) on the panel: its index in S.panel.buttons, else -1 (the synth's, or the
+ * keyboard's).
+ * @param {{ panel: { buttons: readonly import('./board.js').Area[] } }} S
  * @param {number} a
  * @param {number} b
  */
@@ -351,7 +372,7 @@ export function hitSynth(S, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
   else if (jack >= 0) kind = 'jack';
   else if (button >= 0) kind = 'button';
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
-  out.pad = out.step = out.knob = out.seq = out.rack = -1;
+  out.pad = out.step = out.knob = out.seq = out.rack = out.keys = -1;
   out.jack = jack;
   out.key = key;
   out.dial = dial;
@@ -364,7 +385,8 @@ export function hitSynth(S, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
  * its top (a black key's first, standing over the white ones), but not through the top; written into
  * out with the key whose place it is over however high (`over`), how high the tip is over the top
  * (`h`, m) and how high that key's top is (`top`, the white keys' over none); else out.key is -1.
- * @param {SynthDesk} S
+ * The synth's, or the keyboard's.
+ * @param {import('./board.js').Desk & KeyBed} S
  * @param {number} x
  * @param {number} y
  * @param {number} z

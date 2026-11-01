@@ -5,9 +5,11 @@
 // each sounding while pressed, one stop among them; its sounds (the presets, Mono, the octave), its
 // arpeggiator, its knobs, a section each, and its cables. The rack: its clock (the room's again),
 // its sequencer's steps a row each (whether it plays, its note, its accent, its slide), its octave,
-// its delay's knobs and its LFO's as sliders, and its cables. Sound: the volume, Mute, and MIDI where
-// there is Web MIDI. Playing at the board, the synth or the rack and stepping away, with its hint;
-// and all four kept, open, where there is no 3D view.
+// its delay's knobs and its LFO's as sliders, and its cables. The keys: its keys as the synth's, its
+// sound (the organ, the electric piano or both, Sustain, the computer's keys' octave), its drawbars in
+// eighths, its percussion, its knobs. Sound: the volume, Mute, and MIDI where there is Web MIDI.
+// Playing at the board, the synth, the rack or the keys and stepping away, with its hint; and all
+// five kept, open, where there is no 3D view.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
@@ -20,6 +22,7 @@ import { DEFAULT_SYNTH, KEYS, LOWEST, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, i
 import { ARP_MODES, ARP_RANGES } from '../public/js/arp.js';
 import { DEFAULT_LINE, SEQ_LOWEST, SEQ_OCTAVES, SEQ_RANGE, Seq } from '../public/js/seq.js';
 import { LFO_RATES, LFO_SHAPES } from '../public/js/lfo.js';
+import { DEFAULT_KEYS, DEFAULT_SWITCHES, DRAWBARS, KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_OCTAVES, KEYS_SECTIONS, KEYS_SOUNDS, KEYS_SWITCHES, keysText } from '../public/js/keys.js';
 import { installDom } from './helpers/dom.js';
 
 const way = { url: 'https://ariamokr.github.io/hallway/?from=instruments', label: '← Hallway', title: 'Back to the Hallway' };
@@ -31,7 +34,8 @@ async function card(options = {}) {
   const calls = [];
   for (const name of ['onPad', 'onPlay', 'onKnob', 'onResetKnobs', 'onVolume', 'onMute', 'onMidi', 'onRun', 'onTempo', 'onStep', 'onClearSteps', 'onResetPattern', 'onDelay', 'onResetDelay', 'onPlug',
     'onPlaySynth', 'onKeyDown', 'onKeyUp', 'onKeyTap', 'onPreset', 'onMono', 'onOctave', 'onSynthKnob', 'onResetSynth', 'onArp', 'onHold', 'onRange',
-    'onPlayRack', 'onSeqKey', 'onSeqNote', 'onSeqOctave', 'onClearSeq', 'onResetSeq', 'onRackDelay', 'onResetRackDelay', 'onLfo', 'onResetLfo']) o[name] = (...args) => calls.push([name, ...args]);
+    'onPlayRack', 'onSeqKey', 'onSeqNote', 'onSeqOctave', 'onClearSeq', 'onResetSeq', 'onRackDelay', 'onResetRackDelay', 'onLfo', 'onResetLfo',
+    'onPlayKeys', 'onKeysDown', 'onKeysUp', 'onKeysTap', 'onKeysSound', 'onSustain', 'onKeysOctave', 'onKeysKnob', 'onKeysSwitch', 'onResetKeys']) o[name] = (...args) => calls.push([name, ...args]);
   return { o, calls };
 }
 
@@ -279,12 +283,12 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
   }
 });
 
-test('Synth, Rack and Sound open and close in the card, beside Drums', async () => {
+test('Synth, Rack, Keys and Sound open and close in the card, beside Drums', async () => {
   const remove = installDom();
   try {
     const { o } = await card();
-    assert.deepEqual(o.drumsToggle.parentNode.children.map((c) => c.textContent), ['Start shared session', 'Drums', 'Synth', 'Rack', 'Sound', 'Settings']);
-    for (const [toggle, part, id, open] of [[o.synthToggle, o.synth, 'synth', 'openSynth'], [o.rackToggle, o.rack, 'rack', 'openRack'], [o.soundToggle, o.sound, 'sound', 'openSound']]) {
+    assert.deepEqual(o.drumsToggle.parentNode.children.map((c) => c.textContent), ['Start shared session', 'Drums', 'Synth', 'Rack', 'Keys', 'Sound', 'Settings']);
+    for (const [toggle, part, id, open] of [[o.synthToggle, o.synth, 'synth', 'openSynth'], [o.rackToggle, o.rack, 'rack', 'openRack'], [o.keysToggle, o.keysPart, 'keys', 'openKeys'], [o.soundToggle, o.sound, 'sound', 'openSound']]) {
       assert.deepEqual([toggle.getAttribute('aria-controls'), part.getAttribute('id'), part.hidden], [id, id, true]);
       toggle.fire('click');
       assert.deepEqual([part.hidden, toggle.getAttribute('aria-expanded')], [false, 'true']);
@@ -569,13 +573,13 @@ test('playing at the board: the button steps away, and the hint says how to play
   }
 });
 
-test('with no 3D view, the drums, the synth, the rack and the sound stay in the card, open, each under its name, with nothing to go to', async () => {
+test('with no 3D view, the drums, the synth, the rack, the keys and the sound stay in the card, open, each under its name, with nothing to go to', async () => {
   const remove = installDom();
   try {
     const { o } = await card();
-    o.noWebGL('This browser cannot show the room in 3D, but its drums, its synth and its sequencer play here in the card.');
+    o.noWebGL('This browser cannot show the room in 3D, but its drums, its synth, its sequencer and its keys play here in the card.');
     assert.equal(o.inRoom.parentNode, null, 'the session and the settings are gone');
-    for (const [name, part] of [['Drums', o.drums], ['Synth', o.synth], ['Rack', o.rack], ['Sound', o.sound]]) {
+    for (const [name, part] of [['Drums', o.drums], ['Synth', o.synth], ['Rack', o.rack], ['Keys', o.keysPart], ['Sound', o.sound]]) {
       assert.equal(part.hidden, false, name);
       assert.equal(o.card.findAll((c) => c === part).length, 1, name);
       const title = part.parentNode.children[0];
@@ -588,6 +592,159 @@ test('with no 3D view, the drums, the synth, the rack and the sound stay in the 
     for (const box of [o.clockBox, o.stepsBox, o.knobsBox, o.delayBox, o.cablesBox]) assert.equal(o.drums.findAll((c) => c === box).length, 1, 'the clock, the steps, the knobs, the delay and the cables too');
     for (const box of [o.keyboard, o.presetsBox, o.arpBox, ...o.sectionBoxes, o.synthCablesBox]) assert.equal(o.synth.findAll((c) => c === box).length, 1, 'the keys, the sounds, the arpeggiator, the knobs and the cables');
     for (const box of [o.rackClockBox, o.seqBox, o.rackDelayBox, o.lfoBox, o.rackCablesBox]) assert.equal(o.rack.findAll((c) => c === box).length, 1, 'its clock, the sequencer, the delay, the LFO and the cables');
+    assert.equal(o.keysPart.findAll((c) => c === o.playKeys).length, 0);
+    for (const box of [o.keysRow, o.keysSoundBox, o.percBox, ...o.keysSectionBoxes]) assert.equal(o.keysPart.findAll((c) => c === box).length, 1, 'the keys, the sound, the percussion, the drawbars and the knobs');
+  } finally {
+    remove();
+  }
+});
+
+test('the keyboard\'s keys: sixty-one from C2, as the synth\'s, sounding while pressed, those down marked', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.equal(o.keysKeys.length, KEYS_COUNT);
+    assert.deepEqual([o.keysRow.getAttribute('role'), o.keysRow.getAttribute('aria-label'), o.keysRow.className], ['group', 'Keys', 'keyboard']);
+    assert.equal(o.keysPart.children.indexOf(o.keysRow), 1, 'after going to play at it');
+    for (const [k, b] of o.keysKeys.entries()) {
+      const n = KEYS_LOWEST + k;
+      assert.deepEqual([b.getAttribute('aria-label'), b.textContent], n % 12 ? [spokenNote(n), ''] : [null, noteName(n)]);
+      assert.equal(b.classList.contains('black'), isBlack(n));
+      assert.equal(b.getAttribute('tabindex'), k ? '-1' : '0', 'one stop among them');
+    }
+    assert.deepEqual([o.keysKeys[0].textContent, o.keysKeys[KEYS_COUNT - 1].textContent], ['C2', 'C7']);
+    const c4 = o.keysKeys[24];
+    c4.fire('pointerdown', { button: 0, pointerId: 1 });
+    c4.fire('pointerup', { pointerId: 1 });
+    c4.fire('click');
+    o.keysKeys[60].fire('click');
+    assert.deepEqual(calls, [['onKeysDown', 24, 0.85], ['onKeysUp', 24], ['onKeysTap', 60]]);
+    // Their own stop: the arrows go along them, not the synth's.
+    o.keysRow.fire('keydown', { key: 'End', target: o.keysKeys[0], preventDefault() {}, stopPropagation() {} });
+    assert.equal(o.keysKeys.indexOf(document.activeElement), KEYS_COUNT - 1);
+    assert.equal(o.keys.findIndex((b) => b.getAttribute('tabindex') === '0'), 0, 'the synth\'s stop where it was');
+    o.setKeysNotes(new Set([60, 64, 67, 20]));
+    assert.deepEqual(marked(o.keysKeys, 'down'), [24, 28, 31], 'a note off the keyboard marks nothing');
+    o.setKeysNotes(new Set());
+    assert.deepEqual(marked(o.keysKeys, 'down'), []);
+  } finally {
+    remove();
+  }
+});
+
+test('the keyboard\'s sound: the organ, the electric piano or both, Sustain, As it comes, and the octave the computer\'s keys play in', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.equal(o.keysSoundBox.tagName, 'FIELDSET');
+    assert.deepEqual([...o.keysSoundInputs.keys()], KEYS_SOUNDS.map((s) => s.id));
+    assert.deepEqual([...o.keysSoundInputs.values()].map((i) => [i.getAttribute('type'), i.getAttribute('name'), i.parentNode.textContent]),
+      [['radio', 'keys-sound', 'Organ'], ['radio', 'keys-sound', 'Electric piano'], ['radio', 'keys-sound', 'Both']]);
+    const state = { name: 'Organ and electric piano', choice: 'both', sustain: true, switches: DEFAULT_SWITCHES, octave: -1 };
+    o.setKeys(state);
+    assert.equal(o.keysSoundBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Sound: Organ and electric piano');
+    assert.deepEqual([...o.keysSoundInputs].filter(([, i]) => i.checked).map(([id]) => id), ['both']);
+    assert.equal(o.sustainInput.checked, true);
+    assert.equal(o.sustainInput.parentNode.textContent, 'Sustain');
+    assert.deepEqual([o.keysOctave.getAttribute('min'), o.keysOctave.getAttribute('max'), o.keysOctave.value], [String(KEYS_OCTAVES.min), String(KEYS_OCTAVES.max), '-1']);
+    assert.deepEqual([o.keysOctaveOut.textContent, o.keysOctave.getAttribute('aria-valuetext')], ['C3–F4', "Computer's keys C 3 to F 4"]);
+    o.setKeys({ ...state, name: 'Organ', choice: 'organ', sustain: false, octave: 0 });
+    assert.deepEqual([[...o.keysSoundInputs].filter(([, i]) => i.checked).map(([id]) => id), o.sustainInput.checked, o.keysOctaveOut.textContent], [['organ'], false, 'C4–F5']);
+    const piano = o.keysSoundInputs.get('epiano');
+    piano.checked = true;
+    piano.fire('change');
+    o.sustainInput.checked = true;
+    o.sustainInput.fire('change');
+    o.keysOctave.value = '1';
+    o.keysOctave.fire('input');
+    o.resetKeys.fire('click');
+    assert.deepEqual(calls, [['onKeysSound', 'epiano'], ['onSustain', true], ['onKeysOctave', 1], ['onResetKeys']]);
+  } finally {
+    remove();
+  }
+});
+
+test('the keyboard\'s drawbars in eighths, as an organist writes them; its percussion\'s switches; its knobs a section each, the rotary speaker\'s switch with the organ\'s', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.deepEqual(o.keysSectionBoxes.map((b) => b.findAll((c) => c.tagName === 'LEGEND')[0].textContent), ['Drawbars: 88 8000 000', 'Organ', 'Electric piano']);
+    assert.deepEqual([...o.keysInputs.keys()], KEYS_KNOBS.map((k) => k.id));
+    for (const [i, s] of KEYS_SECTIONS.entries()) {
+      const sliders = o.keysSectionBoxes[i].findAll((c) => c.tagName === 'INPUT' && c.getAttribute('type') === 'range');
+      assert.deepEqual(sliders, KEYS_KNOBS.filter((k) => k.section === s.id).map((k) => o.keysInputs.get(k.id).input), s.name);
+    }
+    // In the part: the drawbars after the sound, the percussion after them, then the organ's and the piano's knobs.
+    const order = [o.keysSoundBox, o.keysSectionBoxes[0], o.percBox, o.keysSectionBoxes[1], o.keysSectionBoxes[2]].map((b) => o.keysPart.children.indexOf(b));
+    assert.deepEqual(order, [2, 3, 4, 5, 6]);
+    for (const id of DRAWBARS) {
+      const { input } = o.keysInputs.get(id);
+      assert.deepEqual([input.getAttribute('min'), input.getAttribute('max'), input.getAttribute('step')], ['0', '8', '1'], id);
+    }
+    o.setKeysKnobs({ ...DEFAULT_KEYS, d4: 0.75, chorus: 0 });
+    assert.equal(o.registration.textContent, '88 8600 000');
+    for (const k of KEYS_KNOBS) {
+      const { input, out } = o.keysInputs.get(k.id);
+      const v = k.id === 'd4' ? 0.75 : k.id === 'chorus' ? 0 : DEFAULT_KEYS[k.id];
+      assert.equal(input.parentNode.children[0].textContent, k.name, 'its label');
+      assert.equal(input.value, String(DRAWBARS.includes(k.id) ? Math.round(v * 8) : Math.round(v * 100)), k.id);
+      assert.deepEqual([out.textContent, input.getAttribute('aria-valuetext')], [keysText(k.id, v), keysText(k.id, v)], k.id);
+    }
+    assert.equal(o.keysInputs.get('chorus').out.textContent, 'off');
+    // The switches: the percussion's three together, the rotary speaker's with the organ's knobs.
+    assert.deepEqual(o.percBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Percussion');
+    assert.deepEqual([...o.switchInputs.keys()], ['rotaryFast', 'perc', 'third', 'fast']);
+    for (const s of KEYS_SWITCHES) {
+      const input = o.switchInputs.get(s.id);
+      assert.deepEqual([input.getAttribute('type'), input.parentNode.textContent], ['checkbox', s.name]);
+      const box = s.id === 'rotaryFast' ? o.keysSectionBoxes[1] : o.percBox;
+      assert.equal(box.findAll((c) => c === input).length, 1, s.id);
+    }
+    o.setKeys({ name: 'Organ', choice: 'organ', sustain: false, switches: { perc: false, third: true, fast: false, rotaryFast: true }, octave: 0 });
+    assert.deepEqual(KEYS_SWITCHES.map((s) => o.switchInputs.get(s.id).checked), [false, true, false, true]);
+    // Pulled out, turned, switched.
+    const d8 = o.keysInputs.get('d8').input;
+    d8.value = '6';
+    d8.fire('input');
+    const tone = o.keysInputs.get('tone').input;
+    tone.value = '30';
+    tone.fire('input');
+    const third = o.switchInputs.get('third');
+    third.checked = false;
+    third.fire('change');
+    assert.deepEqual(calls, [['onKeysKnob', 'd8', 0.75], ['onKeysKnob', 'tone', 0.3], ['onKeysSwitch', 'third', false]]);
+  } finally {
+    remove();
+  }
+});
+
+test('playing at the keys: its button steps away, the others go there, and the hint says how to play them', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    o.playKeys.fire('click');
+    assert.deepEqual(calls, [['onPlayKeys']]);
+    assert.equal(o.playKeys.textContent, 'Play at the keys');
+    assert.equal(o.keysPart.children.indexOf(o.playKeys.parentNode), 0);
+    for (const how of ['mouse', 'touch', 'gamepad', 'tv']) {
+      o.setHint(how, 0);
+      assert.match(o.hint.textContent, /the rack,? or the keys|the rack, the keys/, `${how}: walking, the keys named`);
+    }
+    o.setHint('mouse', 0);
+    o.hideHint();
+    o.setPlaying('keys');
+    assert.deepEqual([o.playKeys.textContent, o.playSynth.textContent, o.play.textContent, o.playRack.textContent], ['Step away from the keys', 'Play at the synth', 'Play at the board', 'Play at the rack']);
+    assert.match(o.hint.textContent, /^Play the keys from A \(white\) and W \(black\), Shift harder, or click them · Z, X: an octave down, up · drag a drawbar, drag or scroll a knob · Esc steps away$/);
+    assert.ok(!o.hint.classList.contains('gone'), 'shown again');
+    for (const [how, words] of [['touch', /^Touch the keys.* drag a drawbar or a knob/], ['gamepad', /A plays the key in the middle, sets a drawbar, presses a button/],
+      ['tv', /^Arrows: choose a key, up and down an octave · OK: play it · Back: step away · Menu: its sounds, drawbars and knobs$/]]) {
+      o.setHint(how, 0);
+      assert.match(o.hint.textContent, words, how);
+    }
+    o.setPlaying('synth');
+    assert.deepEqual([o.playKeys.textContent, o.playSynth.textContent], ['Play at the keys', 'Step away from the synth']);
+    o.setPlaying(null);
+    assert.equal(o.playKeys.textContent, 'Play at the keys');
   } finally {
     remove();
   }

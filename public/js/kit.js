@@ -55,9 +55,10 @@ const CELL = 256;
 const BUTTON = 0.008;
 /**
  * What a hand's reticle shows on near the board (or the synth: its dials and buttons; or the rack: its
- * keys, knobs and buttons), where its laser is a stick.
+ * keys, knobs and buttons; or the keyboard: its drawbars, knobs and buttons), where its laser is a
+ * stick.
  */
-const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton']);
+const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton', 'drawbar', 'keysknob', 'keysbutton']);
 /**
  * A cable: its radius, its plug's length out of the panel and radius, how far it hangs (`sag`, and
  * `sagPer` metre between its ends, to `sagMax`), and how far the one carried reaches from its jack

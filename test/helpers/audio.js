@@ -1,9 +1,10 @@
-// Just enough of Web Audio for sound.js, drums.js, delay.js and synth.js in Node: nodes that keep
-// what they are connected to (and let go of one, or all), params that keep their automation and
+// Just enough of Web Audio for sound.js, drums.js, delay.js, synth.js and keys.js in Node: nodes that
+// keep what they are connected to (and let go of one, or all), params that keep their automation and
 // refuse what a browser would (a time, a value or a time constant that isn't finite, an exponential
 // ramp to 0, a negative time constant), sources that keep when they start and stop (and refuse a
-// second start, or a stop before one), delays that refuse a longest time a browser wouldn't make, and
-// a merger that refuses an input it hasn't. A test sets the context's currentTime itself.
+// second start, or a stop before one), delays that refuse a longest time a browser wouldn't make, a
+// merger that refuses an input it hasn't, and periodic waves that refuse terms a browser would (of
+// two lengths, fewer than two, or not finite). A test sets the context's currentTime itself.
 
 class Param {
   constructor(value) {
@@ -84,6 +85,15 @@ class Source extends Node {
   }
 }
 
+/** A PeriodicWave: its terms as given, and whether it is left as loud as they make it. */
+class Wave {
+  constructor(real, imag, { disableNormalization = false } = {}) {
+    this.real = Float32Array.from(real);
+    this.imag = Float32Array.from(imag);
+    this.normalized = !disableNormalization;
+  }
+}
+
 export class FakeContext {
   /** @param {AudioContextOptions} [options] */
   constructor(options = {}) {
@@ -107,7 +117,19 @@ export class FakeContext {
     n.type = 'sine';
     n.frequency = new Param(440);
     n.detune = new Param(0);
+    n.wave = null;
+    n.setPeriodicWave = (wave) => {
+      if (!(wave instanceof Wave)) throw new TypeError('setPeriodicWave: not a PeriodicWave');
+      n.type = 'custom';
+      n.wave = wave;
+    };
     return n;
+  }
+
+  createPeriodicWave(real, imag, constraints = {}) {
+    if (real.length !== imag.length || real.length < 2) throw new RangeError(`createPeriodicWave: lengths ${real.length} and ${imag.length}`);
+    for (const x of [...real, ...imag]) if (!Number.isFinite(x)) throw new TypeError(`createPeriodicWave: ${x} is not finite`);
+    return new Wave(real, imag, constraints);
   }
 
   createBufferSource() {

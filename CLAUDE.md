@@ -15,10 +15,13 @@ twenty-five knobs and eight presets, played live on every device, and its patch 
 board's (its sound into the delay, the clock into its arpeggiator, the LFO and the filter envelope
 into pitch, cutoff and amp). Beside that its rack, a case of modules: the clock again, a 16-step
 sequencer (a note, an accent and a slide a step) cabled into the synth's NOTES in, a delay of its
-own, and an LFO in time with the clock (its out into the synth's pitch, cutoff or amp). The plan
-the user agreed to ("patch the whole band"): the synth semi-modular, its rack (more modules to
-come), then a keyboard and an electric guitar, all patchable. Add an instrument, or a module, only
-once the user has agreed to it. What makes it this room is
+own, and an LFO in time with the clock (its out into the synth's pitch, cutoff or amp). Left of the
+board the keyboard: sixty-one keys, an organ (nine drawbars, percussion, key click, its scanner's
+chorus, a drive and a rotary speaker) and an electric piano (FM tines that bark played harder, and a
+tremolo), or both, played live on every device; its jacks (a NOTES out, its sound out, a modulation
+in) come next. The plan the user agreed to ("patch the whole band"): the synth semi-modular, its
+rack (more modules to come), then the keyboard and an electric guitar, all patchable. Add an
+instrument, or a module, only once the user has agreed to it. What makes it this room is
 `config.js` (id `instruments`, sign Band Room, 7 × 8 × 3.2 m, a dark wooden floor and clay walls,
 the window in the left wall, port 8100, glow `#5cc8a8`), and `index.html`, `package.json`,
 `.claude/launch.json` and the pictures to match. Like the template it follows the Hallway
@@ -98,7 +101,7 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `onRun()`, `onDrop()` (while `carrying`: Escape, or choosing anything but a control of the desk
   played at or another desk, which `_walkTo`s there with it, `goingTo` set till it arrives; a walk
   taken over drops it), `deskOf(hit)`, `onPick(dc, dr)` (a TV's arrows, `arrowsPick`),
-  `onPlaying(at)` ('board', 'synth', 'rack' or null),
+  `onPlaying(at)` ('board', 'synth', 'rack', 'keys' or null),
   `hoverPad`/`hoverStep`/`hoverKnob`/`hoverJack`, `aim` (the pointer's hit, for a cable carried)
   and `selectHand` (in VR, the hand that last chose: `_xrSelect`). The synth likewise: `castRay`
   adds synthboard.js `hitSynth` (`key`, `dial`, `button`, `jack`; kinds key, dial, button, jack and
@@ -114,12 +117,23 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `onSeqKey(row, s)`, `onRackKnob(k, by)` (a step's note, the tempo, the delay's and the LFO's),
   `onRackButton(i)` (RUN, the octave), `onSeqOctave(by)` (Z, X), `onSeqPick(steps, semitones)` (a
   TV's arrows),
-  `hoverSeqKey`/`hoverRackKnob`/`hoverRackButton`. Common's hooks: `takeKey` (playing: the pads'
-  keys, the synth's, or the steps' (1–8, Q–I; Shift an accent), Space for RUN, Escape a cable
-  carried, else away), `takeWheel` and `takeHand` (a knob, a dial or the rack's knob, eased, the
-  tempo more slowly), and presses on pads, step keys, jacks, RUN, keys, dials, buttons and the
-  rack's keys, knobs and buttons as they go down (`_bindBoard`); keys held let go on keyup, blur,
-  VR and stepping away (`_letGo`).
+  `hoverSeqKey`/`hoverRackKnob`/`hoverRackButton`. The keyboard likewise, its desk `keyboard`
+  (common's `Controls` has `keys`): `castRay` adds keysboard.js `hitKeys` (`keys`, the index for
+  each kind; kinds note, drawbar (`v` where a press in its lane pulls it to), keysknob, keysbutton
+  and keys), `clampWalk` round it too, `walkToKeys` (`at` 'keys'; on a screen narrower than it is
+  high framing C3 to C5, `framedKeys`; in VR `boardStand(keyboard, 0.3)`), `onKeysOn(note,
+  velocity)` and `onKeysOff(note)` (held as the synth's: each `Held` knows which it went to,
+  `_hold`, `_off`), `onKeysTap`, `onDrawbar(id, value)` (a press in its lane; a press on its tab,
+  within `GRIP`, keeps where on it; a drag, `_drag`, `drawbarAlong` where the pointer's ray
+  meets the tabs' tops), `onKeysKnob(id, by)` (a knob, and the wheel or a stick on a drawbar),
+  `onKeysButton(i)`, `onKeysOctave(by)` (Z, X), `onKeysPick(by)` (a TV's arrows), `keysOctave()`
+  and `pulled(id)` (main.js's), `hoverNote`/`hoverDrawbar`/`hoverKeysKnob`/`hoverKeysButton`.
+  Common's hooks: `takeKey` (playing: the pads' keys, the synth's or the keyboard's (`_noteKey`),
+  or the steps' (1–8, Q–I; Shift an accent), Space for RUN, Escape a cable carried, else away),
+  `takeWheel` and `takeHand` (a knob, a dial, the rack's knob, the keyboard's knob or drawbar,
+  eased, the tempo more slowly), and presses on pads, step keys, jacks, RUN, keys, dials, buttons,
+  the rack's keys, knobs and buttons, and the keyboard's keys, drawbars, knobs and buttons as they
+  go down (`_bindBoard`); keys held let go on keyup, blur, VR and stepping away (`_letGo`).
 - The drums: `sound.js` (one AudioContext, `latencyHint: 'interactive'`, made or woken only in a
   press's event, `onReady` once its graph is; a channel per instrument, volume and mute, a
   WaveShaper soft clipper; a note set for a time (`start`), `add(note, group)` cuts a group's last
@@ -152,7 +166,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   synth's then the rack's after the board's; `hang` keeps them off each desk's top and in front of
   its panel; `setCables`, and the one carried, `CABLE.reach` at most: `carry`, `aimAt`,
   `hoverJack`, its ring on any panel), the sign, the sticks and fingertips in VR (`onStrike`,
-  `onStep`; `updateXR`'s `nearAlso`, the synth's keys or the rack's, shows the sticks there too);
+  `onStep`; `updateXR`'s `nearAlso`, the synth's keys, the rack's or the keyboard's, shows the
+  sticks there too; `AIMED`, the controls whose kinds its reticle sits on);
   it imports builder.js and textures.js, so it is not in strict).
 - The synth: `synth.js` (`SECTIONS`; `SYNTH_KNOBS`, 25 knobs 0…1, `DEFAULT_SYNTH`, and their
   curves (`cutoffHz`, `glideSeconds`, …), `synthText` in words, `knobName`; `PRESETS`, four poly
@@ -222,6 +237,34 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `setLast`, `setTempo`, `setDelay`, `setLfo`, `setRunning`, `beat`, `playhead`, `hovered`,
   `update`; in VR `updateXR(hands, fingers, sticks)`, a tip coming down on a key presses it,
   `endXR`; `onKey(row, s, source)`; its cables are kit.js's; not in strict).
+- The keyboard: `keys.js` (strict: `KEYS_COUNT` 61 from `KEYS_LOWEST` 36, `KEYS_OCTAVES` −2…1 (the
+  computer's keys from middle C + 12 × it, so they stay on it); `KEYS_SOUNDS` organ, epiano, both;
+  `KEYS_SECTIONS` drawbars, organ, epiano; `KEYS_KNOBS`, 20 knobs 0…1 (`DRAWBARS`, nine, in
+  eighths: `drawbarStep`, `drawbarLevel`, `DRAWBAR_HARMONICS`, `isDrawbar`), `DEFAULT_KEYS` (88
+  8000 000), their curves (`scannerDepth`, `toneIndex`, `barkIndex`, `pianoDecay`, `tremoloHz`, …),
+  `keysText`, `keysKnobName`, `registration` (the drawbars as an organist writes them),
+  `drawbarWave`; `KEYS_SWITCHES` perc, third, fast, rotaryFast, `DEFAULT_SWITCHES`, `switchWords`;
+  `KEYS_VOICES` 16 a sound, `PERC`, `ROTORS`, `ORGAN_OUT` (the organ's level made up after its
+  drive, as loud as the synth's and the piano's), `ampAt`; `Keys`: the organ (a PeriodicWave a note
+  from the drawbars, a click, the percussion on a phrase's first key, the scanner's chorus, a drive,
+  a rotary speaker's horn and drum each swaying a delay and a gain either side) and the electric
+  piano (FM, its index dying back, more struck harder, a tine at 7×, a damper; the tremolo pans it),
+  each graph made with its first note, into the 'keys' channel; `noteOn` (whether heard),
+  `noteOff`, `tap`, `allOff`, `setSustain`, `setKnob` (a drawbar to its eighth), `setSwitch`,
+  `choose`, `setOctave`, `reset`, `down` and `onNotes`, `name`, `choice`, `switches`, `octave`,
+  `sustain`; kept in `instruments.keys`), `keysboard.js` (pure, strict: `KEYBOARD`'s measures,
+  `layoutKeyboard(L, board)` left of the board, a Desk as board.js's functions take: its keys
+  (synthboard.js `layoutKeys`, as the synth's: `whites`, `blacks`, `bed`), `drawbars` (a tab in a
+  slot, b0…b1), `dials`, `sections`, `row`, `deck`, the panel's display, `buttons` (`sound.<id>`,
+  `switch.<id>`, `sustain`, `octave.down`, `octave.up`) and `titles`, sign; `drawbarAt`,
+  `drawbarValue`, `tabB`, `drawbarAlong` (a ray onto the tabs' tops), `hitKeys`, `framedKeys(K,
+  from, to)` (part of it, to frame on a narrow screen)), and `keyskit.js` (the keyboard in 3D, as
+  the synth's: the stand, one canvas atlas for its faces, drawn once; the keys, the drawbars' tabs
+  (brown, white, black), the knobs and their marks instanced, and the lights (the sound, the
+  switches on, SUSTAIN) in one InstancedMesh; the display's canvas (at most ten times a second); the
+  sign; `setKnobs`, `setKnob`, `setState`, `setDown`, `hovered`, `update`; in VR `updateXR(hands,
+  fingers, sticks, dt)` and `endXR`, as the synth kit's; `onKeyDown(k, velocity, source)`,
+  `onKeyUp(k)`; not in strict).
 - `midi.js` (Web MIDI: `readMidi`, a message from its bytes (on, off, sustain, mod, bend, alloff,
   with its channel), `listenMidi`, asked for only from the card's button, at once when `granted`).
 - `panel.js`: the control panel on the wall (outside's), redrawn only on a change. `overlay.js`: the
@@ -242,10 +285,16 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   comes; `setSeq`; `onSeqKey(row, s)`, `onSeqNote`, `onSeqOctave`, `onClearSeq`, `onResetSeq`),
   Delay (`rackDelayBox`, as the board's: `delayBox`; `setRackDelay`, `onRackDelay`,
   `onResetRackDelay`), LFO (`lfoBox`: rate and shape sliders along their places, depth; `setLfo`,
-  `onLfo`, `onResetLfo`) and its Cables (`rackCablesBox`); and Sound: the volume and Mute, and Play
-  from a MIDI device), the
+  `onLfo`, `onResetLfo`) and its Cables (`rackCablesBox`); Keys (`openKeys`): Play at the keys, its
+  keys as the synth's (`keyRow`, `labelKeys` and `markKeys` serve both; `onKeysDown`/`onKeysUp`/
+  `onKeysTap`), Sound (`keysSoundBox`: Organ, Electric piano or Both, `onKeysSound`; Sustain,
+  `onSustain`; As it comes, `onResetKeys`; the octave, `onKeysOctave`, its notes in words),
+  Drawbars (sliders in eighths, the registration in the legend), Percussion (`percBox`;
+  `switchInputs`, `onKeysSwitch`), the organ's knobs (with Rotary speaker fast) and the piano's
+  (`keysInputs`, `onKeysKnob`); `setKeys`, `setKeysKnobs`, `setKeysNotes`; and Sound: the volume
+  and Mute, and Play from a MIDI device), the
   hint (`#hint`, kept clear of the buttons, `_placeHint`; at the board `BOARD_HINTS`, at the synth
-  `SYNTH_HINTS`, at the rack `RACK_HINTS`, `setPlaying(at)`), Wave,
+  `SYNTH_HINTS`, at the rack `RACK_HINTS`, at the keys `KEYS_HINTS`, `setPlaying(at)`), Wave,
   Copy invite link, Fullscreen, Enter VR, the aiming dot, and toasts (`role="status"`, polite). With
   `tv`, Wave is in the card and the invite is text there (`inviteText`), and the hints are the
   remote's (`tv`, `tv-card`). With pieces, the hints name the pictures (`PIECE_HINTS`, else an
@@ -264,9 +313,10 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `access.js`: `applyAccess`, `setAccess`, re-read on `storage` and `pageshow`; the `reduce-motion`
   class on `<html>`), the TV (common's `tv.js`: `tvMode()`, the `tv` class on `<html>`, a `Remote`
   over the card and the canvas with `use` = `controls.useMiddle()`, or the selected pad, or the
-  chosen key (`chosenKey`, from the arrows), or the chosen step (`chosenStep`) while playing, `step`
-  = `stepBack`, the room's own step back for Back (away from an instrument), and `first`, the steps,
-  the synth's sounds or the sequencer's steps while playing; the card's play buttons leave the card
+  chosen key (`chosenKey`, from the arrows), the chosen step (`chosenStep`) or the keyboard's chosen
+  note (`chosenNote`) while playing, `step` = `stepBack`, the room's own step back for Back (away
+  from an instrument), and `first`, the steps, the synth's sounds, the sequencer's steps or the
+  keyboard's sounds while playing; the card's play buttons leave the card
   before walking, so arriving (at once with less
   motion) forgets it; `answerApp`; no fullscreen or XR), the drums (`play(i,
   velocity)`, `select(i)`, `setKnob`, the overlay's and the controls' callbacks, the kit's strikes
@@ -295,9 +345,15 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `tapNote`, `keyDown(k, v)`/`keyUp(k)` by key, its note kept in `keyNotes` while held;
   `chooseSound`, `resetSynth`, `setSynthKnob`, `setMono`, `setOctave`, `setArp`, `setHold`,
   `setRange`, shown on the synth and in the card; the controls', the card's and the synth kit's
-  callbacks, the panel's buttons said in a toast), MIDI (channel 10 the drums', the
-  others the synth's, or the drums' while `playingAt` the board; sustain, mod, bend and all off the
-  synth's), and the frame loop.
+  callbacks, the panel's buttons said in a toast), the keyboard (`keys`; `keysOn`, `keysOff`,
+  `tapKeys`, `chooseKeys`, `setKeysKnob` (`pulls`, where each was turned to, so turns smaller than
+  a drawbar's eighth add up; `turnKeysKnob`), `setKeysSwitch`, `setSustain`, `setKeysOctave`,
+  `resetKeys`, shown on the keyboard and in the card (`showKeys`, `showKeysKnobs`,
+  `showKeysNotes`); the controls', the card's and the keys kit's callbacks, the panel's buttons said
+  in a toast, `switchWords`), MIDI (channel 10 the drums', the others the synth's, or the drums'
+  while `playingAt` the board, or the keyboard's while at the keys (`midiKeys`: a note's off goes
+  where its on went); the sustain pedal where it went down (`pedalOnKeys`); mod and bend the
+  synth's; all off both), and the frame loop.
 - `style.css`: the page over the view (a cable's choice under its input's name where the longest
   wouldn't fit beside it; the sequencer's rows, `.seq-step`), and the 10-foot view under `html.tv`
   (the hallway's: 960 × 540 at a pixel
@@ -317,7 +373,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   served. `strict` comes a file at a time: `tsconfig.strict.json` (it, with `strict` on) includes
   only the files that pass it, `config.js`, `presence.js`, `room.js`, `controls.js`, `sound.js`,
   `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`, `board.js`, `midi.js`, `synth.js`,
-  `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js` and `lfo.js` so far, and
+  `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js`, `lfo.js`, `keys.js` and `keysboard.js` so
+  far, and
   `test/types.test.js` runs it too. A file joins its `include` when a change makes it pass; what an
   included file imports is checked strictly with it. The rest has a few hundred errors with it,
   mostly untyped parameters and values that may be null (a canvas's 2D context). `tools/` and
@@ -331,7 +388,10 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `setSynthKnob(id, value)`, `setMono(on)`, `setOctave(o)`, `setArp(mode)`, `setHold(on)`,
   `setRange(n)`, seq, rackDesk, rackKit, `toggleSeqKey(row, s)`, `setSeqNote(s, n)`,
   `setSeqOctave(o)`, `clearSeq()`, `resetSeq()`, rackDelay, `setRackDelayKnob(name, value)`, lfo,
-  `setLfoKnob(name, value)`, `chosenKey`, `chosenStep`, `carried`, access,
+  `setLfoKnob(name, value)`, keys, keysDesk, keysKit, `keysOn(note, v)`, `keysOff(note)`,
+  `tapKeys(note, v)`, `chooseKeys(id)`, `setKeysKnob(id, value)`, `setKeysSwitch(id, on)`,
+  `setSustain(on)`, `setKeysOctave(o)`, `resetKeys()`, `chosenKey`, `chosenStep`, `chosenNote`,
+  `carried`, access,
   `preview()`, `social()`, `tick(dt, n)`, `ready`,
   true once the pieces' pictures have loaded or failed). Tests fake Web Audio with
   `test/helpers/audio.js` (`FakeContext`, whose params refuse what a browser's would) and the page

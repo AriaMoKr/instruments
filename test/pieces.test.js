@@ -153,15 +153,15 @@ test('the hints name the pictures, and on a TV the dot on one says what OK does 
       assert.doesNotMatch(empty.hint.textContent, /picture/, how);
       assert.match(o.hint.textContent, /a picture/, how);
     }
-    assert.equal(empty.hint.textContent.split('\n')[0], 'Arrows: walk and turn · OK: the drums, the synth, the rack, the doorway or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session');
-    assert.match(o.hint.textContent, /^Arrows: walk and turn · OK: the drums, the synth, the rack, the doorway, a picture or the panel in the middle · Menu or hold Back: /);
+    assert.equal(empty.hint.textContent.split('\n')[0], 'Arrows: walk and turn · OK: the drums, the synth, the rack, the keys, the doorway or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session');
+    assert.match(o.hint.textContent, /^Arrows: walk and turn · OK: the drums, the synth, the rack, the keys, the doorway, a picture or the panel in the middle · Menu or hold Back: /);
     // The dot on one: where its link goes, else up to it; off it, the hint as it was.
     o.setAimed(1);
     assert.match(o.hint.textContent, /^Arrows: walk and turn · OK: The studio · Menu or hold Back: .*\nWith TalkBack: /);
     o.setAimed(0);
     assert.match(o.hint.textContent, / · OK: walk up to Still life · /);
     o.setAimed(-1);
-    assert.match(o.hint.textContent, / · OK: the drums, the synth, the rack, the doorway, a picture or the panel in the middle · /);
+    assert.match(o.hint.textContent, / · OK: the drums, the synth, the rack, the keys, the doorway, a picture or the panel in the middle · /);
     // Faded, the hint comes back for a piece, stays from one to the next, and fades when the dot leaves.
     o.hideHint();
     o.setAimed(1);
@@ -171,7 +171,7 @@ test('the hints name the pictures, and on a TV the dot on one says what OK does 
     assert.ok(!o.hint.classList.contains('gone'));
     o.setAimed(-1);
     assert.ok(o.hint.classList.contains('gone') && o.hint.getAttribute('aria-hidden') === 'true');
-    assert.match(o.hint.textContent, / · OK: the drums, the synth, the rack, the doorway, a picture or the panel in the middle · /, 'still the view’s description');
+    assert.match(o.hint.textContent, / · OK: the drums, the synth, the rack, the keys, the doorway, a picture or the panel in the middle · /, 'still the view’s description');
     // In the card, its own hint, whatever the dot was on.
     o.setHint('tv-card', 0);
     o.setAimed(1);
