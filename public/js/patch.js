@@ -1,20 +1,24 @@
 // The patch, as on a modular synth: the jacks on the room's modules (the clock's outputs, the
-// drums' clock input and an output for each pad's sound, the delay's input) and the cables between
-// them. A cable runs from an output to an input of its kind, a clock's pulses or sound; an input
-// takes one cable at most, so plugging in another pulls the first out, and an output may feed any
-// number. The page draws the cables and connects the sound as they change (onChange). The patch is
-// kept for the next visit (localStorage) at every change, an input left empty on purpose too.
+// drums' clock input and an output for each pad's sound, the delay's input; and the synth's patch
+// bay, its sound out, its arpeggiator's clock in, its LFO and filter envelope out and its pitch,
+// cutoff and amp in) and the cables between them. A cable runs from an output to an input of its
+// kind, a clock's pulses, sound, or a modulation (a voltage that moves something, as an LFO's does);
+// an input takes one cable at most, so plugging in another pulls the first out, and an output may
+// feed any number. The page draws the cables and connects the sound as they change (onChange). The
+// patch is kept for the next visit (localStorage) at every change, an input left empty on purpose too.
 import { PADS } from './drums.js';
 import { pageStorage } from './sound.js';
 
 /** @typedef {import('./sound.js').Store} Store */
 
 /**
- * A jack: its id, the module it is on ('clock', 'drums', 'delay'), its name in words (the page's list
- * of cables, screen readers), its label (short, printed by it on the board), whether signals come out of
- * it or go in, and what kind they are.
- * @typedef {{ id: string, module: string, name: string, label: string, dir: 'in' | 'out', kind: 'clock' | 'audio' }} Jack
+ * A jack: its id, the module it is on ('clock', 'drums', 'delay', 'synth'), its name in words (the
+ * page's list of cables, screen readers), its label (short, printed by it on the board or the synth),
+ * whether signals come out of it or go in, and what kind they are.
+ * @typedef {{ id: string, module: string, name: string, label: string, dir: 'in' | 'out', kind: JackKind }} Jack
  */
+
+/** What a jack carries: a clock's pulses, sound, or a modulation. @typedef {'clock' | 'audio' | 'mod'} JackKind */
 
 /**
  * A cable: the output it comes from and the input it goes into.
@@ -28,7 +32,13 @@ import { pageStorage } from './sound.js';
  */
 const padJack = (p) => ({ id: `pad.${p.id}`, module: 'drums', name: `${p.name} out`, label: p.name, dir: 'out', kind: 'audio' });
 
-/** Every jack in the room: the clock's outputs, the drums' clock input and pads' outputs, the delay's input. @type {readonly Jack[]} */
+/**
+ * Every jack in the room: the clock's outputs, the drums' clock input and pads' outputs, the delay's
+ * input; then the synth's patch bay, its sound out, its arpeggiator's clock in, its two modulations
+ * out (the LFO, and each voice's filter envelope) and the three places they can go in (the pitch,
+ * the filter's cutoff, the amp).
+ * @type {readonly Jack[]}
+ */
 export const JACKS = Object.freeze([
   { id: 'clock.x1', module: 'clock', name: 'Clock out, every step', label: '×1', dir: 'out', kind: 'clock' },
   { id: 'clock.d2', module: 'clock', name: 'Clock out, every 2nd step', label: '÷2', dir: 'out', kind: 'clock' },
@@ -36,13 +46,21 @@ export const JACKS = Object.freeze([
   { id: 'drums.clock', module: 'drums', name: 'Drums clock in', label: 'CLOCK', dir: 'in', kind: 'clock' },
   ...PADS.map(padJack),
   { id: 'delay.in', module: 'delay', name: 'Delay in', label: 'IN', dir: 'in', kind: 'audio' },
+  { id: 'synth.out', module: 'synth', name: 'Synth out', label: 'OUT', dir: 'out', kind: 'audio' },
+  { id: 'synth.clock', module: 'synth', name: 'Arpeggiator clock in', label: 'CLOCK', dir: 'in', kind: 'clock' },
+  { id: 'synth.lfo', module: 'synth', name: 'LFO out', label: 'LFO', dir: 'out', kind: 'mod' },
+  { id: 'synth.env', module: 'synth', name: 'Filter envelope out', label: 'ENV', dir: 'out', kind: 'mod' },
+  { id: 'synth.pitch', module: 'synth', name: 'Pitch in', label: 'PITCH', dir: 'in', kind: 'mod' },
+  { id: 'synth.cutoff', module: 'synth', name: 'Cutoff in', label: 'CUTOFF', dir: 'in', kind: 'mod' },
+  { id: 'synth.amp', module: 'synth', name: 'Amp in', label: 'AMP', dir: 'in', kind: 'mod' },
 ]);
 
 /**
- * The patch the room comes with: input id → the output plugged into it. The clock into the drums.
+ * The patch the room comes with: input id → the output plugged into it. The clock into the drums
+ * and into the synth's arpeggiator.
  * @type {Readonly<Record<string, string>>}
  */
-export const DEFAULT_PATCH = Object.freeze({ 'drums.clock': 'clock.x1' });
+export const DEFAULT_PATCH = Object.freeze({ 'drums.clock': 'clock.x1', 'synth.clock': 'clock.x1' });
 
 /**
  * The pad (its index in PADS) whose sound comes out of jack `id`, else -1.

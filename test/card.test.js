@@ -2,10 +2,10 @@
 // (and once, for a key or a screen reader), in the board's rows; the clock's Start and tempo; the
 // steps of the pad last played as toggles, the one playing marked; its knobs and the delay's as
 // sliders with their settings in words; the cables as a choice for each input. The synth: its keys,
-// each sounding while pressed, one stop among them; its sounds (the presets, Mono, the octave) and
-// its knobs, a section each. Sound: the volume, Mute, and MIDI where there is Web MIDI. Playing at
-// the board or the synth and stepping away, with its hint; and all three kept, open, where there is
-// no 3D view.
+// each sounding while pressed, one stop among them; its sounds (the presets, Mono, the octave), its
+// arpeggiator, its knobs, a section each, and its cables. Sound: the volume, Mute, and MIDI where
+// there is Web MIDI. Playing at the board or the synth and stepping away, with its hint; and all
+// three kept, open, where there is no 3D view.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
@@ -15,6 +15,7 @@ import { STEPS } from '../public/js/pattern.js';
 import { DELAY_KNOBS, MAX_STEPS, delayText } from '../public/js/delay.js';
 import { JACKS, Patch } from '../public/js/patch.js';
 import { DEFAULT_SYNTH, KEYS, LOWEST, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack, noteName, spokenNote, synthText } from '../public/js/synth.js';
+import { ARP_MODES, ARP_RANGES } from '../public/js/arp.js';
 import { installDom } from './helpers/dom.js';
 
 const way = { url: 'https://ariamokr.github.io/hallway/?from=instruments', label: '← Hallway', title: 'Back to the Hallway' };
@@ -25,9 +26,12 @@ async function card(options = {}) {
   const o = new Overlay({ ...ROOM, pieces: [] }, way, options);
   const calls = [];
   for (const name of ['onPad', 'onPlay', 'onKnob', 'onResetKnobs', 'onVolume', 'onMute', 'onMidi', 'onRun', 'onTempo', 'onStep', 'onClearSteps', 'onResetPattern', 'onDelay', 'onResetDelay', 'onPlug',
-    'onPlaySynth', 'onKeyDown', 'onKeyUp', 'onKeyTap', 'onPreset', 'onMono', 'onOctave', 'onSynthKnob', 'onResetSynth']) o[name] = (...args) => calls.push([name, ...args]);
+    'onPlaySynth', 'onKeyDown', 'onKeyUp', 'onKeyTap', 'onPreset', 'onMono', 'onOctave', 'onSynthKnob', 'onResetSynth', 'onArp', 'onHold', 'onRange']) o[name] = (...args) => calls.push([name, ...args]);
   return { o, calls };
 }
+
+/** The arpeggiator off, as it comes. */
+const OFF = { mode: null, range: 1, hold: false };
 
 /** The indices of the buttons with class c. */
 const marked = (buttons, c) => buttons.flatMap((b, i) => (b.classList.contains(c) ? [i] : []));
@@ -189,7 +193,7 @@ test('the delay: its time a slider in steps, its feedback and level in percent, 
   }
 });
 
-test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is', async () => {
+test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is; the board\'s with the drums, the synth\'s with it', async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
@@ -200,16 +204,23 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
       assert.equal(select.parentNode.children[0].textContent, j.name, 'its label');
       const options = select.children.map((c) => [c.getAttribute('value'), c.textContent]);
       assert.deepEqual(options, [['', 'Nothing'], ...JACKS.filter((x) => x.dir === 'out' && x.kind === j.kind).map((x) => [x.id, x.name])]);
+      const [here, there] = j.module === 'synth' ? [o.synthCablesBox, o.cablesBox] : [o.cablesBox, o.synthCablesBox];
+      assert.deepEqual([here.findAll((c) => c === select).length, there.findAll((c) => c === select).length], [1, 0], j.id);
     }
+    assert.ok(o.plugs.get('delay.in').children.some((c) => c.getAttribute('value') === 'synth.out'), 'the synth\'s sound into the delay too');
+    assert.deepEqual(o.plugs.get('synth.pitch').children.map((c) => c.textContent), ['Nothing', 'LFO out', 'Filter envelope out']);
     const patch = new Patch({ storage: null });
     patch.plug('pad.snare', 'delay.in');
+    patch.plug('synth.lfo', 'synth.cutoff');
     o.setPatch(patch);
-    assert.deepEqual([o.plugs.get('drums.clock').value, o.plugs.get('delay.in').value], ['clock.x1', 'pad.snare']);
+    assert.deepEqual(['drums.clock', 'delay.in', 'synth.clock', 'synth.pitch', 'synth.cutoff'].map((id) => o.plugs.get(id).value), ['clock.x1', 'pad.snare', 'clock.x1', '', 'synth.lfo']);
     o.plugs.get('drums.clock').value = 'clock.d4';
     o.plugs.get('drums.clock').fire('change');
     o.plugs.get('delay.in').value = '';
     o.plugs.get('delay.in').fire('change');
-    assert.deepEqual(calls, [['onPlug', 'drums.clock', 'clock.d4'], ['onPlug', 'delay.in', null]]);
+    o.plugs.get('synth.amp').value = 'synth.env';
+    o.plugs.get('synth.amp').fire('change');
+    assert.deepEqual(calls, [['onPlug', 'drums.clock', 'clock.d4'], ['onPlug', 'delay.in', null], ['onPlug', 'synth.amp', 'synth.env']]);
   } finally {
     remove();
   }
@@ -315,7 +326,7 @@ test('the synth\'s sounds: the presets a choice (poly, then mono), Mono, As it c
       assert.deepEqual([input.getAttribute('type'), input.getAttribute('name')], ['radio', 'synth-preset']);
       assert.equal(input.parentNode.textContent, p.mono ? `${p.name} (mono)` : p.name);
     }
-    o.setSynth({ name: 'Acid', preset: 'acid', mono: true, octave: -1, lowest: LOWEST - 12 });
+    o.setSynth({ name: 'Acid', preset: 'acid', mono: true, octave: -1, lowest: LOWEST - 12, arp: OFF });
     assert.equal(o.presetsBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Sound: Acid');
     assert.deepEqual(PRESETS.filter((p) => o.presetInputs.get(p.id).checked).map((p) => p.id), ['acid']);
     assert.equal(o.monoInput.checked, true);
@@ -336,9 +347,42 @@ test('the synth\'s sounds: the presets a choice (poly, then mono), Mono, As it c
     o.resetSynth.fire('click');
     assert.deepEqual(calls, [['onPreset', 'pad'], ['onPreset', 'acid'], ['onMono', false], ['onOctave', 1], ['onResetSynth']]);
     // Changed since: none chosen.
-    o.setSynth({ name: 'Acid, changed', preset: null, mono: true, octave: 0, lowest: LOWEST });
+    o.setSynth({ name: 'Acid, changed', preset: null, mono: true, octave: 0, lowest: LOWEST, arp: OFF });
     assert.ok(PRESETS.every((p) => !o.presetInputs.get(p.id).checked));
     assert.equal(o.keys[0].getAttribute('aria-label'), spokenNote(LOWEST));
+  } finally {
+    remove();
+  }
+});
+
+test('the synth\'s arpeggiator: off or one of its ways, Hold and the octaves it plays over, as the synth is', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.deepEqual([o.arpBox.tagName, o.arpBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent], ['FIELDSET', 'Arpeggiator']);
+    assert.equal(o.synth.children.indexOf(o.arpBox), o.synth.children.indexOf(o.presetsBox) + 1, 'after its sounds');
+    assert.deepEqual([...o.arpInputs.keys()], ['', ...ARP_MODES.map((m) => m.id)]);
+    assert.deepEqual([...o.arpInputs.values()].map((i) => [i.getAttribute('type'), i.getAttribute('name'), i.parentNode.textContent]), [
+      ['radio', 'synth-arp', 'Off'], ['radio', 'synth-arp', 'Up'], ['radio', 'synth-arp', 'Down'], ['radio', 'synth-arp', 'Up and down'], ['radio', 'synth-arp', 'Random'],
+    ]);
+    const way = () => [...o.arpInputs].filter(([, i]) => i.checked).map(([id]) => id);
+    const synth = { name: 'Brass', preset: 'brass', mono: false, octave: 0, lowest: LOWEST };
+    o.setSynth({ ...synth, arp: { mode: 'updown', range: 2, hold: true } });
+    assert.deepEqual([way(), o.holdInput.checked], [['updown'], true]);
+    assert.deepEqual([o.arpRange.getAttribute('min'), o.arpRange.getAttribute('max'), o.arpRange.value], [String(ARP_RANGES[0]), String(ARP_RANGES.at(-1)), '2']);
+    assert.deepEqual([o.arpRangeOut.textContent, o.arpRange.getAttribute('aria-valuetext')], ['2 octaves', '2 octaves']);
+    o.setSynth({ ...synth, arp: OFF });
+    assert.deepEqual([way(), o.holdInput.checked, o.arpRangeOut.textContent], [[''], false, '1 octave']);
+    // Chosen: a way, off, Hold, the octaves.
+    for (const id of ['up', '']) {
+      o.arpInputs.get(id).checked = true;
+      o.arpInputs.get(id).fire('change');
+    }
+    o.holdInput.checked = true;
+    o.holdInput.fire('change');
+    o.arpRange.value = '3';
+    o.arpRange.fire('input');
+    assert.deepEqual(calls, [['onArp', 'up'], ['onArp', null], ['onHold', true], ['onRange', 3]]);
   } finally {
     remove();
   }
@@ -486,7 +530,7 @@ test('with no 3D view, the drums, the synth and the sound stay in the card, open
     assert.equal(o.synth.findAll((c) => c === o.playSynth).length, 0);
     assert.equal(o.drums.findAll((c) => c.className === 'pad').length, PADS.length);
     for (const box of [o.clockBox, o.stepsBox, o.knobsBox, o.delayBox, o.cablesBox]) assert.equal(o.drums.findAll((c) => c === box).length, 1, 'the clock, the steps, the knobs, the delay and the cables too');
-    for (const box of [o.keyboard, o.presetsBox, ...o.sectionBoxes]) assert.equal(o.synth.findAll((c) => c === box).length, 1, 'the keys, the sounds and the knobs');
+    for (const box of [o.keyboard, o.presetsBox, o.arpBox, ...o.sectionBoxes, o.synthCablesBox]) assert.equal(o.synth.findAll((c) => c === box).length, 1, 'the keys, the sounds, the arpeggiator, the knobs and the cables');
   } finally {
     remove();
   }

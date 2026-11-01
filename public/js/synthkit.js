@@ -5,18 +5,21 @@
 // the card's, a MIDI keyboard's), a little lighter pointed at (or chosen with a TV's arrows); its
 // dials, turned to the knobs, with a line on each; the names of the dials and of their sections on
 // the top behind the keys, and the panel's face with its buttons' caps standing out of it, their names
-// on them (one canvas, drawn once); the display on the panel (the sound, mono or poly, the keys' notes,
-// the knob turned last and how it is set), redrawn when it changes, at most ten times a second; a light
-// on the preset chosen and on Mono; and its sign on the wall over it. In VR a stick's tip (kit.js's
-// sticks, which show near it too) or a forefinger going down into a key plays it, as hard as it went,
-// and holds it until it comes up out of it; sliding off it onto the next, still down, plays that one.
-// Per frame nothing is allocated.
+// on them, and its patch bay's jacks as the board's are (kit.js: its outs on a plate, the cables
+// kit.js's too) (one canvas, drawn once); the display on the panel (the sound, mono or poly, the keys'
+// notes, the arpeggiator, the knob turned last and how it is set), redrawn when it changes, at most ten
+// times a second; a light on the preset chosen, on Mono, on the way the arpeggiator plays and on HOLD;
+// and its sign on the wall over it. In VR a stick's tip (kit.js's sticks, which show near it too) or a
+// forefinger going down into a key plays it, as hard as it went, and holds it until it comes up out of
+// it; sliding off it onto the next, still down, plays that one. Per frame nothing is allocated.
 import * as THREE from 'three';
 import { Builder } from './builder.js';
-import { boardPoint, panelPoint } from './board.js';
+import { BOARD, boardPoint, panelPoint } from './board.js';
 import { SYNTH, keyUnder, keyVelocity } from './synthboard.js';
 import { DEFAULT_SYNTH, KEYS, knobName, noteName } from './synth.js';
-import { STICK, canvas, context, fit, lin, signPlate, texture, times } from './kit.js';
+import { ARP_MODES } from './arp.js';
+import { JACKS } from './patch.js';
+import { STICK, canvas, context, drawJack, drawPlate, fit, lin, signPlate, texture, times } from './kit.js';
 import { GOLD, SANS } from './textures.js';
 
 /** @typedef {import('./synthboard.js').SynthDesk} SynthDesk */
@@ -26,7 +29,7 @@ import { GOLD, SANS } from './textures.js';
 const WOOD = lin('#3b2a1d'), TOP = lin('#23211f'), RIM = lin('#151413');
 /** The keys' colours (linear): ivory and ebony, and the room's glow a key sounding takes. */
 const IVORY = lin('#ece6da'), EBONY = lin('#1c1a18'), GLOW = lin('#5cc8a8');
-/** The lights on the preset chosen and on Mono: off, on (linear). */
+/** The lights on the preset chosen, on Mono, on the way the arpeggiator plays and on HOLD: off, on (linear). */
 const LIGHT = { off: lin('#2a1d18'), on: lin('#f2b648') };
 /** How hard a key slid onto, still down, is played (a glissando). */
 const GLISS = 0.6;
@@ -38,8 +41,8 @@ const ATLAS = 2048;
 /**
  * What is drawn once, on one canvas: the top behind the keys (its rows' sections named under them
  * with a line across each, the dials' names) over the panel's face (the display's frame, the names
- * over the buttons, each button's cap with its name, the synth's own). `deck` and `panel`: where
- * each is, in the canvas's rows.
+ * over the buttons and the jacks, the patch bay's jacks, each button's cap with its name, the
+ * synth's own). `deck` and `panel`: where each is, in the canvas's rows.
  * @param {SynthDesk} S
  */
 function faces(S) {
@@ -87,9 +90,34 @@ function faces(S) {
   g.roundRect(x(S2.a0) - 6, panelY(S2.b1) - 6, x(S2.a1) - x(S2.a0) + 12, panelY(S2.b0) - panelY(S2.b1) + 12, 12);
   g.fill();
   g.stroke();
-  g.fillStyle = GOLD;
+  for (const t of P.titles) {
+    const y = panelY(t.b);
+    g.fillStyle = GOLD;
+    g.font = `600 ${Math.round(0.0105 * k)}px ${SANS}`;
+    g.fillText(t.text, x(t.a), y);
+    if (t.a0 === undefined || t.a1 === undefined) continue;
+    // Over a span: a line along it either side of the name, its ends turned down to what it names.
+    const half = g.measureText(t.text).width / 2 + 12;
+    g.strokeStyle = 'rgba(224,187,114,0.5)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(x(t.a0), y + 8);
+    g.lineTo(x(t.a0), y);
+    g.lineTo(x(t.a) - half, y);
+    g.moveTo(x(t.a) + half, y);
+    g.lineTo(x(t.a1), y);
+    g.lineTo(x(t.a1), y + 8);
+    g.stroke();
+  }
+  // The patch bay's jacks, as the board's: the outputs on a plate, each with what it is under it.
+  drawPlate(g, P.jacks.filter((j) => j.out), x, panelY, k);
+  const r = BOARD.panel.jack * k;
   g.font = `600 ${Math.round(0.0105 * k)}px ${SANS}`;
-  for (const t of P.titles) g.fillText(t.text, x(t.a), panelY(P.titlesB));
+  for (const j of P.jacks) {
+    drawJack(g, x(j.a), panelY(j.b), r);
+    g.fillStyle = '#efe5cf';
+    g.fillText(JACKS.find((J) => J.id === j.id)?.label ?? '', x(j.a), panelY(j.b - BOARD.panel.jack - 0.011));
+  }
   for (const b of P.buttons) {
     const bx = x(b.a0), by = panelY(b.b1), bw = x(b.a1) - bx, bh = panelY(b.b0) - by;
     g.fillStyle = '#3d3934';
@@ -101,8 +129,8 @@ function faces(S) {
     fit(g, b.label, bw - 14, Math.round((sign ? 0.026 : 0.0092) * k), sign ? '500' : '600');
     g.fillText(b.label, bx + bw / 2, by + bh * (sign ? 0.5 : 0.64));
   }
-  // Its own name, at the foot of the panel's right.
-  const R = P.buttons[P.buttons.length - 1];
+  // Its own name, at the foot of the panel's right, under the octave's buttons.
+  const R = P.buttons.find((b) => b.id === 'octave.up') ?? P.buttons[0];
   g.fillStyle = GOLD;
   g.font = `italic 600 ${Math.round(0.0115 * k)}px ${SANS}`;
   g.textAlign = 'right';
@@ -273,10 +301,19 @@ export class SynthKit {
     display.name = 'synth display';
     panel.add(display);
 
-    // The lights: on each preset's cap, and Mono's.
-    const lamps = S.panel.buttons.filter((b) => b.id === 'mono' || b.id.startsWith('preset.'));
-    /** @private what each light shows: a preset chosen (its id), or Mono (null) */
-    this._lightFor = lamps.map((b) => (b.id === 'mono' ? null : b.id.slice('preset.'.length)));
+    // The lights: on each preset's cap, Mono's, each of the arpeggiator's ways and HOLD (not RANGE,
+    // which goes round its octaves: the display shows them).
+    const lamps = S.panel.buttons.filter((b) => b.id !== 'arp.range' && /^(mono|preset\.|arp\.)/.test(b.id));
+    /**
+     * @private what each light shows: a preset chosen (`id` its id), Mono, a way the arpeggiator plays
+     * (its id), or HOLD
+     * @type {{ on: 'preset' | 'mono' | 'arp' | 'hold', id: string }[]}
+     */
+    this._lightFor = lamps.map((b) => {
+      if (b.id === 'mono') return { on: 'mono', id: '' };
+      if (b.id === 'arp.hold') return { on: 'hold', id: '' };
+      return b.id.startsWith('arp.') ? { on: 'arp', id: b.id.slice('arp.'.length) } : { on: 'preset', id: b.id.slice('preset.'.length) };
+    });
     this.lights = new THREE.InstancedMesh(new THREE.CircleGeometry(0.0042, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial(), lamps.length);
     this.lights.name = 'synth lights';
     this.group.add(this.lights);
@@ -304,12 +341,16 @@ export class SynthKit {
     this._at = new THREE.Vector3();
     /** @private */
     this._under = { key: -1, over: -1, h: 0, top: 0 };
-    /** @private what the display shows: the sound, mono, the keys' notes, the knob turned last */
-    this._shown = { name: '', mono: false, keys: '', last: '' };
+    /** @private what the display shows: the sound, mono, the keys' notes, the arpeggiator, the knob turned last */
+    this._shown = { name: '', mono: false, keys: '', arp: '', last: '' };
     /** @private the preset chosen (its id), else null */
     this._preset = /** @type {string | null} */ (null);
     /** @private */
     this._mono = false;
+    /** @private the way the arpeggiator plays (its id), else null: off; and HOLD */
+    this._arpMode = /** @type {string | null} */ (null);
+    /** @private */
+    this._hold = false;
     /** @private */
     this._displayDirty = true;
     /** @private seconds since the display was drawn */
@@ -358,18 +399,24 @@ export class SynthKit {
   }
 
   /**
-   * The sound (synth.js Synth name), mono or poly, the preset chosen (its id, else null) and the
-   * lowest key's note: on the display (the keys' notes), and the lights.
-   * @param {{ name: string, mono: boolean, preset: string | null, lowest: number }} state
+   * The sound (synth.js Synth name), mono or poly, the preset chosen (its id, else null), the lowest
+   * key's note and the arpeggiator (the way it plays, else null, its octaves and HOLD): on the display
+   * (the keys' notes; the arpeggiator in short), and the lights.
+   * @param {{ name: string, mono: boolean, preset: string | null, lowest: number, arp: { mode: string | null, range: number, hold: boolean } }} state
    */
-  setState({ name, mono, preset, lowest }) {
+  setState({ name, mono, preset, lowest, arp }) {
     const shown = this._shown, keys = `${noteName(lowest)}–${noteName(lowest + KEYS - 1)}`;
-    if (name !== shown.name || mono !== shown.mono || keys !== shown.keys) this._displayDirty = true;
+    const way = ARP_MODES.find((m) => m.id === arp.mode);
+    const arpText = way ? `ARP ${way.label}  ·  ${arp.range} OCT${arp.hold ? '  ·  HOLD' : ''}` : 'ARP OFF';
+    if (name !== shown.name || mono !== shown.mono || keys !== shown.keys || arpText !== shown.arp) this._displayDirty = true;
     shown.name = name;
     shown.mono = mono;
     shown.keys = keys;
+    shown.arp = arpText;
     this._preset = preset;
     this._mono = mono;
+    this._arpMode = way ? way.id : null;
+    this._hold = arp.hold;
   }
 
   /**
@@ -448,11 +495,17 @@ export class SynthKit {
     if (this._displayDirty && this._displayAge >= 0.1) this._drawDisplay();
   }
 
-  /** The lights as they are now, where they changed: on the preset chosen, and on Mono. Whether any was written. @private */
+  /**
+   * The lights as they are now, where they changed: on the preset chosen, on Mono, on the way the
+   * arpeggiator plays and on HOLD. Whether any was written.
+   * @private
+   */
   _writeLights() {
     let wrote = false;
     for (let l = 0; l < this._lightFor.length; l++) {
-      const id = this._lightFor[l], on = (id === null ? this._mono : id === this._preset) ? 1 : 0;
+      const f = this._lightFor[l];
+      const lit = f.on === 'mono' ? this._mono : f.on === 'hold' ? this._hold : f.on === 'arp' ? f.id === this._arpMode : f.id === this._preset;
+      const on = lit ? 1 : 0;
       if (on === this._lightShown[l]) continue;
       this._lightShown[l] = on;
       const c = on ? LIGHT.on : LIGHT.off;
@@ -462,7 +515,7 @@ export class SynthKit {
     return wrote;
   }
 
-  /** The display: the sound, mono or poly and the keys' notes, and the knob turned last. @private */
+  /** The display: the sound, mono or poly and the keys' notes, the arpeggiator, and the knob turned last. @private */
   _drawDisplay() {
     this._displayDirty = false;
     this._displayAge = 0;
@@ -472,15 +525,19 @@ export class SynthKit {
     g.textAlign = 'left';
     g.textBaseline = 'middle';
     g.fillStyle = '#9ee6b8';
-    fit(g, s.name, w - 40, 58, '700');
-    g.fillText(s.name, 20, h * 0.25);
+    fit(g, s.name, w - 40, 52, '700');
+    g.fillText(s.name, 20, h * 0.2);
     g.fillStyle = '#6fbf93';
-    fit(g, `${s.mono ? 'MONO' : 'POLY'}  ·  KEYS ${s.keys}`, w - 40, 30);
-    g.fillText(`${s.mono ? 'MONO' : 'POLY'}  ·  KEYS ${s.keys}`, 20, h * 0.56);
+    const voices = `${s.mono ? 'MONO' : 'POLY'}  ·  KEYS ${s.keys}`;
+    fit(g, voices, w - 40, 28);
+    g.fillText(voices, 20, h * 0.45);
+    g.fillStyle = s.arp === 'ARP OFF' ? '#3f6f58' : '#6fbf93';
+    fit(g, s.arp, w - 40, 28);
+    g.fillText(s.arp, 20, h * 0.66);
     if (s.last) {
       g.fillStyle = '#efe5cf';
-      fit(g, s.last, w - 40, 30, '500');
-      g.fillText(s.last, 20, h * 0.82);
+      fit(g, s.last, w - 40, 28, '500');
+      g.fillText(s.last, 20, h * 0.87);
     }
     this._displayTexture.needsUpdate = true;
   }

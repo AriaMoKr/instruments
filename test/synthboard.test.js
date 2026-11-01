@@ -1,14 +1,17 @@
 // The synth (synthboard.js): where it stands beside the drum board and what is on it (its keys, its
-// dials in two rows with their names and their sections', and the panel's display and buttons), what
-// a ray meets on it (a black key over the white ones), one walking round it and playing it (all of it
-// in view on a screen; the keys in reach in VR), and a tip down in a key.
+// dials in two rows with their names and their sections', and the panel's display, buttons, patch
+// bay and arpeggiator), what a ray meets on it (a black key over the white ones, a jack), one walking
+// round it and playing it (all of it in view on a screen; the keys in reach in VR), and a tip down in
+// a key.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
 import { EYE, MARGIN, layoutRoom } from '../public/js/room.js';
-import { BOARD, boardBlocks, boardFront, boardPoint, boardStand, clampBoard, layoutBoard, panelPoint } from '../public/js/board.js';
+import { BOARD, boardBlocks, boardFront, boardPoint, boardStand, clampBoard, jackAt, layoutBoard, panelPoint } from '../public/js/board.js';
 import { SYNTH, blackKeyAt, buttonAt, dialAt, hitSynth, keyAt, keyUnder, keyVelocity, layoutSynth } from '../public/js/synthboard.js';
 import { KEYS, LOWEST, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack } from '../public/js/synth.js';
+import { ARP_MODES } from '../public/js/arp.js';
+import { JACKS } from '../public/js/patch.js';
 
 const L = layoutRoom(ROOM);
 const B = layoutBoard(L);
@@ -115,15 +118,45 @@ test('behind the keys, a dial for every knob in two rows, its name under it and 
   assert.equal(dialAt(S, S.dials[0].a, S.bed.b1 - 0.01), -1);
 });
 
-test('on the panel: the display, the presets in two rows (the poly sounds over the mono), Mono and the octave, apart', () => {
+test('on the panel: the display, the presets in two rows (the poly sounds over the mono), Mono and the octave; over them the patch bay and the arpeggiator; apart', () => {
   const P = S.panel, ids = P.buttons.map((b) => b.id);
-  assert.deepEqual(ids, [...PRESETS.map((p) => `preset.${p.id}`), 'mono', 'octave.down', 'octave.up']);
+  assert.deepEqual(ids, [...PRESETS.map((p) => `preset.${p.id}`), 'mono', 'octave.down', 'octave.up', ...ARP_MODES.map((m) => `arp.${m.id}`), 'arp.hold', 'arp.range']);
   for (const [i, b] of P.buttons.entries()) {
-    assert.ok(b.a0 > 0 && b.a1 < S.width && b.b0 > 0 && b.b1 < P.titlesB - 0.01, `${b.id} on the panel, under what is written over it`);
+    assert.ok(b.a0 > 0 && b.a1 < S.width && b.b0 > 0 && b.b1 < P.height - 0.03, `${b.id} on the panel`);
     assert.ok(b.a1 - b.a0 >= 0.04 && b.b1 - b.b0 >= 0.04, `${b.id} large enough to point at`);
     assert.ok(b.a0 > P.display.a1 + 0.02, `${b.id} right of the display`);
     assert.equal(buttonAt(S, (b.a0 + b.a1) / 2, (b.b0 + b.b1) / 2), i);
     for (const o of P.buttons) if (o !== b) assert.ok(o.a0 >= b.a1 + 0.005 || o.a1 <= b.a0 - 0.005 || o.b0 >= b.b1 + 0.005 || o.b1 <= b.b0 - 0.005, `${b.id} apart from ${o.id}`);
+  }
+  // The patch bay: every synth jack in patch.js, once, in its order, after the board's in the room's
+  // list; its outs together on a plate at the left, nearest the board; each clear of the rest.
+  const ring = BOARD.panel.jack * 1.8;
+  assert.deepEqual(P.jacks.map((j) => j.id), JACKS.filter((j) => j.module === 'synth').map((j) => j.id));
+  assert.equal(P.jackBase, B.panel.jacks.length);
+  for (const [n, j] of P.jacks.entries()) {
+    assert.equal(j.out, JACKS.find((J) => J.id === j.id).dir === 'out', j.id);
+    assert.ok(j.a - 0.026 > 0 && j.b - 0.036 > 0 && j.b + 0.024 < P.height, `${j.id} on the panel, its plate too`);
+    assert.equal(jackAt(S, j.a, j.b), n);
+    for (const o of P.jacks) if (o !== j) assert.ok(Math.hypot(o.a - j.a, o.b - j.b) >= BOARD.panel.pitch - 1e-9, `${j.id} apart from ${o.id}`);
+    for (const b of P.buttons) assert.ok(j.a + ring < b.a0 || j.a - ring > b.a1 || j.b - 0.036 > b.b1 || j.b + ring < b.b0, `${j.id} clear of ${b.id}`);
+    assert.ok(j.b - 0.036 > P.display.b1 + 0.01, `${j.id} over the display`);
+  }
+  const outs = P.jacks.filter((j) => j.out), ins = P.jacks.filter((j) => !j.out);
+  assert.ok(Math.max(...outs.map((j) => j.a)) < Math.min(...ins.map((j) => j.a)), 'the outs together, at the left');
+  // What is written over them: the patch bay's name over its jacks, the arpeggiator's over its clock
+  // in and its buttons, each under the panel's top edge; the presets', Mono's and the octave's over
+  // theirs, under the patch bay and the arpeggiator.
+  const bay = P.titles.find((t) => t.text === 'PATCH'), arp = P.titles.find((t) => t.text === 'ARPEGGIATOR');
+  const upper = P.buttons.filter((b) => b.id.startsWith('arp.')), lower = P.buttons.filter((b) => !b.id.startsWith('arp.'));
+  const clock = P.jacks.find((j) => j.id === 'synth.clock');
+  for (const j of P.jacks) if (j !== clock) assert.ok(j.a - 0.026 >= bay.a0 - 1e-9 && j.a + 0.026 <= bay.a1 + 1e-9, `${j.id} in the patch bay`);
+  assert.ok(clock.a - ring > arp.a0 && clock.a + ring < upper[0].a0, "the arpeggiator's clock in, before its buttons");
+  for (const b of upper) assert.ok(b.a0 > arp.a0 && b.a1 <= arp.a1 + 1e-9, `${b.id} under ARPEGGIATOR`);
+  assert.ok(bay.a1 < arp.a0, 'the patch bay, then the arpeggiator');
+  const band = Math.min(...upper.map((b) => b.b0), ...P.jacks.map((j) => j.b - BOARD.panel.jack - 0.016));
+  for (const t of P.titles) {
+    if (t.a0 !== undefined) assert.ok(t.b > Math.max(...upper.map((b) => b.b1), ...P.jacks.map((j) => j.b + ring)) + 0.008 && t.b < P.height - 0.012, t.text);
+    else assert.ok(t.b > Math.max(...lower.map((b) => b.b1)) + 0.01 && t.b < band - 0.01, t.text);
   }
   for (const p of PRESETS) {
     const b = P.buttons[ids.indexOf(`preset.${p.id}`)];
@@ -152,8 +185,13 @@ test('a ray meets the key it points at (a black one over the white), a dial, a b
   }
   for (const [i, b] of S.panel.buttons.entries()) {
     const h = ray(eye, panelPoint(S, (b.a0 + b.a1) / 2, (b.b0 + b.b1) / 2));
-    assert.deepEqual([h?.kind, h?.button, h?.key, h?.dial], ['button', i, -1, -1], b.id);
+    assert.deepEqual([h?.kind, h?.button, h?.key, h?.dial, h?.jack], ['button', i, -1, -1, -1], b.id);
     assert.ok(near(h.nz, S.panel.normal[2]));
+  }
+  // A jack: its index in the room's list of them, after the board's.
+  for (const [j, jack] of S.panel.jacks.entries()) {
+    const h = ray(eye, panelPoint(S, jack.a + 0.01, jack.b));
+    assert.deepEqual([h?.kind, h?.jack, h?.button, h?.key, h?.pad, h?.knob], ['jack', S.panel.jackBase + j, -1, -1, -1, -1], jack.id);
   }
   const D = S.panel.display;
   assert.equal(ray(eye, panelPoint(S, (D.a0 + D.a1) / 2, (D.b0 + D.b1) / 2))?.kind, 'synth', 'the display');

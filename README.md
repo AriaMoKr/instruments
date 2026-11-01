@@ -6,9 +6,9 @@ A room of instruments behind the [Hallway](https://ariamokr.github.io/hallway/)'
 a drum board against the far wall: twelve analog drums, synthesized in the browser as they are
 played, each with its knobs, and a little modular panel: a clock that steps a sixteen-step pattern
 for each pad, and a delay, patched with cables (below, "The drums"). Beside it stands a synth: six
-analog voices, poly or mono, with thirty-seven keys, twenty-five knobs and eight sounds to start
-from (below, "The synth"). Its patch bay, a keyboard and an electric guitar come next, all
-patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
+analog voices, poly or mono, with thirty-seven keys, twenty-five knobs, eight sounds to start from,
+an arpeggiator, and a patch bay of its own, cabled to the board's (below, "The synth"). A keyboard
+and an electric guitar come next, all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
 makes: a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the
 doorway back to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay
 walls, and is a little larger than the template, 7 by 8 metres, to leave room for the instruments
@@ -49,8 +49,9 @@ and the hint says how to play it.
 | Gamepad | the dot on it and A | the dot on RUN and A | the dot on a jack and A, then on another; B puts the cable away |
 | TV remote | in the card: Menu goes to the steps | play/pause | in the card |
 
-A keyboard's play/pause key starts and stops the clock too, anywhere on the page. Choosing anything
-but a control on the board while carrying a cable puts it away.
+A keyboard's play/pause key starts and stops the clock too, anywhere on the page. While you carry a
+cable, the controls of the instrument you play still play, a jack on the synth takes it as one on
+the board does, choosing the synth walks you over with it, and choosing anything else puts it away.
 
 The card's **Drums** has the same twelve pads as buttons, each with its key, the clock, the steps
 and the knobs of the pad last played (**As it comes** sets the knobs back), the delay and the cables
@@ -101,12 +102,13 @@ its colour, with the step playing lit, and pressing one sets it or clears it. Th
 the clock's ×1 patched into the drums and a beat to start from: the kick on every beat, the snare on
 two and four, and the closed hat on every 8th.
 
-A cable goes from an output to an input of its kind: the clock's pulses (in amber) or a pad's sound
-(in the pad's colour). Take one from a jack, and it follows where you point until you plug it into
-another; the jack you point at is ringed in gold, or in grey where it can't go, and a message says
-why. An input takes one cable: taking it from the input pulls it out, still in its output, to plug
-in elsewhere or put away, and plugging a new one into an input pulls the old one out. An output
-feeds any number.
+A cable goes from an output to an input of its kind: the clock's pulses (in amber), a pad's sound
+(in the pad's colour), the synth's (in blue), or the synth's LFO or envelope (in pink: below, "Its
+patch bay"). Take one from a jack, on the board or on the synth, and it follows where you point
+until you plug it into another, on either; the jack you point at is ringed in gold, or in grey where
+it can't go, and a message says why. An input takes one cable: taking it from the input pulls it
+out, still in its output, to plug in elsewhere or put away, and plugging a new one into an input
+pulls the old one out. An output feeds any number.
 
 In the card, **Drums** has the same: **Clock** (Start or Stop, and the tempo), **Steps** (the
 sixteen of the pad last played as toggles, the step playing marked, **Clear**, and **Beat as it
@@ -124,17 +126,18 @@ is heard. A step that fell too far behind while the page stalled is skipped rath
 
 To the right of the board, under a sign that says **Synth**, stands a synth with six analog voices:
 thirty-seven keys along its front, from C3 to C6 to start with, its twenty-five knobs behind them in
-two rows, and at the back a panel with its display (the sound, Mono or poly, the keys' octave, and
-the knob turned last), the eight presets' buttons, **MONO**, and the octave's **−** and **+**. Choose
-it or its sign, as the board, and you walk up to play; on a screen the view comes down over it,
-clear of the card and of the board.
+two rows, and at the back a panel: along its top the patch bay's jacks and the arpeggiator (below,
+"Its patch bay and its arpeggiator"), and under them its display (the sound, Mono or poly, the keys'
+octave, the arpeggiator, and the knob turned last), the eight presets' buttons, **MONO**, and the
+octave's **−** and **+**. Choose it or its sign, as the board, and you walk up to play; on a screen
+the view comes down over it, clear of the card and of the board.
 
-| | Play a key | Turn a knob | A preset, Mono, the octave | Step away |
+| | Play a key | Turn a knob | A button on its panel | Step away |
 |---|---|---|---|---|
-| Desktop | click it and hold (drag along the keys to slide from one to the next), or its key: the row from A plays the white keys from middle C, the row above (W, E, T, Y, U, O, P) the black ones; Shift plays harder | drag it up or down, or scroll over it | click its button; Z and X: an octave down and up | Esc, or walk off |
+| Desktop | click it and hold (drag along the keys to slide from one to the next), or its key: the row from A plays the white keys from middle C, the row above (W, E, T, Y, U, O, P) the black ones; Shift plays harder | drag it up or down, or scroll over it | click it; Z and X: an octave down and up | Esc, or walk off |
 | Phone | touch it and hold, with as many fingers as you like, and slide along them | drag it up or down | tap its button | tap the floor |
-| Headset | press it down with a stick (it shows near the synth too) or a forefinger, as hard as you like, and slide along them; or point at it and pull the trigger | point at it and push the stick up or down | point at its button and pull the trigger | walk off |
-| Gamepad | the dot on it and A | in the card | the dot on its button and A | B |
+| Headset | press it down with a stick (it shows near the synth too) or a forefinger, as hard as you like, and slide along them; or point at it and pull the trigger | point at it and push the stick up or down | point at it and pull the trigger | walk off |
+| Gamepad | the dot on it and A | in the card | the dot on it and A | B |
 | TV remote | the arrows choose a key (up and down an octave), OK plays it | in the card: Menu goes to its sounds | in the card | Back |
 | MIDI keyboard | any channel but 10, the drums' (all of them go to the drums while you play at the board); its sustain pedal, its mod wheel (vibrato) and its pitch bend (two semitones) too | | | |
 
@@ -158,15 +161,39 @@ The knobs are in sections, as on its top:
 
 The presets are four poly sounds (**Pad**, **Strings**, **Brass**, **Pluck**) and four mono ones
 (**Fat Bass**, **Acid**, **Wobble**, **Sweep**). A knob turned after one is a change, said on the
-display; choosing that preset again brings it back as it comes. The knobs, Mono, the preset and the
-octave are kept for the next visit (`instruments.synth`).
+display; choosing that preset again brings it back as it comes. The knobs, Mono, the preset, the
+octave and the arpeggiator are kept for the next visit (`instruments.synth`), and its cables with
+the board's (`instruments.patch`).
 
 The card's **Synth** has the same: its keys as buttons (each sounds while it is pressed; one stop
 among them for a keyboard, the arrows, Home and End going along them; not on a TV, where the remote
-plays the synth's own), the presets, **Mono**, **As it comes** and the octave, and its knobs as
-sliders, a section each. Its sound is made as the drums' are, in the browser as it is played, and
-goes out through **Sound**'s volume with the drums. Patching it (its sound into the delay, the clock
-into an arpeggiator, the LFO into whatever takes it) is its next step.
+plays the synth's own), the presets, **Mono**, **As it comes** and the octave, **Arpeggiator** (off
+or one of its ways, **Hold** and **Range**), its knobs as sliders, a section each, and **Cables**
+(for each of its inputs, the output plugged into it, or nothing; its sound is one of the choices
+for the delay's, under **Drums**). Its sound is made as the drums' are, in the browser as it is
+played, and goes out through **Sound**'s volume with the drums.
+
+### Its patch bay and its arpeggiator
+
+Along the top of the synth's panel, as on a semi-modular synth, are its jacks and its arpeggiator,
+cabled as the board's are (above, "The clock, the pattern and the cables"):
+
+- **Patch**: its outputs, **OUT** (its sound: into the delay's **IN** on the board, it is still
+  heard as it was, with its echoes after it), **LFO** (the triangle its **RATE** sets) and **ENV**
+  (the filter envelope, each voice its own, as its knobs shape it), and its inputs, which either of
+  those moves: **PITCH** (by up to an octave), **CUTOFF** (up to three octaves) and **AMP** (with a
+  cable in it the voices sit at half and swing from there: the LFO a tremolo, the envelope a second
+  shape). Nothing is patched into them as it comes.
+- **Arpeggiator**: its **CLOCK** input, the room's clock's ×1 as it comes (a note a step; ÷2 and ÷4
+  slower), and its buttons. **UP**, **DOWN**, **UP+DN** (the top and the bottom once each way) and
+  **RAND** play the keys held one at a time in that order, as the poly synths of the early 1980s
+  did, each as hard as its key went down; the way lit, pressed again, turns it off. **HOLD** keeps
+  the chord after the keys are let go, until a key goes down with none held, which starts a new
+  one; a key chosen with A, OK or a trigger (or Enter in the card) brings its note into the chord,
+  or takes it out.
+  **RANGE** plays the chord over one, two or three octaves. While the clock isn't running, or
+  nothing is patched into CLOCK, it keeps its own time, 16ths at the clock's tempo, the first note
+  at once. The display says what it plays, and its way and HOLD are lit.
 
 ## Moving about
 
@@ -322,8 +349,9 @@ through its `tv.js`:
   pad, OK plays it, Menu goes to its steps in the card (its knobs, the delay and the cables follow),
   play/pause starts and stops the clock, and Back steps away from the board.
 - At the synth likewise, the card open on it: the arrows choose a key (the one chosen lit; up and
-  down an octave), OK plays it a moment, Menu goes to its sounds in the card (its knobs follow), and
-  Back steps away. The card's keys aren't there on a TV: they would be thirty-seven more stops.
+  down an octave), OK plays it a moment (with the arpeggiator's HOLD, brings it into the chord or
+  takes it out), Menu goes to its sounds in the card (its arpeggiator, its knobs and its cables
+  follow), and Back steps away. The card's keys aren't there on a TV: they would be thirty-seven more stops.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -359,7 +387,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -376,9 +404,8 @@ Nothing is built: the page is served as it is, and the import map stays. What Ty
 library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `tsconfig.strict.json` checks only the files that pass it (so far `config.js`, `presence.js`,
 `room.js`, `controls.js`, `sound.js`, `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`,
-`board.js` and `midi.js`), and `npm test` runs it
-too. A file joins its `include` when a change
-makes it pass. `tools/` and `test/` come later.
+`board.js`, `midi.js`, `synth.js`, `synthboard.js` and `arp.js`), and `npm test` runs it too. A file
+joins its `include` when a change makes it pass. `tools/` and `test/` come later.
 
 To try the way in and out locally, serve the Hallway's checkout as well (on 8088) and open the room
 as its door would:
@@ -411,8 +438,9 @@ Band Room and address, its size and colours, the window in the left wall and the
 8100, the teal glow), with `package.json`, `index.html`, `.claude/launch.json`, the pictures and
 these notes to match; `npm test` checks the page and the package say what the config says. The rest
 of `public/js/` is the template's with the instruments added: `sound.js`, `drums.js`, `clock.js`,
-`pattern.js`, `patch.js`, `delay.js`, `board.js`, `kit.js` and `midi.js` are this room's own, and
-`controls.js`, `overlay.js`, `main.js` and `style.css` take the drums in.
+`pattern.js`, `patch.js`, `delay.js`, `board.js`, `kit.js`, `synth.js`, `arp.js`, `synthboard.js`,
+`synthkit.js` and `midi.js` are this room's own, and `controls.js`, `overlay.js`, `main.js` and
+`style.css` take the instruments in.
 
 The template's fixes come here by merging it: this room's history starts at the template's first
 commit, so with the template as a remote named `template`

@@ -5,16 +5,20 @@
 // dials, as they are called here beside the board's knobs) in two rows, each row's sections spread
 // across it, the oscillator, the LFO and the filter at the back and the envelopes and the output in
 // front (synth.js SECTIONS), each knob's name under it and its section's under those, where the knobs
-// can't hide them; and on the panel a display (what is playing, the octave, the knob turned last),
-// the presets' buttons in two rows of four (the poly sounds over the mono ones), Mono's and the
-// octave's. Pure functions with no three.js, as board.js's, so the tests run them in Node: where it
-// stands and what is on it (layoutSynth), what a ray meets on it (hitSynth: a black key over the
-// white ones), the key at a place on it, and the key a stick's tip or a finger is down in (keyUnder),
-// and how hard it went in (keyVelocity).
+// can't hide them; and on the panel a display (what is playing, the octave, the arpeggiator, the knob
+// turned last), the presets' buttons in two rows of four (the poly sounds over the mono ones), Mono's
+// and the octave's; over those its patch bay (patch.js's synth jacks: its sound, the LFO and the filter
+// envelope out on a plate at the left, nearest the board, the pitch, the cutoff and the amp in) and
+// the arpeggiator (its clock in, a button for each way it plays, HOLD and RANGE). Pure functions with
+// no three.js, as board.js's, so the tests run them in Node: where it stands and what is on it
+// (layoutSynth), what a ray meets on it (hitSynth: a black key over the white ones), the key at a
+// place on it, and the key a stick's tip or a finger is down in (keyUnder), and how hard it went in
+// (keyVelocity).
 //
 // Coordinates as board.js's: on the top `a` from its left edge (world +x), `b` from its front edge
 // up the slope; on the panel `a` likewise, `b` from its foot up its face.
-import { heightOver, meetDesk, writeHit } from './board.js';
+import { heightOver, jackAt, meetDesk, writeHit } from './board.js';
+import { ARP_MODES } from './arp.js';
 import { KEYS, LOWEST, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack } from './synth.js';
 
 /** @type {(v: number, lo: number, hi: number) => number} */
@@ -35,8 +39,11 @@ export const SYNTH = Object.freeze({
   dial: Object.freeze({ r: 0.019, h: 0.02, spacing: 0.066, side: 0.03 }),
   /** Under each row of dials their names (`names` deep), and under those their sections' (`titles` deep); `gap` between the rows. */
   row: Object.freeze({ titles: 0.014, names: 0.014, gap: 0.014 }),
-  /** The panel: `height` up its face, leaning back `lean`, `thick`; its buttons standing `button` out of it. */
-  panel: Object.freeze({ height: 0.17, lean: 0.35, thick: 0.04, button: 0.007 }),
+  /**
+   * The panel: `height` up its face, leaning back `lean`, `thick`; its buttons standing `button` out
+   * of it; the jacks (as large as the board's, board.js BOARD.panel.jack) `pitch` apart along `row`.
+   */
+  panel: Object.freeze({ height: 0.28, lean: 0.35, thick: 0.04, button: 0.007, pitch: 0.062, row: 0.2125 }),
   /** The top's front edge `front` high, leaning back by `tilt`, `thick`; the panel's back `wall` from the wall; `gap` right of the board. */
   front: 0.9, tilt: 0.12, thick: 0.05, wall: 0.08, gap: 0.5,
   /** The sign over it on the wall, as wide as it: from `bottom` to `top` high, `out` from the wall. */
@@ -61,9 +68,16 @@ const ROWS = [['fenv', 'aenv', 'out'], ['osc', 'lfo', 'filter']];
  */
 
 /**
- * A button on the panel: 'preset.<id>' (synth.js PRESETS), 'mono', 'octave.down' or 'octave.up',
- * what is on it, and where.
+ * A button on the panel: 'preset.<id>' (synth.js PRESETS), 'mono', 'octave.down' or 'octave.up';
+ * the arpeggiator's 'arp.<mode>' (arp.js ARP_MODES), 'arp.hold' or 'arp.range'; what is on it, and
+ * where.
  * @typedef {{ id: string, label: string, a0: number, a1: number, b0: number, b1: number }} SynthButton
+ */
+
+/**
+ * What is written on the panel over its buttons and jacks, at (a, b); over a span (a0…a1: the patch
+ * bay's, the arpeggiator's) with a line along it either side.
+ * @typedef {{ text: string, a: number, b: number, a0?: number, a1?: number }} PanelTitle
  */
 
 /**
@@ -72,9 +86,11 @@ const ROWS = [['fenv', 'aenv', 'out'], ['osc', 'lfo', 'filter']];
  * right) and the bed they lie on, its dials (in synth.js SYNTH_KNOBS's order) and their sections
  * (each one's place across, and its row), the two rows (the dials' line, the bands under it where
  * their names and their sections' are), the part of the top behind the keys where those are drawn
- * (`deck`); on the panel its display, its buttons and what is written over them; and its sign.
+ * (`deck`); on the panel its display, its buttons, its jacks (as the board's, in patch.js JACKS's
+ * order; in the room's list of jacks after the board's, from `jackBase`) and what is written over
+ * them; and its sign.
  * @param {{ z1: number }} L the room's layout (room.js layoutRoom)
- * @param {{ x1: number }} B the drum board's (board.js layoutBoard)
+ * @param {{ x1: number, panel: { jacks: readonly unknown[] } }} B the drum board's (board.js layoutBoard)
  */
 export function layoutSynth(L, B) {
   const { key: K, dial: R, row, panel, tilt, front, wall } = SYNTH;
@@ -147,6 +163,26 @@ export function layoutSynth(L, B) {
     { id: 'octave.down', label: '−', a0: right - 0.1, a1: right - 0.055, b0: 0.08, b1: 0.125 },
     { id: 'octave.up', label: '+', a0: right - 0.045, a1: right, b0: 0.08, b1: 0.125 },
   );
+  // Over them, along a row: the patch bay at the left, its outs on a plate and then the
+  // modulations' ins; the arpeggiator at the right, its clock in, a button for each way it plays,
+  // HOLD and RANGE.
+  const J = panel.row, pitch = panel.pitch, arp = 0.495;
+  /** @type {import('./board.js').BoardJack[]} */
+  const jacks = [
+    { id: 'synth.out', a: 0.05, b: J, out: true, color: null },
+    { id: 'synth.clock', a: 0.45, b: J, out: false, color: null },
+    { id: 'synth.lfo', a: 0.05 + pitch, b: J, out: true, color: null },
+    { id: 'synth.env', a: 0.05 + 2 * pitch, b: J, out: true, color: null },
+    { id: 'synth.pitch', a: 0.06 + 3 * pitch, b: J, out: false, color: null },
+    { id: 'synth.cutoff', a: 0.06 + 4 * pitch, b: J, out: false, color: null },
+    { id: 'synth.amp', a: 0.06 + 5 * pitch, b: J, out: false, color: null },
+  ];
+  buttons.push(
+    ...ARP_MODES.map((m, i) => ({ id: `arp.${m.id}`, label: m.label, a0: arp + i * 0.07, a1: arp + i * 0.07 + 0.062, b0: J - 0.0225, b1: J + 0.0225 })),
+    { id: 'arp.hold', label: 'HOLD', a0: right - 0.15, a1: right - 0.08, b0: J - 0.0225, b1: J + 0.0225 },
+    { id: 'arp.range', label: 'RANGE', a0: right - 0.07, a1: right, b0: J - 0.0225, b1: J + 0.0225 },
+  );
+  const over = panel.height - 0.022, bay = { a0: 0.024, a1: 0.06 + 5 * pitch + 0.026 };
   return {
     x0, x1: x0 + width, zBack, zFront, width, length, tilt, front, top,
     /** @type {[number, number, number]} */
@@ -174,13 +210,17 @@ export function layoutSynth(L, B) {
       height: panel.height, lean: panel.lean, top: top + panel.height * lc,
       display: { a0: 0.03, a1: 0.33, b0: 0.025, b1: 0.125 },
       buttons,
-      /** what is written over the buttons, at b: over the presets, Mono and the octave's */
+      jacks,
+      /** where its jacks start in the room's list of them (the board's first) */
+      jackBase: B.panel.jacks.length,
+      /** what is written over the presets, Mono and the octave's, and over the patch bay and the arpeggiator @type {PanelTitle[]} */
       titles: [
-        { text: 'PRESETS', a: 0.36 + (3 * 0.088 + 0.08) / 2 },
-        { text: 'MONO', a: right - 0.165 },
-        { text: 'OCTAVE', a: right - 0.05 },
+        { text: 'PRESETS', a: 0.36 + (3 * 0.088 + 0.08) / 2, b: 0.148 },
+        { text: 'MONO', a: right - 0.165, b: 0.148 },
+        { text: 'OCTAVE', a: right - 0.05, b: 0.148 },
+        { text: 'PATCH', a: (bay.a0 + bay.a1) / 2, b: over, ...bay },
+        { text: 'ARPEGGIATOR', a: (0.424 + right) / 2, b: over, a0: 0.424, a1: right },
       ],
-      titlesB: 0.148,
     },
     sign: { x0, x1: x0 + width, y0: SYNTH.sign.bottom, y1: SYNTH.sign.top, z: L.z1 + SYNTH.sign.out },
   };
@@ -254,10 +294,11 @@ const MET = { on: '', t: 0, a: 0, b: 0, nx: 0, ny: 0, nz: 0 };
 /**
  * What a ray meets on the synth, if nearer than `within` (what it meets in the room otherwise): a
  * black key's top (over the white keys'), a white key's (where its gap is, the one it is beside; u
- * across it and v along it, from its front left), a dial, on the panel a button, or the rest of the
- * synth ('synth': its top, its panel, its front, its sides, its sign), written into out as room.js
- * castRay writes a hit, with which key, dial and button (else -1; the board's, -1). Whether it met
- * the synth.
+ * across it and v along it, from its front left), a dial, on the panel a jack (as the board's are,
+ * its index in the room's list of them: S.panel.jackBase on) or a button, or the rest of the synth
+ * ('synth': its top, its panel, its front, its sides, its sign), written into out as room.js castRay
+ * writes a hit, with which key, dial, button and jack (else -1; the board's pad, step key and knob,
+ * -1). Whether it met the synth.
  * @param {SynthDesk} S
  * @param {number} ox
  * @param {number} oy
@@ -270,7 +311,7 @@ const MET = { on: '', t: 0, a: 0, b: 0, nx: 0, ny: 0, nz: 0 };
  */
 export function hitSynth(S, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
   const K = SYNTH.key;
-  let key = -1, dial = -1, button = -1, kind = 'synth', u = 0, v = 0;
+  let key = -1, dial = -1, button = -1, jack = -1, kind = 'synth', u = 0, v = 0;
   const [Ox, Oy, Oz] = S.origin, [, Uy, Uz] = S.up, [, Ny, Nz] = S.normal, dn = dy * Ny + dz * Nz;
   if (dn < 0) {
     const rise = K.rise + K.blackRise, s = ((Oy + Ny * rise - oy) * Ny + (Oz + Nz * rise - oz) * Nz) / dn;
@@ -293,7 +334,11 @@ export function hitSynth(S, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
     if (MET.on === 'top') {
       key = keyAt(S, MET.a, MET.b);
       dial = key < 0 ? dialAt(S, MET.a, MET.b) : -1;
-    } else if (MET.on === 'panel') button = buttonAt(S, MET.a, MET.b);
+    } else if (MET.on === 'panel') {
+      const j = jackAt(S, MET.a, MET.b);
+      if (j >= 0) jack = S.panel.jackBase + j;
+      else button = buttonAt(S, MET.a, MET.b);
+    }
   }
   if (key >= 0) {
     const q = S.keys[key];
@@ -301,9 +346,11 @@ export function hitSynth(S, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
     u = clamp((MET.a - q.a0) / (q.a1 - q.a0), 0, 1);
     v = clamp((MET.b - q.b0) / (q.b1 - q.b0), 0, 1);
   } else if (dial >= 0) kind = 'dial';
+  else if (jack >= 0) kind = 'jack';
   else if (button >= 0) kind = 'button';
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
-  out.pad = out.step = out.knob = out.jack = -1;
+  out.pad = out.step = out.knob = -1;
+  out.jack = jack;
   out.key = key;
   out.dial = dial;
   out.button = button;

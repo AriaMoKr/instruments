@@ -18,6 +18,14 @@
 // let go until it is let go too, and its pitch bend bends them two semitones either way.
 // The knobs (0…1 each, as on the panel), Mono, the preset chosen last and the octave the keys play
 // in are kept for the next visit (localStorage); a preset sets all the knobs, and Mono, at once.
+// Its patch bay (the jacks are patch.js's, the cables main.js's): its sound out (output), and two
+// modulations out, the LFO (shared) and the filter envelope (each voice's own, 0…1, as a signal:
+// a voice's goes to that voice), into three inputs (setInput): the pitch (an octave at full), the
+// cutoff (three octaves) and the amp (half open, the modulation opening it or closing it the rest of
+// the way). Its arpeggiator (arp.js) takes the keys while it is on: they make the chord it plays,
+// a step at a time (arpStep, on the room's clock, or arpRun, on its own), each note set ahead on the
+// audio clock and let go ARP_GATE of the step later, started afresh in mono too, whatever the pedal.
+import { ARP_GATE, Arp, isArpMode } from './arp.js';
 import { pageStorage } from './sound.js';
 
 /** @typedef {import('./sound.js').Sound} Sound */
@@ -293,6 +301,16 @@ const FILTER_SPREAD = 60, KEY_TRACK = 50;
 const VELOCITY_CENTS = 1200;
 /** The pitch bend's reach either way, in cents. */
 const BEND_CENTS = 200;
+
+/** The patch bay's inputs for a modulation (patch.js's synth.pitch, synth.cutoff, synth.amp). @typedef {'pitch' | 'cutoff' | 'amp'} ModInput */
+/** What can go into them: the LFO, or the filter envelope (each voice's into that voice). @typedef {'lfo' | 'env'} ModSource */
+
+/** The modulation inputs. @type {readonly ModInput[]} */
+export const MOD_INPUTS = Object.freeze(['pitch', 'cutoff', 'amp']);
+/** How far a modulation at full (the LFO at its top, an envelope at its peak) moves the pitch and the cutoff, in cents. */
+export const MOD_CENTS = Object.freeze({ pitch: 1200, cutoff: 3600 });
+/** The amp with a modulation in: half open, the modulation opening it the rest of the way (or, below nothing, closing it). */
+export const AMP_MOD = 0.5;
 /** How long a knob takes to get where it is turned (a time constant, in seconds): no zipper, no lag. */
 const EASE = 0.012;
 
@@ -377,20 +395,22 @@ export class Envelope {
 
   /**
    * Lets it go at t on `params`, from where it is, towards nothing over `release` seconds; nothing if
-   * it was let go already.
+   * it was let go already. Let go during the attack (set ahead, as the arpeggiator's notes are, it
+   * may not have begun yet), the attack's ramp is cut short there, as cancelling took all of it.
    * @param {AudioParam[]} params
    * @param {number} t
    * @param {number} release
    */
   stop(params, t, release) {
     if (this.released(t)) return;
-    const v = this.valueAt(t);
+    const v = this.valueAt(t), rising = t > this.t0 && t < this.t0 + this.attack;
     this.t1 = t;
     this.v1 = v;
     this.release = Math.max(release, 0.001);
     for (const p of params) {
       p.cancelScheduledValues(t);
-      p.setValueAtTime(this.base + this.scale * v, t);
+      if (rising) p.linearRampToValueAtTime(this.base + this.scale * v, t);
+      else p.setValueAtTime(this.base + this.scale * v, t);
       p.setTargetAtTime(this.base, t, this.release / 5);
     }
   }
@@ -455,8 +475,12 @@ export class Glide {
  * @property {BiquadFilterNode[]} filters
  * @property {AudioParam[]} cutoffs the filters' detune, where the envelope sets them
  * @property {GainNode} amp
+ * @property {GainNode} vca after the amp: open, or half open with a modulation into AMP
  * @property {Envelope} ampEnv
  * @property {Envelope} filterEnv
+ * @property {ConstantSourceNode} env the filter envelope as a signal, 0…1: ENV out
+ * @property {Envelope} envOut the filter envelope again, on env (base 0, scale 1)
+ * @property {Record<ModInput, GainNode>} inputs where a modulation comes in, each at its depth
  * @property {Glide} pitch
  */
 
@@ -497,8 +521,20 @@ export class Synth {
     this.down = new Set();
     /** The sustain pedal is down. */
     this.sustain = false;
-    /** When the keys down change (to show them). */
+    /** When the keys down change (to show them), or the arpeggiator's chord. */
     this.onNotes = () => {};
+    /** The arpeggiator: off as it comes; while on, the keys make its chord. */
+    this.arp = new Arp({ random });
+    /** When the arpeggiator's chord has just started: its first note is to play now. */
+    this.onArp = () => {};
+    /** What each modulation input has plugged into it (setInput). @type {Record<ModInput, ModSource | null>} */
+    this.inputs = { pitch: null, cutoff: null, amp: null };
+    /** Once the voices are made (the first note): its output is there to patch. */
+    this.onBuilt = () => {};
+    /** @private the arpeggiator's own clock's steps, played (made once) */
+    this._onArpStep = (/** @type {number} */ t, /** @type {number} */ step) => {
+      this.arpStep(t, step);
+    };
     /** @private the pitch bend, -1…1, and the mod wheel, 0…1 */
     this._bend = 0;
     /** @private */
@@ -533,9 +569,20 @@ export class Synth {
     return LOWEST + 12 * this.octave;
   }
 
+  /** The notes whose keys are shown down: those down now, and those the arpeggiator holds. */
+  get held() {
+    if (!this.arp.on || !this.arp.playing) return this.down;
+    return new Set([...this.down, ...this.arp.notes]);
+  }
+
+  /** Its sound, for a cable (its level, before the mixer's channel); null until the voices are made. */
+  get output() {
+    return this._graph?.level ?? null;
+  }
+
   /**
-   * A key pressed: its note (MIDI) played, `velocity` 0…1 loud, waking the sound: whether it is heard
-   * (no Web Audio: not).
+   * A key pressed: its note (MIDI) played, `velocity` 0…1 loud, waking the sound (with the
+   * arpeggiator on, into its chord): whether it is heard (no Web Audio: not).
    * @param {number} note
    * @param {number} [velocity]
    */
@@ -544,9 +591,15 @@ export class Synth {
     clearTimeout(this._taps.get(note));
     this._taps.delete(note);
     this.down.add(note);
+    const ctx = this.sound.wake(), built = !!ctx && !!this._build();
+    if (this.arp.on) {
+      const first = this.arp.press(note, clamp(velocity, 0, 1));
+      this.onNotes();
+      if (first) this.onArp();
+      return built;
+    }
     this.onNotes();
-    const ctx = this.sound.wake();
-    if (!ctx || !this._build()) return false;
+    if (!ctx || !built) return false;
     const t = ctx.currentTime, v = clamp(velocity, 0, 1);
     if (this.mono) {
       const legato = this._held.length > 0 || this._voices.some((x) => x.held);
@@ -582,7 +635,13 @@ export class Synth {
   noteOff(note) {
     clearTimeout(this._taps.get(note));
     this._taps.delete(note);
-    if (this.down.delete(note)) this.onNotes();
+    const was = this.down.delete(note);
+    if (this.arp.on) {
+      this.arp.release(note);
+      if (was) this.onNotes();
+      return;
+    }
+    if (was) this.onNotes();
     const ctx = this.sound.ctx;
     if (!ctx || !this._graph) {
       this._held = this._held.filter((n) => n !== note);
@@ -608,23 +667,33 @@ export class Synth {
 
   /**
    * A note played for a moment (a click, the TV's OK), let go `length` seconds later unless its key
-   * is pressed or let go first: whether it is heard.
+   * is pressed or let go first: whether it is heard. With the arpeggiator holding its chord (HOLD),
+   * into the chord instead, or out of it if it was there.
    * @param {number} note
    * @param {number} [velocity]
    * @param {number} [length] seconds
    */
   tap(note, velocity = 0.8, length = 0.35) {
+    if (!Number.isFinite(note)) return false;
+    if (this.arp.on && this.arp.hold) {
+      const ctx = this.sound.wake(), built = !!ctx && !!this._build();
+      const first = this.arp.toggle(note, clamp(velocity, 0, 1));
+      this.onNotes();
+      if (first) this.onArp();
+      return built;
+    }
     const heard = this.noteOn(note, velocity);
     this._taps.set(note, setTimeout(() => this.noteOff(note), length * 1000));
     return heard;
   }
 
-  /** Every note let go, the pedal's too (the page put away, Mono switched). */
+  /** Every note let go, the pedal's and the arpeggiator's too (the page put away, Mono switched). */
   allOff() {
     for (const timer of this._taps.values()) clearTimeout(timer);
     this._taps.clear();
-    const had = this.down.size > 0;
+    const had = this.down.size > 0 || this.arp.playing;
     this.down.clear();
+    this.arp.clear();
     this._held = [];
     if (had) this.onNotes();
     const t = this.sound.ctx?.currentTime ?? 0;
@@ -692,6 +761,89 @@ export class Synth {
     if (!Number.isFinite(octave)) return;
     this.octave = clamp(Math.round(octave), OCTAVES.min, OCTAVES.max);
     this._saveSoon();
+  }
+
+  /**
+   * The arpeggiator on, playing one of its ways (arp.js's ARP_MODES; another word: off), or off
+   * (null): turned on or off, every note let go first; from one way to another, its chord plays on.
+   * @param {string | null} mode
+   */
+  setArp(mode) {
+    const m = isArpMode(mode) ? mode : null;
+    if (m === this.arp.mode) return;
+    if (!m || !this.arp.on) this.allOff();
+    this.arp.setMode(m);
+    this._saveSoon();
+  }
+
+  /** The arpeggiator's HOLD: its chord kept when the keys are let go. @param {boolean} on */
+  setHold(on) {
+    if (!!on === this.arp.hold) return;
+    this.arp.setHold(on);
+    this.onNotes();
+    this._saveSoon();
+  }
+
+  /** The octaves the arpeggiator plays over (ARP_RANGES); none given, the next, round them. @param {number} [n] */
+  setRange(n) {
+    if (n === undefined) this.arp.nextRange();
+    else this.arp.setRange(n);
+    this._saveSoon();
+  }
+
+  /**
+   * The arpeggiator's next note, at time t on the audio clock (or now, if that has gone), sounding
+   * ARP_GATE of a step `length` seconds long: whether one played (not with the arpeggiator off,
+   * nothing in its chord, or no sound).
+   * @param {number} t
+   * @param {number} length
+   */
+  arpStep(t, length) {
+    const ctx = this.sound.ctx;
+    if (!this.arp.on || !this.arp.playing || !ctx || !Number.isFinite(t) || !(length > 0) || !this._build()) return false;
+    const note = this.arp.next();
+    this.arp.played(t, length);
+    this._playAt(note, this.arp.velocity(note), Math.max(t, ctx.currentTime), length * ARP_GATE);
+    return true;
+  }
+
+  /**
+   * The arpeggiator on its own clock (none patched into it, or the room's stopped): its steps due
+   * before `until` (the audio clock's time), `step` seconds apart, played; the first of a chord at
+   * `now`. How many.
+   * @param {number} now
+   * @param {number} until
+   * @param {number} step
+   */
+  arpRun(now, until, step) {
+    return this.arp.run(now, until, step, this._onArpStep);
+  }
+
+  /**
+   * What is plugged into one of the patch bay's modulation inputs: the LFO, the filter envelope
+   * (each voice's into that voice), or nothing; heard at once.
+   * @param {ModInput} input
+   * @param {ModSource | null} source
+   */
+  setInput(input, source) {
+    if (!MOD_INPUTS.includes(input)) return;
+    const to = source === 'lfo' || source === 'env' ? source : null, was = this.inputs[input];
+    if (to === was) return;
+    this.inputs[input] = to;
+    const g = this._graph, ctx = this.sound.ctx;
+    if (!g || !ctx) return;
+    for (const v of this._voices) {
+      /** @type {(s: ModSource) => AudioNode} */
+      const out = (s) => (s === 'lfo' ? g.lfo : v.env);
+      if (was) out(was).disconnect(v.inputs[input]);
+      if (to) out(to).connect(v.inputs[input]);
+    }
+    if (input !== 'amp') return;
+    const t = ctx.currentTime;
+    for (const v of this._voices) {
+      v.vca.gain.cancelScheduledValues(t);
+      v.vca.gain.setTargetAtTime(to ? AMP_MOD : 1, t, EASE);
+    }
   }
 
   /** A preset (its id in PRESETS): its knobs and Mono. Whether there is one by that id. @param {string} id */
@@ -769,6 +921,39 @@ export class Synth {
   }
 
   /**
+   * A note set ahead (the arpeggiator's): from time t for `length` seconds, started afresh (in mono
+   * too: no legato, no glide) and let go then, whatever the pedal. In poly it takes the voice let go
+   * longest ago, so that the last notes ring on.
+   * @private
+   * @param {number} note
+   * @param {number} velocity
+   * @param {number} t
+   * @param {number} length
+   */
+  _playAt(note, velocity, t, length) {
+    if (this.mono) {
+      const stack = this.knobs.detune > 0 ? VOICES : 1;
+      this._voices.forEach((voice, i) => {
+        voice.note = note;
+        voice.gate = false;
+        voice.held = false;
+        this._pitch(voice, t, note, this._spread(i), 0);
+        if (i >= stack) return;
+        this._start(voice, t, velocity, stack > 1 ? MONO_GAIN : 1);
+        this._stop(voice, t + length);
+      });
+      return;
+    }
+    const voice = this._free() ?? this._voices.reduce((a, b) => (b.started < a.started ? b : a));
+    voice.note = note;
+    voice.gate = false;
+    voice.held = false;
+    this._pitch(voice, t, note, ((this._random() * 2 - 1) * detuneCents(this.knobs.detune)) / 3, 0);
+    this._start(voice, t, velocity, 1);
+    this._stop(voice, t + length);
+  }
+
+  /**
    * A voice's pitch to `note`, `cents` aside, over `glide` seconds (at once for a voice yet to play).
    * @private
    * @param {Voice} voice
@@ -797,6 +982,7 @@ export class Synth {
     voice.ampEnv.start([voice.amp.gain], t, velocityLevel(velocity) * VOICE_GAIN * gain, attackSeconds(k.attack), decaySeconds(k.decay), k.sustain);
     const base = (voice.note - 60) * KEY_TRACK + (velocity - 0.6) * VELOCITY_CENTS + voice.offset;
     voice.filterEnv.start(voice.cutoffs, t, 1, attackSeconds(k.filterAttack), decaySeconds(k.filterDecay), k.filterSustain, base, envOctaves(k.amount) * 1200);
+    voice.envOut.start([voice.env.offset], t, 1, attackSeconds(k.filterAttack), decaySeconds(k.filterDecay), k.filterSustain);
   }
 
   /**
@@ -823,6 +1009,7 @@ export class Synth {
     voice.ended = t;
     voice.ampEnv.stop([voice.amp.gain], t, decaySeconds(k.release));
     voice.filterEnv.stop(voice.cutoffs, t, decaySeconds(k.filterRelease));
+    voice.envOut.stop([voice.env.offset], t, decaySeconds(k.filterRelease));
   }
 
   /**
@@ -950,6 +1137,15 @@ export class Synth {
     hiss.start(t);
     const edge = tanhCurve(EDGE);
     for (let i = 0; i < VOICES; i++) {
+      // Where the patch bay's modulations come in, each at its depth; and the filter envelope out.
+      /** @type {Record<ModInput, GainNode>} */
+      const inputs = { pitch: ctx.createGain(), cutoff: ctx.createGain(), amp: ctx.createGain() };
+      inputs.pitch.gain.value = MOD_CENTS.pitch;
+      inputs.cutoff.gain.value = MOD_CENTS.cutoff;
+      inputs.amp.gain.value = AMP_MOD;
+      const env = ctx.createConstantSource();
+      env.offset.value = 0;
+      env.start(t);
       const saw = ctx.createOscillator(), sub = ctx.createOscillator();
       saw.type = 'sawtooth';
       saw.frequency.value = 440;
@@ -958,6 +1154,7 @@ export class Synth {
       for (const o of [saw, sub]) {
         vibrato.connect(o.detune);
         bend.connect(o.detune);
+        inputs.pitch.connect(o.detune);
         o.start(t);
       }
       // The pulse: the saw past the width's offset, a square wave's edge; the offset that leaves in
@@ -980,21 +1177,30 @@ export class Synth {
         f.Q.value = q;
         for (const p of [f.frequency, f.detune, f.Q, f.gain]) p.automationRate = 'k-rate';
         wah.connect(f.detune);
+        inputs.cutoff.connect(f.detune);
         return f;
       });
       for (const l of Object.values(levels)) l.connect(filters[0]);
-      const amp = ctx.createGain();
+      const amp = ctx.createGain(), vca = ctx.createGain();
       amp.gain.value = 0;
-      filters[0].connect(filters[1]).connect(amp).connect(bus);
+      vca.gain.value = this.inputs.amp ? AMP_MOD : 1;
+      inputs.amp.connect(vca.gain);
+      filters[0].connect(filters[1]).connect(amp).connect(vca).connect(bus);
       this._voices.push({
         note: -1, gate: false, held: false, started: -Infinity, ended: -Infinity,
         offset: ((i / (VOICES - 1)) * 2 - 1) * FILTER_SPREAD, saw, sub, levels, filters,
-        cutoffs: filters.map((f) => f.detune), amp,
-        ampEnv: new Envelope(), filterEnv: new Envelope(), pitch: new Glide(),
+        cutoffs: filters.map((f) => f.detune), amp, vca,
+        ampEnv: new Envelope(), filterEnv: new Envelope(), env, envOut: new Envelope(), inputs, pitch: new Glide(),
       });
+    }
+    // What the patch has plugged into the modulation inputs already.
+    for (const input of MOD_INPUTS) {
+      const from = this.inputs[input];
+      if (from) for (const v of this._voices) (from === 'lfo' ? lfo : v.env).connect(v.inputs[input]);
     }
     this._graph = { lfo, vibrato, wah, pwm, bend, width, pre, post, wet, level };
     for (const id of IDS) this._apply(id, false);
+    this.onBuilt();
     return this._graph;
   }
 
@@ -1008,6 +1214,12 @@ export class Synth {
       if (typeof s.preset === 'string' && PRESETS.some((p) => p.id === s.preset)) this.preset = s.preset;
       if (typeof s.edited === 'boolean') this.edited = s.edited;
       if (Number.isFinite(s.octave)) this.octave = clamp(Math.round(s.octave), OCTAVES.min, OCTAVES.max);
+      const arp = s.arp;
+      if (arp && typeof arp === 'object') {
+        if (isArpMode(arp.mode)) this.arp.setMode(arp.mode);
+        if (typeof arp.hold === 'boolean') this.arp.setHold(arp.hold);
+        if (Number.isFinite(arp.range)) this.arp.setRange(arp.range);
+      }
     } catch {
       // none kept, or not readable: as it comes
     }
@@ -1019,11 +1231,12 @@ export class Synth {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
-  /** Keeps the knobs, Mono, the preset and the octave now (localStorage). */
+  /** Keeps the knobs, Mono, the preset, the octave and the arpeggiator's settings now (localStorage). */
   save() {
     clearTimeout(this._saving);
+    const arp = { mode: this.arp.mode, hold: this.arp.hold, range: this.arp.range };
     try {
-      this._storage?.setItem(this._key, JSON.stringify({ knobs: this.knobs, mono: this.mono, preset: this.preset, edited: this.edited, octave: this.octave }));
+      this._storage?.setItem(this._key, JSON.stringify({ knobs: this.knobs, mono: this.mono, preset: this.preset, edited: this.edited, octave: this.octave, arp }));
     } catch {
       // storage full or blocked: they last this visit
     }

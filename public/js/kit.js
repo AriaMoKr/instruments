@@ -8,8 +8,9 @@
 // tempo and the delay's settings (canvases, each redrawn when they change, at most ten times a
 // second), over its face (one canvas, drawn once: its sections, its jacks and what they are); the RUN
 // button, its light lit while the clock runs and brighter on each beat; the cables between the
-// jacks, each in its colour with a plug at either end (made again when the patch changes), and the
-// one being carried, from its jack to wherever it is pointed (moved each frame, in place); and its
+// jacks, its own and the synth's (addJacks), each in its colour with a plug at either end, kept off
+// both desks (made again when the patch changes), and the one being carried, from its jack to
+// wherever it is pointed (moved each frame, in place), and a ring round the jack pointed at; and its
 // sign on the wall over it. In VR a stick in each hand that holds a controller, near the board, whose
 // tip comes down on a pad to play it (board.js strikeAt), as hard as it was going, or on a step key
 // to set it; a hand without a controller plays with its forefinger. Per frame nothing is allocated.
@@ -27,7 +28,13 @@ import { GOLD, SANS, SERIF } from './textures.js';
 /** @typedef {import('./drums.js').Knobs} Knobs */
 /** @typedef {import('./delay.js').DelayKnobs} DelayKnobs */
 /** @typedef {import('common/controls.js').Hand<import('./board.js').BandHit>} Hand */
-/** A cable to draw: the jacks it joins (their indices in B.panel.jacks) and its colour. @typedef {{ from: number, to: number, color: string }} DrawnCable */
+/**
+ * A cable to draw: the jacks it joins (their indices in the room's list of them: B.panel.jacks, then
+ * those addJacks adds) and its colour.
+ * @typedef {{ from: number, to: number, color: string }} DrawnCable
+ */
+/** A desk the cables keep off: its shape, and how high what stands on its top is. @typedef {{ D: import('./board.js').Desk, rise: number }} CableDesk */
+/** A jack a cable goes into: its desk (an index in the kit's desks) and where on its panel. @typedef {{ desk: number, a: number, b: number }} PlacedJack */
 
 /** @param {string} hex @returns {[number, number, number]} linear */
 export const lin = (hex) => {
@@ -50,10 +57,10 @@ const BUTTON = 0.008;
 const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button']);
 /**
  * A cable: its radius, its plug's length out of the panel and radius, how far it hangs (`sag`, and
- * `sagPer` metre between its ends, to `sagMax`), and how far the one carried reaches from its jack;
- * and how finely it is drawn.
+ * `sagPer` metre between its ends, to `sagMax`), and how far the one carried reaches from its jack
+ * (from one end of the board to the far end of the synth); and how finely it is drawn.
  */
-const CABLE = { r: 0.0042, plug: 0.032, plugR: 0.0068, sag: 0.03, sagPer: 0.2, sagMax: 0.12, reach: 0.9 };
+const CABLE = { r: 0.0042, plug: 0.032, plugR: 0.0068, sag: 0.03, sagPer: 0.2, sagMax: 0.12, reach: 2 };
 const SEGMENTS = 20, SIDES = 8;
 const COS = Float32Array.from({ length: SIDES }, (_, k) => Math.cos((k / SIDES) * 2 * Math.PI));
 const SIN = Float32Array.from({ length: SIDES }, (_, k) => Math.sin((k / SIDES) * 2 * Math.PI));
@@ -148,6 +155,49 @@ function keyAtlas() {
 }
 
 /**
+ * A jack on a panel's face (a canvas): its nut, lit from the upper left, and its hole; the board's
+ * and the synth's (synthkit.js).
+ * @param {CanvasRenderingContext2D} g
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} r its nut's radius, in pixels
+ */
+export function drawJack(g, cx, cy, r) {
+  const nut = g.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
+  nut.addColorStop(0, '#e4ded2');
+  nut.addColorStop(1, '#8d877d');
+  g.fillStyle = nut;
+  g.beginPath();
+  g.arc(cx, cy, r, 0, 2 * Math.PI);
+  g.fill();
+  g.fillStyle = '#060505';
+  g.beginPath();
+  g.arc(cx, cy, r * 0.45, 0, 2 * Math.PI);
+  g.fill();
+}
+
+/**
+ * The dark plate under a panel's outputs, as a modular synth marks them: round the jacks at (a, b)
+ * on the panel, drawn at x(a), y(b) on its face, k pixels a metre.
+ * @param {CanvasRenderingContext2D} g
+ * @param {readonly { a: number, b: number }[]} outs
+ * @param {(a: number) => number} x
+ * @param {(b: number) => number} y
+ * @param {number} k
+ */
+export function drawPlate(g, outs, x, y, k) {
+  const a0 = Math.min(...outs.map((j) => j.a)) - 0.026, a1 = Math.max(...outs.map((j) => j.a)) + 0.026;
+  const b0 = Math.min(...outs.map((j) => j.b)) - 0.036, b1 = Math.max(...outs.map((j) => j.b)) + 0.024;
+  g.fillStyle = '#121110';
+  g.strokeStyle = 'rgba(239,229,207,0.28)';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.roundRect(x(a0), y(b1), x(a1) - x(a0), y(b0) - y(b1), 0.006 * k);
+  g.fill();
+  g.stroke();
+}
+
+/**
  * The panel's face, drawn once: its three sections named across the top with a line between each;
  * the outputs on dark plates, as a modular synth marks them; each jack's nut and hole (a pad's ringed
  * in its colour) with what it is under it (patch.js's label; the pads' are known by their colours,
@@ -175,18 +225,7 @@ function panelFace(B) {
     g.stroke();
   }
   // The outputs' plates: round the clock's outs, and round the pads'.
-  for (const prefix of ['clock.', 'pad.']) {
-    const outs = P.jacks.filter((j) => j.id.startsWith(prefix));
-    const a0 = Math.min(...outs.map((j) => j.a)) - 0.026, a1 = Math.max(...outs.map((j) => j.a)) + 0.026;
-    const b0 = Math.min(...outs.map((j) => j.b)) - 0.036, b1 = Math.max(...outs.map((j) => j.b)) + 0.024;
-    g.fillStyle = '#121110';
-    g.strokeStyle = 'rgba(239,229,207,0.28)';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.roundRect(x(a0), y(b1), x(a1) - x(a0), y(b0) - y(b1), 0.006 * k);
-    g.fill();
-    g.stroke();
-  }
+  for (const prefix of ['clock.', 'pad.']) drawPlate(g, P.jacks.filter((j) => j.id.startsWith(prefix)), x, y, k);
   const r = BOARD.panel.jack * k;
   for (const j of P.jacks) {
     const cx = x(j.a), cy = y(j.b);
@@ -196,17 +235,7 @@ function panelFace(B) {
       g.arc(cx, cy, r * 1.32, 0, 2 * Math.PI);
       g.fill();
     }
-    const nut = g.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
-    nut.addColorStop(0, '#e4ded2');
-    nut.addColorStop(1, '#8d877d');
-    g.fillStyle = nut;
-    g.beginPath();
-    g.arc(cx, cy, r, 0, 2 * Math.PI);
-    g.fill();
-    g.fillStyle = '#060505';
-    g.beginPath();
-    g.arc(cx, cy, r * 0.45, 0, 2 * Math.PI);
-    g.fill();
+    drawJack(g, cx, cy, r);
     if (j.color) continue;
     g.fillStyle = '#efe5cf';
     g.font = `600 ${Math.round(0.0105 * k)}px ${SANS}`;
@@ -292,40 +321,42 @@ function ring(pos, at, x, y, z, tx, ty, tz, r) {
 
 /**
  * A cable's path, sampled at SEGMENTS + 1 points into out: from p, leaving along n, to q, coming in
- * along -m, hanging lower between them the further apart they are; kept off the board's top and in
- * front of its panel.
- * @param {Board} B
+ * along -m, hanging lower between them the further apart they are; kept off each desk's top (and
+ * what stands on it) and in front of its panel.
+ * @param {readonly CableDesk[]} desks
  * @param {number[] | Float32Array} p
  * @param {number[] | Float32Array} n
  * @param {number[] | Float32Array} q
  * @param {number[] | Float32Array} m
  * @param {Float32Array} out
  */
-function hang(B, p, n, q, m, out) {
+function hang(desks, p, n, q, m, out) {
   const sag = Math.min(CABLE.sagMax, CABLE.sag + CABLE.sagPer * Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]));
   const k = 0.06;
   const ax = p[0] + n[0] * k, ay = p[1] + n[1] * k - sag, az = p[2] + n[2] * k;
   const bx = q[0] + m[0] * k, by = q[1] + m[1] * k - sag, bz = q[2] + m[2] * k;
-  const [, Oy, Oz] = B.origin, [, Uy, Uz] = B.up, [, Ny, Nz] = B.normal;
-  const P = B.panel, [, Py, Pz] = P.origin, [, Qy, Qz] = P.up, [, My, Mz] = P.normal;
   for (let i = 0; i <= SEGMENTS; i++) {
     const t = i / SEGMENTS, s = 1 - t;
     const w0 = s * s * s, w1 = 3 * s * s * t, w2 = 3 * s * t * t, w3 = t * t * t;
     const x = w0 * p[0] + w1 * ax + w2 * bx + w3 * q[0];
     let y = w0 * p[1] + w1 * ay + w2 * by + w3 * q[1];
     let z = w0 * p[2] + w1 * az + w2 * bz + w3 * q[2];
-    if (x >= B.x0 && x <= B.x1) {
-      // Over the top: not into it.
-      const over = (y - Oy) * Ny + (z - Oz) * Nz - BOARD.rise - 0.006, along = (y - Oy) * Uy + (z - Oz) * Uz;
-      if (over < 0 && along >= 0 && along <= B.length) {
+    for (let d = 0; d < desks.length; d++) {
+      const D = desks[d].D, P = D.panel;
+      if (x < D.x0 || x > D.x1) continue;
+      // Over the top: not into it, nor into what stands on it.
+      const Oy = D.origin[1], Oz = D.origin[2], Ny = D.normal[1], Nz = D.normal[2];
+      const over = (y - Oy) * Ny + (z - Oz) * Nz - desks[d].rise - 0.006, along = (y - Oy) * D.up[1] + (z - Oz) * D.up[2];
+      if (over < 0 && along >= 0 && along <= D.length) {
         y -= Ny * over;
         z -= Nz * over;
       }
       // In front of the panel: not into it.
-      const out = (y - Py) * My + (z - Pz) * Mz - 0.004, up = (y - Py) * Qy + (z - Pz) * Qz;
-      if (out < 0 && up >= 0 && up <= P.height) {
-        y -= My * out;
-        z -= Mz * out;
+      const Py = P.origin[1], Pz = P.origin[2], My = P.normal[1], Mz = P.normal[2];
+      const front = (y - Py) * My + (z - Pz) * Mz - 0.004, up = (y - Py) * P.up[1] + (z - Pz) * P.up[2];
+      if (front < 0 && up >= 0 && up <= P.height) {
+        y -= My * front;
+        z -= Mz * front;
       }
     }
     out[i * 3] = x;
@@ -574,16 +605,24 @@ export class Kit {
     this._led.position.set((run.a0 + run.a1) / 2, BUTTON + 0.0004, -(run.b1 - 0.012));
     this._led.name = 'run light';
     panel.add(this._led);
-    // The ring round the jack pointed at: gold, grey where the cable carried can't go.
+    // The ring round the jack pointed at, on whichever desk's panel: gold, grey where the cable
+    // carried can't go.
     /** @private */
     this._jackRing = new THREE.Mesh(new THREE.RingGeometry(BOARD.panel.jack * 1.45, BOARD.panel.jack * 1.8, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(GOLD).multiply(panelLight) }));
     this._jackRing.visible = false;
     this._jackRing.name = 'jack pointed at';
-    panel.add(this._jackRing);
+    this.group.add(this._jackRing);
     /** @private */
     this._ringColors = { ok: new THREE.Color(GOLD).multiply(panelLight), no: new THREE.Color('#77706a').multiply(panelLight) };
+    /** @private @type {[number, number, number]} */
+    this._ringAt = [0, 0, 0];
 
-    // The cables, one mesh (made again when they change), and the one being carried (moved in place).
+    // The cables, one mesh (made again when they change), and the one being carried (moved in place),
+    // between the jacks of the desks there are: the board's, and those addJacks adds.
+    /** @private @type {CableDesk[]} */
+    this._desks = [{ D: B, rise: BOARD.rise }];
+    /** @private @type {PlacedJack[]} */
+    this._jacks = B.panel.jacks.map((j) => ({ desk: 0, a: j.a, b: j.b }));
     /** @private the panel's light, the cables' colours lit by it */
     this._panelLight = panelLight;
     this.cables = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
@@ -604,7 +643,7 @@ export class Kit {
     this.carried.frustumCulled = false;
     this.carried.visible = false;
     this.group.add(this.carried);
-    /** @private the jack the carried cable comes from (B.panel.jacks), else -1 */
+    /** @private the jack the carried cable comes from (the room's list of them), else -1 */
     this._carry = -1;
     /** @private where its free end is pointed (a hit and the way out of what it is on), if anywhere */
     this._aim = { has: false, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1 };
@@ -788,18 +827,31 @@ export class Kit {
   }
 
   /**
+   * Another desk's jacks (the synth's, synthboard.js), after those there are: cables go into them
+   * too, kept off its top (what stands on it, `rise` high) and in front of its panel. Where its first
+   * is in the room's list of jacks.
+   * @param {import('./board.js').Desk & { panel: { jacks: readonly { a: number, b: number }[] } }} D
+   * @param {number} rise
+   */
+  addJacks(D, rise) {
+    const first = this._jacks.length, desk = this._desks.push({ D, rise }) - 1;
+    for (const j of D.panel.jacks) this._jacks.push({ desk, a: j.a, b: j.b });
+    return first;
+  }
+
+  /**
    * The cables between the jacks, each in its colour (patch.js's cables, as main.js draws them).
    * @param {readonly DrawnCable[]} cables
    */
   setCables(cables) {
-    const jacks = this.board.panel.jacks, N = this.board.panel.normal;
     const pos = new Float32Array(cables.length * CABLE_VERTICES * 3), color = new Float32Array(pos.length);
     /** @type {number[]} */
     const index = [];
     cables.forEach((c, i) => {
-      const from = jacks[c.from], to = jacks[c.to];
+      const from = this._jacks[c.from], to = this._jacks[c.to];
       if (!from || !to) return;
-      this._writeCable(pos, i * CABLE_VERTICES, panelPoint(this.board, from.a, from.b, 0, [0, 0, 0]), N, panelPoint(this.board, to.a, to.b, 0, [0, 0, 0]), N);
+      const F = this._desks[from.desk].D, T = this._desks[to.desk].D;
+      this._writeCable(pos, i * CABLE_VERTICES, panelPoint(F, from.a, from.b, 0, [0, 0, 0]), F.panel.normal, panelPoint(T, to.a, to.b, 0, [0, 0, 0]), T.panel.normal);
       this._paint(color, i * CABLE_VERTICES, c.color);
       cableIndices(i * CABLE_VERTICES, index);
     });
@@ -813,13 +865,13 @@ export class Kit {
   }
 
   /**
-   * A cable carried from jack j (B.panel.jacks), in its colour, to wherever aimAt points it; or,
-   * j -1, none.
+   * A cable carried from jack j (the room's list of them), in its colour, to wherever aimAt points
+   * it; or, j -1, none.
    * @param {number} j
    * @param {string} [color]
    */
   carry(j, color = GOLD) {
-    this._carry = this.board.panel.jacks[j] ? j : -1;
+    this._carry = this._jacks[j] ? j : -1;
     this.carried.visible = this._carry >= 0;
     if (this._carry < 0) return;
     const attr = /** @type {THREE.BufferAttribute} */ (this.carried.geometry.getAttribute('color'));
@@ -847,17 +899,19 @@ export class Kit {
   }
 
   /**
-   * The jack pointed at (B.panel.jacks), else -1: ringed, in gold, or in grey where the cable
-   * carried can't go (`ok` false).
+   * The jack pointed at (the room's list of them), else -1: ringed on its desk's panel, in gold, or
+   * in grey where the cable carried can't go (`ok` false).
    * @param {number} j
    * @param {boolean} [ok]
    */
   hoverJack(j, ok = true) {
-    const jack = this.board.panel.jacks[j];
-    this._jackRing.visible = !!jack;
+    const jack = this._jacks[j], ring = this._jackRing;
+    ring.visible = !!jack;
     if (!jack) return;
-    this._jackRing.position.set(jack.a, 0.0012, -jack.b);
-    this._jackRing.material.color.copy(ok ? this._ringColors.ok : this._ringColors.no);
+    const D = this._desks[jack.desk].D, at = panelPoint(D, jack.a, jack.b, 0.0012, this._ringAt);
+    ring.position.set(at[0], at[1], at[2]);
+    ring.rotation.x = Math.PI / 2 - D.panel.lean;
+    ring.material.color.copy(ok ? this._ringColors.ok : this._ringColors.no);
   }
 
   /**
@@ -877,7 +931,7 @@ export class Kit {
       P[i] = p[i] + n[i] * L;
       Q[i] = q[i] + m[i] * L;
     }
-    hang(this.board, P, n, Q, m, path);
+    hang(this._desks, P, n, Q, m, path);
     let v = at;
     for (let i = 0; i <= SEGMENTS; i++) {
       // The way it goes here: from the point before to the one after.
@@ -914,12 +968,13 @@ export class Kit {
 
   /**
    * The carried cable, from its jack to where it is pointed: its free plug just off what it points
-   * at, facing into it; pointed at nothing, lying out from its jack over the top.
+   * at, facing into it; pointed at nothing, lying out from its jack over its desk's top.
    * @private
    */
   _moveCarried() {
-    const B = this.board, jack = B.panel.jacks[this._carry];
+    const jack = this._jacks[this._carry];
     if (!jack) return;
+    const { D: B, rise } = this._desks[jack.desk];
     const N = B.panel.normal, a = this._aim, q = this._free, m = this._m;
     const p = panelPoint(B, jack.a, jack.b, 0, this._from);
     if (a.has) {
@@ -945,7 +1000,7 @@ export class Kit {
       q[0] = p[0];
       q[1] = p[1] + N[1] * 0.14 - 0.1;
       q[2] = p[2] + N[2] * 0.14;
-      const over = heightOver(B, q[0], q[1], q[2]) - 0.012;
+      const over = heightOver(B, q[0], q[1], q[2], rise) - 0.012;
       if (over < 0) {
         q[1] -= B.normal[1] * over;
         q[2] -= B.normal[2] * over;

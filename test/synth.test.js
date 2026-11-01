@@ -4,14 +4,16 @@
 // a browser would) with the first note and only then; poly (a voice each, the same note its own
 // voice, the one held longest taken for a seventh), the sustain pedal, mono (one note, stacked and
 // spread, legato and gliding), the knobs heard at once, the presets, a note played for a moment,
-// and the settings kept for the next visit.
+// the patch bay (its sound out, the LFO and the filter envelope into the pitch, the cutoff and the
+// amp), the arpeggiator played through it, and the settings kept for the next visit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_SYNTH, Envelope, Glide, KEYS, LOWEST, NOTE_KEYS, OCTAVES, OCTAVE_KEYS, PRESETS, SECTIONS, SYNTH_KNOBS, Synth, VOICES,
-  attackSeconds, cutoffHz, decaySeconds, detuneCents, glideSeconds, isBlack, knobName, levelOf, lfoHz, noteForKey, noteHz, noteName,
-  pulseDuty, resonanceDb, spokenNote, synthText, tanhCurve,
+  AMP_MOD, DEFAULT_SYNTH, Envelope, Glide, KEYS, LOWEST, MOD_CENTS, MOD_INPUTS, NOTE_KEYS, OCTAVES, OCTAVE_KEYS, PRESETS, SECTIONS,
+  SYNTH_KNOBS, Synth, VOICES, attackSeconds, cutoffHz, decaySeconds, detuneCents, glideSeconds, isBlack, knobName, levelOf, lfoHz,
+  noteForKey, noteHz, noteName, pulseDuty, resonanceDb, spokenNote, synthText, tanhCurve,
 } from '../public/js/synth.js';
+import { ARP_GATE } from '../public/js/arp.js';
 import { Sound } from '../public/js/sound.js';
 import { FakeContext, memoryStorage } from './helpers/audio.js';
 
@@ -127,7 +129,9 @@ test('an envelope: up to its peak, down towards the sustain, let go from where i
   env.stop([p], 1.05, 0.5);
   assert.ok(env.released(1.05));
   assert.deepEqual(last(p).slice(0, 3), ['target', 0, 1.05]);
-  assert.ok(near(p.events[p.events.length - 2][1], at), 'let go mid-attack, from where it was');
+  const cut = p.events[p.events.length - 2];
+  assert.equal(cut[0], 'linear', "let go mid-attack: the attack's line cut short there, not set back to where it began");
+  assert.ok(near(cut[1], at), 'let go mid-attack, from where it was');
   assert.ok(env.valueAt(1.05 + 0.5) < at * 0.01, 'nearly nothing after the release');
   const mid = env.valueAt(1.15);
   env.start([p], 1.15, 0.8, 0.1, 0.5, 0.5);
@@ -138,6 +142,7 @@ test('an envelope: up to its peak, down towards the sustain, let go from where i
   assert.deepEqual(q.events.slice(1).map((e) => e[1]), [-300, 900, 0]);
   f.stop([q], 5, 0.2);
   assert.equal(last(q)[1], -300, 'back to its base');
+  assert.equal(q.events[q.events.length - 2][0], 'set', 'let go after the attack: from where it is');
 });
 
 test('a glide: at once without one; with one from where it is, towards the note', () => {
@@ -182,10 +187,10 @@ test('the voices are made with the first note, as a browser takes them, into the
   const ctx = sound.ctx;
   assert.ok(ctx instanceof FakeContext);
   const counts = () => ['oscillator', 'constant', 'buffer', 'filter', 'merger', 'delay', 'shaper'].map((k) => ctx.all(k).length);
-  // Two oscillators a voice, the LFO and the chorus's sway; the bend and the width; the noise; two
-  // low-passes a voice and the high-pass; the chorus; the pulse's comparator a voice, the drive and
-  // the mixer's clipper.
-  assert.deepEqual(counts(), [2 * VOICES + 2, 2, 1, 2 * VOICES + 1, 1, 2, VOICES + 2]);
+  // Two oscillators a voice, the LFO and the chorus's sway; the filter envelope out a voice, the bend
+  // and the width; the noise; two low-passes a voice and the high-pass; the chorus; the pulse's
+  // comparator a voice, the drive and the mixer's clipper.
+  assert.deepEqual(counts(), [2 * VOICES + 2, VOICES + 2, 1, 2 * VOICES + 1, 1, 2, VOICES + 2]);
   for (const s of [...ctx.all('oscillator'), ...ctx.all('constant'), ...ctx.all('buffer')]) assert.equal(s.started, 0);
   const channel = sound.channel('synth');
   assert.ok(ctx.nodes.some((n) => n.outputs.includes(channel)), 'into the synth channel');
@@ -194,7 +199,7 @@ test('the voices are made with the first note, as a browser takes them, into the
   for (const f of lowpasses) assert.ok([f.frequency, f.detune, f.Q].every((p) => p.automationRate === 'k-rate'));
   synth.noteOn(64);
   synth.noteOn(67);
-  assert.deepEqual(counts(), [2 * VOICES + 2, 2, 1, 2 * VOICES + 1, 1, 2, VOICES + 2], 'no more for more notes');
+  assert.deepEqual(counts(), [2 * VOICES + 2, VOICES + 2, 1, 2 * VOICES + 1, 1, 2, VOICES + 2], 'no more for more notes');
   assert.deepEqual(synth.sounding.sort(), [60, 64, 67]);
 });
 
@@ -382,18 +387,169 @@ test('a note played for a moment is let go a moment later, unless its key is pre
   assert.equal(synth.down.size, 0);
 });
 
-test('the knobs, Mono, the preset and the octave are kept for the next visit, and what is kept is read with care', () => {
+test('its sound out, for a cable, once the voices are made: onBuilt then, and only then', () => {
+  const { synth } = make();
+  let built = 0;
+  synth.onBuilt = () => built++;
+  assert.equal(synth.output, null);
+  synth.noteOn(60);
+  assert.equal(synth.output, synth._graph.level);
+  synth.noteOn(64);
+  assert.equal(built, 1);
+});
+
+test('the patch bay: the LFO, or each voice its own filter envelope, into the pitch, the cutoff and the amp, before the voices are made or after', () => {
+  const { sound, synth } = make();
+  assert.deepEqual(MOD_INPUTS, ['pitch', 'cutoff', 'amp']);
+  synth.setInput('pitch', 'lfo');
+  synth.noteOn(60);
+  const g = synth._graph, voices = synth._voices;
+  for (const v of voices) {
+    assert.ok(g.lfo.outputs.includes(v.inputs.pitch), 'plugged in before: connected as they are made');
+    assert.ok([v.saw.detune, v.sub.detune].every((p) => v.inputs.pitch.outputs.includes(p)));
+    assert.ok(v.filters.every((f) => v.inputs.cutoff.outputs.includes(f.detune)));
+    assert.ok(v.inputs.amp.outputs.includes(v.vca.gain));
+    assert.equal(v.vca.gain.value, 1, 'nothing into AMP: open');
+  }
+  assert.deepEqual(MOD_INPUTS.map((i) => voices[0].inputs[i].gain.value), [MOD_CENTS.pitch, MOD_CENTS.cutoff, AMP_MOD]);
+  synth.setInput('cutoff', 'env');
+  for (const v of voices) assert.ok(v.env.outputs.includes(v.inputs.cutoff) && !g.lfo.outputs.includes(v.inputs.cutoff));
+  assert.ok(!voices[0].env.outputs.includes(voices[1].inputs.cutoff), "a voice's envelope into its own voice only");
+  synth.setInput('cutoff', 'lfo');
+  for (const v of voices) assert.ok(!v.env.outputs.includes(v.inputs.cutoff) && g.lfo.outputs.includes(v.inputs.cutoff), 'the cable moved');
+  synth.setInput('amp', 'env');
+  for (const v of voices) assert.deepEqual(last(v.vca.gain).slice(0, 2), ['target', AMP_MOD], 'half open, the rest the envelope');
+  synth.setInput('amp', null);
+  for (const v of voices) assert.ok(last(v.vca.gain)[1] === 1 && !v.env.outputs.includes(v.inputs.amp), 'pulled out: open again');
+  synth.setInput('nonsense', 'lfo');
+  synth.setInput('pitch', 'sideways');
+  assert.deepEqual(synth.inputs, { pitch: null, cutoff: 'lfo', amp: null });
+  assert.ok(voices.every((v) => !g.lfo.outputs.includes(v.inputs.pitch)), 'something it is not: nothing');
+  // ENV out: each voice's filter envelope, 0…1, started and let go with it.
+  sound.ctx.currentTime = 1;
+  synth.noteOn(67);
+  const v = voices.find((x) => x.note === 67);
+  assert.deepEqual([v.envOut.t0, v.envOut.peak, v.envOut.base, v.envOut.scale], [1, 1, 0, 1]);
+  assert.deepEqual(v.env.offset.events.slice(-3).map((e) => e[0]), ['set', 'linear', 'target']);
+  assert.equal(v.envOut.attack, v.filterEnv.attack);
+  sound.ctx.currentTime = 2;
+  synth.noteOff(67);
+  assert.ok(v.envOut.released(2) && v.filterEnv.released(2));
+  // Plugged into AMP before the voices are made: made half open.
+  const other = make().synth;
+  other.setInput('amp', 'lfo');
+  other.noteOn(60);
+  assert.ok(other._voices.every((x) => x.vca.gain.value === AMP_MOD && other._graph.lfo.outputs.includes(x.inputs.amp)));
+});
+
+test('the arpeggiator: the keys make its chord, and each step plays its next note, set ahead and let go ARP_GATE of the step later', () => {
+  const { sound, synth } = make();
+  let arps = 0;
+  synth.onArp = () => arps++;
+  synth.setArp('up');
+  assert.equal(synth.noteOn(64, 0.5), true);
+  synth.noteOn(60, 0.9);
+  assert.equal(arps, 1, 'the chord just started: its first note to play now');
+  assert.deepEqual([...synth.held].sort(), [60, 64]);
+  assert.ok(synth._voices.every((v) => v.started === -Infinity), 'the keys play nothing themselves');
+  sound.ctx.currentTime = 1;
+  assert.equal(synth.arpStep(1.02, 0.125), true);
+  const first = synth._voices.find((v) => v.note === 60);
+  assert.equal(first.ampEnv.t0, 1.02, 'set ahead, at its time');
+  assert.ok(near(first.ampEnv.t1, 1.02 + 0.125 * ARP_GATE), 'let go ARP_GATE of the step later');
+  synth.arpStep(1.145, 0.125);
+  const second = synth._voices.find((v) => v.note === 64);
+  assert.ok(second !== first && second.ampEnv.t0 === 1.145, 'a voice of its own, the last ringing on');
+  assert.ok(second.ampEnv.peak < first.ampEnv.peak, 'as hard as its key went down');
+  sound.ctx.currentTime = 2;
+  synth.arpStep(1.5, 0.125);
+  assert.equal(synth._voices.find((v) => v.ampEnv.t0 === 2)?.note, 60, 'a step whose time has gone: now');
+  // The sustain pedal doesn't hold its notes.
+  synth.setSustain(true);
+  synth.arpStep(2.2, 0.125);
+  assert.ok(synth._voices.some((v) => v.ampEnv.t0 === 2.2 && v.ampEnv.released(2.2 + 0.125 * ARP_GATE)));
+  synth.setSustain(false);
+  // The keys let go: nothing to play.
+  synth.noteOff(60);
+  synth.noteOff(64);
+  assert.equal(synth.held.size, 0);
+  assert.equal(synth.arpStep(3, 0.125), false);
+  // In mono, every voice on the note, at once, started afresh each step (no legato, no glide).
+  synth.setMono(true);
+  synth.setKnob('glide', 0.5);
+  synth.noteOn(62);
+  sound.ctx.currentTime = 4;
+  synth.arpStep(4, 0.1);
+  synth.arpStep(4.1, 0.1);
+  const voices = synth._voices;
+  assert.ok(voices.every((v) => v.note === 62 && v.ampEnv.t0 === 4.1 && near(v.ampEnv.t1, 4.1 + 0.1 * ARP_GATE)));
+  assert.ok(voices.every((v) => last(v.saw.detune)[0] === 'set'));
+  // On its own clock: the first step of a chord at once.
+  synth.noteOff(62);
+  synth.setMono(false);
+  synth.noteOn(65);
+  sound.ctx.currentTime = 5;
+  assert.equal(synth.arpRun(5, 5.12, 0.125), 1);
+  assert.equal(synth._voices.find((v) => v.ampEnv.t0 === 5)?.note, 65);
+  assert.equal(synth.arpRun(5.05, 5.17, 0.125), 1, 'the next a step later');
+  assert.ok(synth._voices.some((v) => v.ampEnv.t0 === 5.125));
+});
+
+test('the arpeggiator: HOLD keeps the chord and taps come into it or leave; another way plays on; on or off lets every note go', () => {
+  const { sound, synth } = make();
+  let arps = 0, notes = 0;
+  synth.onArp = () => arps++;
+  synth.onNotes = () => notes++;
+  synth.noteOn(60);
+  assert.ok(synth._voices[0].gate);
+  synth.setArp('up');
+  assert.ok(!synth._voices[0].gate && synth._voices[0].ampEnv.released(0), 'turned on: the note held let go');
+  assert.equal(synth.down.size, 0);
+  notes = 0;
+  synth.setHold(true);
+  assert.equal(notes, 1);
+  synth.tap(67);
+  assert.equal(arps, 1);
+  synth.tap(71);
+  assert.deepEqual([...synth.held].sort(), [67, 71]);
+  assert.equal(synth.down.size, 0, 'a tap holds no key down');
+  synth.tap(67);
+  assert.deepEqual([...synth.held], [71], 'tapped again: out');
+  synth.noteOn(72);
+  synth.noteOff(72);
+  assert.deepEqual([...synth.held], [72], 'a key down with none held: a new chord, kept');
+  synth.setArp('updown');
+  assert.deepEqual([synth.arp.mode, [...synth.held]], ['updown', [72]], 'another way: the chord plays on');
+  sound.ctx.currentTime = 1;
+  synth.arpStep(1, 0.1);
+  synth.setArp(null);
+  assert.deepEqual([synth.arp.on, synth.held.size], [false, 0]);
+  assert.ok(synth._voices.every((v) => v.ampEnv.released(1)), 'turned off: everything let go');
+  // RANGE goes round its three, or is set.
+  synth.setRange();
+  assert.equal(synth.arp.range, 2);
+  synth.setRange(3);
+  synth.setRange();
+  assert.equal(synth.arp.range, 1);
+});
+
+test('the knobs, Mono, the preset, the octave and the arpeggiator are kept for the next visit, and what is kept is read with care', () => {
   const storage = memoryStorage();
   const { synth } = make({ storage });
   synth.choose('brass');
   synth.setKnob('cutoff', 0.66);
   synth.setOctave(-1);
+  synth.setArp('random');
+  synth.setHold(true);
+  synth.setRange(2);
   synth.save();
   const again = make({ storage }).synth;
   assert.deepEqual([again.preset, again.edited, again.mono, again.octave, again.knobs.cutoff], ['brass', true, false, -1, 0.66]);
-  storage.map.set('synth', JSON.stringify({ knobs: { cutoff: 7, saw: 'loud' }, mono: 'yes', preset: 'nope', octave: 12 }));
+  assert.deepEqual([again.arp.mode, again.arp.hold, again.arp.range], ['random', true, 2]);
+  storage.map.set('synth', JSON.stringify({ knobs: { cutoff: 7, saw: 'loud' }, mono: 'yes', preset: 'nope', octave: 12, arp: { mode: 'sideways', hold: 'yes', range: 9 } }));
   const odd = make({ storage }).synth;
   assert.deepEqual([odd.knobs.cutoff, odd.knobs.saw, odd.mono, odd.preset, odd.octave], [1, DEFAULT_SYNTH.saw, false, null, OCTAVES.max]);
+  assert.deepEqual([odd.arp.mode, odd.arp.hold, odd.arp.range], [null, false, 3]);
   storage.map.set('synth', '{nonsense');
   assert.deepEqual(make({ storage }).synth.knobs, { ...DEFAULT_SYNTH });
   storage.refuse = true;

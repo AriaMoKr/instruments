@@ -18,7 +18,11 @@
 // plugged into another, or chosen in the card.
 // Beside it the synth (synthboard.js lays it out, synthkit.js draws it): six analog voices, poly or
 // mono (synth.js), its knobs and its presets, played with its keys on every device as the board's
-// pads are, from a computer's keys and a MIDI keyboard, and in the card.
+// pads are, from a computer's keys and a MIDI keyboard, and in the card. Its patch bay takes cables
+// as the board's panel does, from one desk to the other: its sound into the delay, the clock into
+// its arpeggiator (arp.js: the keys held played in turn, a step of the clock each; with no clock
+// patched in, or the room's stopped, on its own at the room's tempo), and its LFO and filter
+// envelope into its pitch, its cutoff and its amp.
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -30,12 +34,13 @@ import { layoutBoard } from './board.js';
 import { Kit } from './kit.js';
 import { Sound } from './sound.js';
 import { Drums, PADS, movePad, padForNote } from './drums.js';
-import { CLOCK_OUTS, Clock, TEMPO } from './clock.js';
+import { CLOCK_OUTS, Clock, LOOKAHEAD, TEMPO, stepSeconds } from './clock.js';
 import { Pattern, stepOf } from './pattern.js';
 import { Patch, padForJack } from './patch.js';
 import { Delay } from './delay.js';
-import { KEYS, Synth, noteName, synthText } from './synth.js';
-import { layoutSynth } from './synthboard.js';
+import { KEYS, MOD_INPUTS, Synth, noteName, synthText } from './synth.js';
+import { arpWords } from './arp.js';
+import { SYNTH, layoutSynth } from './synthboard.js';
 import { SynthKit } from './synthkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
@@ -136,6 +141,7 @@ const pattern = new Pattern({ key: `${ROOM.id}.pattern` });
 const patch = new Patch({ key: `${ROOM.id}.patch` });
 const delay = new Delay(sound, { key: `${ROOM.id}.delay` });
 delay.setTempo(clock.tempo);
+const synth = new Synth(sound, { key: `${ROOM.id}.synth` });
 /** The drum board in 3D (kit.js), once the scene is made. @type {Kit | null} */
 let kit = null;
 
@@ -201,14 +207,17 @@ select(drums.selected);
 // card), which wakes the sound. Its pulses are handed out a little ahead by the audio clock
 // (clock.js advance), from the frame loop and a timer (a frame may be slow, or not come at all: no
 // 3D view, a hidden pane), each falling on a step of the drums if their clock in is patched to an
-// output sending it (every pulse, every 2nd, every 4th), whose pads play on that step at its time.
-// What a pulse shows (the step playing, the pads lit, RUN's light on the beat) is queued until it is
-// heard. A pad patched into the delay's in is connected to it once there is sound (sound.onReady).
+// output sending it (every pulse, every 2nd, every 4th), whose pads play on that step at its time,
+// and likewise on a step of the synth's arpeggiator. While the clock is stopped, or not patched into
+// it, the arpeggiator keeps its own, at the clock's tempo. What a pulse shows (the step playing, the
+// pads lit, RUN's light on the beat) is queued until it is heard. A pad patched into the delay's in,
+// or the synth, is connected to it once there is sound (sound.onReady; the synth's onBuilt).
 
-/** How many of the clock's pulses make a step of the drums (the output their clock in is patched to), else 0. */
-let drumsEvery = 0;
+/** How many of the clock's pulses make a step of the drums, and of the arpeggiator (the output each one's clock in is patched to), else 0. */
+let drumsEvery = 0, synthEvery = 0;
 function patchedClock() {
   drumsEvery = CLOCK_OUTS.find((o) => o.id === patch.source('drums.clock'))?.every ?? 0;
+  synthEvery = CLOCK_OUTS.find((o) => o.id === patch.source('synth.clock'))?.every ?? 0;
 }
 patchedClock();
 /** How hard the pattern plays a pad: on the beat, and between. */
@@ -231,6 +240,7 @@ function pulse(n, time) {
       pads |= 1 << i;
     }
   }
+  if (synthEvery && n % synthEvery === 0) synth.arpStep(time, synthEvery * stepSeconds(clock.tempo));
   if ((queueTail + 1) % QUEUED === queueHead) queueHead = (queueHead + 1) % QUEUED; // full: the oldest goes
   shownAt[queueTail] = time;
   shownPulse[queueTail] = n;
@@ -238,11 +248,18 @@ function pulse(n, time) {
   shownPads[queueTail] = pads;
   queueTail = (queueTail + 1) % QUEUED;
 }
-/** The pulses due soon handed out (none while the clock is stopped). */
+/**
+ * The pulses due soon handed out (none while the clock is stopped); and the arpeggiator's steps on
+ * its own clock, while the room's isn't patched into it or is stopped.
+ */
 function schedule() {
   const ctx = sound.ctx;
-  if (ctx && clock.running) clock.advance(ctx.currentTime, pulse);
+  if (!ctx) return;
+  if (clock.running) clock.advance(ctx.currentTime, pulse);
+  if (synth.arp.on && !(clock.running && synthEvery)) synth.arpRun(ctx.currentTime, ctx.currentTime + LOOKAHEAD, stepSeconds(clock.tempo));
 }
+// A chord just started on the arpeggiator: its first note now, on its own clock.
+synth.onArp = schedule;
 /** What the pulses heard by now show: the step playing, the pads it played lit, RUN's light on the beat. */
 function showPulses() {
   const ctx = sound.ctx;
@@ -321,9 +338,12 @@ overlay.onResetDelay = () => {
   showDelay();
 };
 
-/** Pad i's sound into the delay (`on`), or out of it, once there is sound (else, when there is, onReady). */
-function feedDelay(i, on) {
-  const out = drums.out(i), input = delay.input();
+/**
+ * What comes out of output `id` (a pad's sound, the synth's) into the delay (`on`), or out of it,
+ * once there is sound (else, when there is: onReady, and the synth's once its voices are made).
+ */
+function feedDelay(id, on) {
+  const i = padForJack(id), out = i >= 0 ? drums.out(i) : id === 'synth.out' ? synth.output : null, input = delay.input();
   if (!out || !input) return;
   if (on) out.connect(input);
   else {
@@ -334,42 +354,61 @@ function feedDelay(i, on) {
     }
   }
 }
-sound.onReady = () => feedDelay(padForJack(patch.source('delay.in')), true);
-/** The cables' colours: the clock's amber, and a pad's sound in the pad's colour. */
-const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8';
-const cableColor = (id) => {
-  const i = padForJack(id);
-  return i >= 0 ? PADS[i].color : patch.jack(id)?.kind === 'audio' ? SOUND_CABLE : CLOCK_CABLE;
+sound.onReady = () => feedDelay(patch.source('delay.in'), true);
+synth.onBuilt = () => {
+  if (patch.source('delay.in') === 'synth.out') feedDelay('synth.out', true);
 };
-/** The cables on the board, and in the card. */
+/** The cables' colours: the clock's amber, a pad's sound in the pad's colour, the synth's blue, a modulation's pink. */
+const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8', SYNTH_CABLE = '#5aa2f0', MOD_CABLE = '#e8609a';
+const cableColor = (id) => {
+  const i = padForJack(id), kind = patch.jack(id)?.kind;
+  if (i >= 0) return PADS[i].color;
+  if (id === 'synth.out') return SYNTH_CABLE;
+  return kind === 'audio' ? SOUND_CABLE : kind === 'mod' ? MOD_CABLE : CLOCK_CABLE;
+};
+/** Jack `id`'s place in the room's list of them (the board's, then the synth's: kit.js), else -1. */
+function jackIndex(id) {
+  const k = board.panel.jacks.findIndex((j) => j.id === id);
+  if (k >= 0) return k;
+  const s = synthDesk.panel.jacks.findIndex((j) => j.id === id);
+  return s >= 0 ? synthDesk.panel.jackBase + s : -1;
+}
+/** The id (patch.js) of the jack at place k in that list, else undefined. */
+function jackId(k) {
+  const n = board.panel.jacks.length;
+  return k < n ? board.panel.jacks[k]?.id : synthDesk.panel.jacks[k - n]?.id;
+}
+/** The cables on the board and the synth, and in the card. */
 function showPatch() {
-  if (kit) {
-    const jacks = kit.board.panel.jacks, at = (id) => jacks.findIndex((j) => j.id === id);
-    kit.setCables(patch.cables().map((c) => ({ from: at(c.from), to: at(c.to), color: cableColor(c.from) })));
-  }
+  if (kit) kit.setCables(patch.cables().map((c) => ({ from: jackIndex(c.from), to: jackIndex(c.to), color: cableColor(c.from) })));
   overlay.setPatch(patch);
 }
+/** What goes into one of the synth's modulation inputs from output `id`: the LFO, its filter envelope, else nothing. */
+const modSource = (id) => (id === 'synth.lfo' ? 'lfo' : id === 'synth.env' ? 'env' : null);
 patch.onChange = (to, from, was) => {
   if (to === 'delay.in') {
-    feedDelay(padForJack(was), false);
-    feedDelay(padForJack(from), true);
+    feedDelay(was, false);
+    feedDelay(from, true);
   }
-  if (to === 'drums.clock') patchedClock();
+  if (to === 'drums.clock' || to === 'synth.clock') patchedClock();
+  const input = MOD_INPUTS.find((m) => to === `synth.${m}`);
+  if (input) synth.setInput(input, modSource(from));
   showPatch();
 };
+for (const m of MOD_INPUTS) synth.setInput(m, modSource(patch.source(`synth.${m}`)));
 showPatch();
 overlay.onPlug = (input, output) => {
   if (output) patch.plug(output, input);
   else patch.unplug(input);
 };
 // ── The synth ────────────────────────────────────────────────────────────────
-// Six voices into the same sound, its knobs, its preset, Mono and its octave kept for the next visit
-// (synth.js). A key held sounds until it is let go: a press on it (on the synth, in the card), a
-// computer's key, a MIDI keyboard's, in VR a stick or a forefinger down in it. A click, OK, A or a
-// trigger on one plays it a moment. The keys down show on the synth and in the card, and what it
-// plays on its display.
+// Six voices into the same sound, its knobs, its preset, Mono, its octave and its arpeggiator kept
+// for the next visit (synth.js). A key held sounds until it is let go: a press on it (on the synth,
+// in the card), a computer's key, a MIDI keyboard's, in VR a stick or a forefinger down in it. A
+// click, OK, A or a trigger on one plays it a moment. With the arpeggiator on, the keys held make
+// the chord it plays (with HOLD, kept; a click brings a note into it, or takes it out). The keys down
+// show on the synth and in the card, and what it plays on its display.
 
-const synth = new Synth(sound, { key: `${ROOM.id}.synth` });
 /** The synth in 3D (synthkit.js), once the scene is made. @type {SynthKit | null} */
 let synthKit = null;
 /** The note each key of the synth (from the lowest) sounds while held there, -1 none: the octave may change before it is let go. */
@@ -403,20 +442,22 @@ function keyUp(k) {
   if (keyNotes[k] >= 0) noteOff(keyNotes[k]);
   keyNotes[k] = -1;
 }
-/** What the synth plays, on it (its display, its lights) and in the card: its sound, its preset, Mono and its octave. */
+/** What the synth plays, on it (its display, its lights) and in the card: its sound, its preset, Mono, its octave and its arpeggiator. */
 function showSynth() {
-  synthKit?.setState({ name: synth.name, mono: synth.mono, preset: synth.preset, lowest: synth.lowest });
-  overlay.setSynth({ name: synth.name, preset: synth.preset, mono: synth.mono, octave: synth.octave, lowest: synth.lowest });
+  const arp = { mode: synth.arp.mode, range: synth.arp.range, hold: synth.arp.hold };
+  synthKit?.setState({ name: synth.name, mono: synth.mono, preset: synth.preset, lowest: synth.lowest, arp });
+  overlay.setSynth({ name: synth.name, preset: synth.preset, mono: synth.mono, octave: synth.octave, lowest: synth.lowest, arp });
 }
 /** Every knob at once (a preset, as it comes): on the synth's dials and the card's sliders. */
 function showSynthKnobs() {
   synthKit?.setKnobs(synth.knobs);
   overlay.setSynthKnobs(synth.knobs);
 }
-/** The keys down, on the synth and in the card. */
+/** The keys down (and the arpeggiator's chord), on the synth and in the card. */
 function showNotes() {
-  synthKit?.setDown(synth.down, synth.lowest);
-  overlay.setNotes(synth.down, synth.lowest);
+  const held = synth.held;
+  synthKit?.setDown(held, synth.lowest);
+  overlay.setNotes(held, synth.lowest);
 }
 synth.onNotes = showNotes;
 /** A knob of the synth set 0…1: heard at once (or from the next note), on its dial and the display, and in the card. */
@@ -450,6 +491,23 @@ function setOctave(octave) {
   showSynth();
   showNotes();
 }
+/** The arpeggiator on, playing one of its ways (arp.js ARP_MODES), or off (null): every note let go as it goes on or off. */
+function setArp(mode) {
+  synth.setArp(mode);
+  showSynth();
+  showNotes();
+}
+/** The arpeggiator's HOLD, on or off. */
+function setHold(on) {
+  synth.setHold(on);
+  showSynth();
+  showNotes();
+}
+/** The octaves the arpeggiator plays over (none given: the next, round them). */
+function setRange(n) {
+  synth.setRange(n);
+  showSynth();
+}
 /** The keys' notes, in words (for a toast). */
 const keysText = () => `Keys ${noteName(synth.lowest)} to ${noteName(synth.lowest + KEYS - 1)}`;
 overlay.onKeyDown = keyDown;
@@ -460,6 +518,9 @@ overlay.onMono = setMono;
 overlay.onOctave = setOctave;
 overlay.onSynthKnob = setSynthKnob;
 overlay.onResetSynth = resetSynth;
+overlay.onArp = setArp;
+overlay.onHold = setHold;
+overlay.onRange = setRange;
 showSynth();
 showSynthKnobs();
 
@@ -535,7 +596,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a synth beside it (thirty-seven keys, its knobs, and a panel of sounds), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a synth beside it (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -559,18 +620,19 @@ scene.add(rig);
 const L = layoutRoom(ROOM, { doorWidth, doorHeight });
 const room = buildRoom(L, { colors: ROOM.colors, skyYaw: ROOM.skyYaw, glow, name: leadsTo, anisotropy });
 scene.add(room.group);
-// The drum board against the far wall, in the room's light.
+// The drum board against the far wall, in the room's light, and the synth beside it, likewise; the
+// cables between their jacks, the board's kit's (its own, then the synth's).
 const board = layoutBoard(L);
+const synthDesk = layoutSynth(L, board);
 kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
+kit.addJacks(synthDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise));
 scene.add(kit.group);
 select(drums.selected);
 kit.setTempo(clock.tempo);
 showDelay();
-showPatch();
-// The synth beside it, likewise.
-const synthDesk = layoutSynth(L, board);
 synthKit = new SynthKit(synthDesk, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 scene.add(synthKit.group);
+showPatch();
 showSynth();
 showSynthKnobs();
 showNotes();
@@ -713,8 +775,9 @@ if (tv) {
 // A pad played: a press on it, its key, a trigger, A or OK on it, and in VR a stick or a forefinger
 // coming down on it (which the controller feels); a step key likewise. A knob turned: a drag, the
 // wheel, a stick. RUN pressed, or Space. On a TV a pad chosen with the arrows. Walking up to the
-// board to play it, and stepping away. A cable: taken from a jack (out of an input, the one plugged
-// in there), carried to where it is pointed, and plugged into another, or put away.
+// board to play it, and stepping away. A cable: taken from a jack, the board's or the synth's (out
+// of an input, the one plugged in there), carried to where it is pointed (to the other desk too),
+// and plugged into another, or put away.
 
 controls.onPad = play;
 controls.onStep = toggleStep;
@@ -742,7 +805,8 @@ function pickUp(id, words) {
   carried = { id };
   controls.carrying = true;
   ringed = -2;
-  kit.carry(board.panel.jacks.findIndex((j) => j.id === id), jack?.dir === 'out' ? cableColor(id) : jack?.kind === 'audio' ? SOUND_CABLE : CLOCK_CABLE);
+  const loose = jack?.kind === 'audio' ? SOUND_CABLE : jack?.kind === 'mod' ? MOD_CABLE : CLOCK_CABLE;
+  kit.carry(jackIndex(id), jack?.dir === 'out' ? cableColor(id) : loose);
   overlay.toast(words);
 }
 /** The cable carried put away (`plugged`: in, so nothing more is said). */
@@ -754,14 +818,16 @@ function putDown(plugged = false) {
   kit.carry(-1);
   if (!plugged) overlay.toast('Cable put away');
 }
+/** What each kind of jack carries, in words. */
+const CARRIES = { clock: "the clock's pulses", audio: 'sound', mod: 'the LFO or the envelope' };
 /** Why the cable carried, from jack a, can't go into jack b. */
 function whyNot(a, b) {
   if (a.dir === b.dir) return a.dir === 'out' ? 'Both are outs: an out goes into an in' : 'Both are ins: an in takes an out';
-  const into = a.dir === 'in' ? a : b;
-  return into.kind === 'clock' ? `${into.name} takes the clock's pulses, not sound` : `${into.name} takes sound, not the clock's pulses`;
+  const into = a.dir === 'in' ? a : b, from = a.dir === 'in' ? b : a;
+  return `${into.name} takes ${CARRIES[into.kind]}, not ${CARRIES[from.kind]}`;
 }
 controls.onJack = (k) => {
-  const id = board.panel.jacks[k]?.id, jack = id ? patch.jack(id) : undefined;
+  const id = jackId(k), jack = id ? patch.jack(id) : undefined;
   if (!id || !jack) return;
   if (!carried) {
     // Out of an input, the cable in it, still in its output; else a new one, from this jack.
@@ -798,7 +864,7 @@ controls.over = () => {
 controls.onPlaying = (at) => {
   playingAt = at;
   overlay.setPlaying(at);
-  if (at !== 'board') putDown();
+  if (!at && !controls.goingTo) putDown(); // stepped away; walking to the other desk, it comes too
   if (at) sound.wake(); // ready for the first pad or key: the walk here began with a press
   if (at && remote) {
     if (at === 'board') overlay.openDrums(true);
@@ -823,8 +889,10 @@ kit.onStrike = (i, velocity, source) => {
 // ── The synth's keys, dials and buttons ──────────────────────────────────────
 // A key held down: a press on it, a computer's key at the synth, in VR a stick or a forefinger in it
 // (which the controller feels); a click, A, OK or a trigger plays one a moment. A dial turned: a
-// drag, the wheel, a stick. Its panel's buttons: a preset, Mono, the octave (Z and X too), said.
-// Walking up to it to play it, and stepping away; on a TV the arrows choose a key.
+// drag, the wheel, a stick. Its panel's buttons: a preset, Mono, the octave (Z and X too), the
+// arpeggiator's ways (the one lit again: off), HOLD and RANGE, said. Its jacks are the board's
+// (controls.onJack, above). Walking up to it to play it, and stepping away; on a TV the arrows
+// choose a key.
 
 controls.onNoteOn = noteOn;
 controls.onNoteOff = noteOff;
@@ -840,6 +908,13 @@ controls.onButton = (i) => {
   else if (id.startsWith('octave.')) {
     setOctave(synth.octave + (id === 'octave.up' ? 1 : -1));
     overlay.toast(keysText(), 2);
+    return;
+  } else if (id.startsWith('arp.')) {
+    const what = id.slice('arp.'.length);
+    if (what === 'hold') setHold(!synth.arp.hold);
+    else if (what === 'range') setRange();
+    else setArp(synth.arp.mode === what ? null : what);
+    overlay.toast(`Arpeggiator: ${arpWords(synth.arp)}`, 2);
     return;
   } else chooseSound(id.slice('preset.'.length));
   overlay.toast(synth.title, 2);
@@ -1110,7 +1185,7 @@ function step(dt) {
   const ring = carried && xr ? (held?.kind === 'jack' ? held.jack : -1) : controls.hoverJack;
   if (ring !== ringed) {
     ringed = ring;
-    const id = board.panel.jacks[ring]?.id;
+    const id = jackId(ring);
     kit.hoverJack(ring, !carried || !id || id === carried.id || patch.canPlug(carried.id, id));
   }
   if (carried) kit.aimAt(xr ? (held && held.kind !== 'ceiling' ? held : null) : controls.aim.has ? controls.aim : null);
@@ -1145,7 +1220,7 @@ fade.to(0, blink(0.8));
 window.__room = {
   THREE, renderer, scene, camera, rig, room, layout: L, controls, overlay, fade, vignette, xrDevice, go, enterVR, together, remote, tv, way, visit, setAccess,
   sound, drums, board, kit, play, select, setKnob, clock, pattern, patch, delay, toggleClock, setTempo, toggleStep, setDelayKnob, schedule,
-  synth, synthDesk, synthKit, noteOn, noteOff, tapNote, keyDown, keyUp, chooseSound, resetSynth, setSynthKnob, setMono, setOctave,
+  synth, synthDesk, synthKit, noteOn, noteOff, tapNote, keyDown, keyUp, chooseSound, resetSynth, setSynthKnob, setMono, setOctave, setArp, setHold, setRange,
   /** On a TV at the synth, the key the arrows chose. */
   get chosenKey() {
     return chosenKey;

@@ -12,11 +12,12 @@
 // Drums is the drum board: a button to go and play it (or step away), its clock (Start or Stop, and
 // the tempo), its pads as buttons (each plays as it is pressed, as on the board), the steps of the
 // pad last played as toggles (the step playing marked), its knobs and the delay's as sliders, and the
-// cables as a choice for each input. Synth is the synth: a button to go and play it, its keys (each
-// sounds while pressed, one stop among them with the arrows going along them), its sounds (the
-// presets a choice, Mono, the octave) and its knobs as sliders, a section each as on its top. Sound
-// is the volume and mute over the room's sound, and a MIDI device to play from, where the browser has
-// Web MIDI.
+// cables as a choice for each of the board's inputs (the synth's sound among those for the delay's).
+// Synth is the synth: a button to go and play it, its keys (each sounds while pressed, one stop among
+// them with the arrows going along them), its sounds (the presets a choice, Mono, the octave), its
+// arpeggiator (off or one of its ways, Hold, the octaves it plays over), its knobs as sliders, a
+// section each as on its top, and the cables into its inputs likewise. Sound is the volume and mute
+// over the room's sound, and a MIDI device to play from, where the browser has Web MIDI.
 // On a TV (common's tv.js) the remote reaches only the card, so Wave is in it, and there is nothing
 // to copy a link to: the invite link is shown to type on another device. Fullscreen and Enter VR
 // are not offered there (main.js), nor the synth's keys (its remote plays them at the synth).
@@ -26,6 +27,7 @@ import { STEPS } from './pattern.js';
 import { DELAY_KNOBS, MAX_STEPS, delaySteps, delayText } from './delay.js';
 import { JACKS } from './patch.js';
 import { KEYS, LOWEST, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack, noteName, spokenNote, synthText } from './synth.js';
+import { ARP_MODES, ARP_RANGES } from './arp.js';
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -248,12 +250,13 @@ export class Overlay {
     this.resetDelay = el('button', { class: 'chip', type: 'button' }, 'Delay as it comes');
     this.resetDelay.addEventListener('click', () => this.onResetDelay());
     this.delayBox = el('fieldset', { class: 'delay' }, el('legend', {}, 'Delay'), ...delayRows, el('div', { class: 'actions' }, this.resetDelay));
-    // The cables: for each input, the output plugged into it, or nothing.
+    // The cables: for each input, the output plugged into it, or nothing. The board's here, the
+    // synth's with it.
     /** (input, output) the output chosen for an input (patch.js ids), null for nothing. @type {(input: string, output: string | null) => void} */
     this.onPlug = () => {};
     /** Each input's choice. @type {Map<string, HTMLSelectElement>} */
     this.plugs = new Map();
-    const plugRows = JACKS.filter((j) => j.dir === 'in').map((j) => {
+    const plugRows = (synth) => JACKS.filter((j) => j.dir === 'in' && (j.module === 'synth') === synth).map((j) => {
       const select = el('select', { name: j.id },
         el('option', { value: '' }, 'Nothing'),
         ...JACKS.filter((o) => o.dir === 'out' && o.kind === j.kind).map((o) => el('option', { value: o.id }, o.name)));
@@ -261,7 +264,7 @@ export class Overlay {
       this.plugs.set(j.id, select);
       return el('label', { class: 'plug' }, el('span', {}, j.name), select);
     });
-    this.cablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows);
+    this.cablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(false));
     this.knobPad = el('span', {}, PADS[0].name);
     /** Each knob's slider and the words for its setting. @type {Map<import('./drums.js').Knob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
     this.knobInputs = new Map();
@@ -374,6 +377,32 @@ export class Overlay {
       el('div', { class: 'choices' }, ...presets),
       el('div', { class: 'actions' }, el('label', { class: 'check' }, this.monoInput, 'Mono'), this.resetSynth),
       octave.row);
+    // Its arpeggiator: off or one of its ways (as its panel's buttons), Hold, the octaves it plays over.
+    /** (mode) the arpeggiator playing one of its ways (arp.js ARP_MODES), or off (null). @type {(mode: string | null) => void} */
+    this.onArp = () => {};
+    /** (on) its Hold: the chord kept when the keys are let go. @type {(on: boolean) => void} */
+    this.onHold = () => {};
+    /** (n) the octaves it plays over (ARP_RANGES). @type {(n: number) => void} */
+    this.onRange = () => {};
+    /** Each of its ways' choice, '' for off. @type {Map<string, HTMLInputElement>} */
+    this.arpInputs = new Map();
+    const ways = [{ id: '', name: 'Off' }, ...ARP_MODES].map(({ id, name }) => {
+      const input = el('input', { type: 'radio', name: 'synth-arp', value: id });
+      input.addEventListener('change', () => {
+        if (input.checked) this.onArp(id || null);
+      });
+      this.arpInputs.set(id, input);
+      return el('label', {}, input, name);
+    });
+    this.holdInput = el('input', { type: 'checkbox', name: 'synth-hold' });
+    this.holdInput.addEventListener('change', () => this.onHold(this.holdInput.checked));
+    const span = range('Range', ARP_RANGES[0], ARP_RANGES[ARP_RANGES.length - 1], (n) => this.onRange(n));
+    this.arpRange = span.input;
+    this.arpRangeOut = span.out;
+    this.arpBox = el('fieldset', { class: 'arp' }, el('legend', {}, 'Arpeggiator'),
+      el('div', { class: 'choices' }, ...ways),
+      el('div', { class: 'actions' }, el('label', { class: 'check' }, this.holdInput, 'Hold')),
+      span.row);
     // Its knobs, a section each as on its top.
     /** Each of the synth's sliders and the words for its setting. @type {Map<import('./synth.js').SynthKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
     this.synthInputs = new Map();
@@ -383,8 +412,9 @@ export class Overlay {
         this.synthInputs.set(k.id, row);
         return row.row;
       })));
+    this.synthCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(true));
     this.synthPlayRow = el('div', { class: 'actions' }, this.playSynth);
-    this.synth = el('div', { class: 'part synth', id: 'synth', hidden: '' }, this.synthPlayRow, this.keyboard, this.presetsBox, ...this.sectionBoxes);
+    this.synth = el('div', { class: 'part synth', id: 'synth', hidden: '' }, this.synthPlayRow, this.keyboard, this.presetsBox, this.arpBox, ...this.sectionBoxes, this.synthCablesBox);
     this._labelKeys(LOWEST);
     // The room's sound: its volume and Mute, and a MIDI device to play from.
     this.soundToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'sound' }, 'Sound');
@@ -595,14 +625,24 @@ export class Overlay {
 
   /**
    * The synth as it is (synth.js Synth): what it plays (its name, `title`, over the presets), the
-   * preset chosen, Mono, and the octave (the keys' notes, on them too).
-   * @param {{ name: string, preset: string | null, mono: boolean, octave: number, lowest: number }} synth
+   * preset chosen, Mono, its arpeggiator (its way, else off; Hold; its octaves) and the octave (the
+   * keys' notes, on them too).
+   * @param {{ name: string, preset: string | null, mono: boolean, octave: number, lowest: number, arp: { mode: string | null, range: number, hold: boolean } }} synth
    */
-  setSynth({ name, preset, mono, octave, lowest }) {
+  setSynth({ name, preset, mono, octave, lowest, arp }) {
     this._preset = preset;
     if (this.soundName.textContent !== name) this.soundName.textContent = name;
     for (const [id, input] of this.presetInputs) if (input.checked !== (id === preset)) input.checked = id === preset;
     if (this.monoInput.checked !== mono) this.monoInput.checked = mono;
+    const way = arp.mode ?? '';
+    for (const [id, input] of this.arpInputs) if (input.checked !== (id === way)) input.checked = id === way;
+    if (this.holdInput.checked !== arp.hold) this.holdInput.checked = arp.hold;
+    const span = String(arp.range), octaves = arp.range === 1 ? '1 octave' : `${arp.range} octaves`;
+    if (this.arpRange.value !== span) this.arpRange.value = span;
+    if (this.arpRangeOut.textContent !== octaves) {
+      this.arpRangeOut.textContent = octaves;
+      this.arpRange.setAttribute('aria-valuetext', octaves);
+    }
     const value = String(octave);
     if (this.octave.value !== value) this.octave.value = value;
     const text = `${noteName(lowest)}–${noteName(lowest + KEYS - 1)}`;

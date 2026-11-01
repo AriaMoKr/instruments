@@ -266,8 +266,9 @@ export function knobAt(B, a, b, on = 'top') {
 }
 
 /**
- * The jack at (a, b) on the panel (its nut, half as large again), else -1.
- * @param {Board} B
+ * The jack at (a, b) on the panel (its nut, half as large again), else -1: the board's, or the
+ * synth's (synthboard.js), whose are as large.
+ * @param {{ panel: { jacks: readonly { a: number, b: number }[] } }} B
  * @param {number} a
  * @param {number} b
  */
@@ -280,8 +281,9 @@ export function jackAt(B, a, b) {
 }
 
 /**
- * What room.js castRay writes, with the board's: which pad, step key, knob (B.knobs) and jack
- * (B.panel.jacks); and the synth's (synthboard.js): which key, dial and button; each else -1.
+ * What room.js castRay writes, with the board's: which pad, step key, knob (B.knobs) and jack (the
+ * room's: B.panel.jacks, then the synth's); and the synth's (synthboard.js): which key, dial and
+ * button; each else -1.
  * @typedef {import('./room.js').RoomHit & { pad: number, step: number, knob: number, jack: number, key: number, dial: number, button: number }} BandHit
  */
 

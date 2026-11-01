@@ -11,21 +11,24 @@
 //   the drum board (board.js): one walks round it, and a ray meets its pads (onPad(i, velocity)),
 //     its step keys (onStep(s)), its knobs, the strip's and the panel's (onKnob(k, by): a drag, the
 //     wheel, or in VR a stick pushed while pointing at one), the panel's jacks (onJack(j): a cable
-//     picked up, then plugged in; while `carrying`, choosing anything else but a control drops it,
-//     onDrop), RUN (onRun; Space too) and the rest of it.
+//     picked up, then plugged in), RUN (onRun; Space too) and the rest of it.
 //   the synth (synthboard.js) beside it: one walks round it too, and a ray meets its keys (a press
 //     on one is onNoteOn(note, velocity) as it goes down and onNoteOff(note) as it comes up, sliding
 //     onto the next plays that; a click, A, OK or a trigger elsewhere, onNoteTap), its dials
-//     (onDial(d, by), as the board's knobs), its panel's buttons (onButton(i)) and the rest of it.
+//     (onDial(d, by), as the board's knobs), its panel's buttons (onButton(i)), its jacks (onJack, as
+//     the board's: the room's list of them, the board's first) and the rest of it.
 //     Choosing either walks up to it to play it (walkToBoard, walkToSynth): on a screen the visitor
 //     is then `at` it (onPlaying), so a press on a pad, a key, a step key, a jack, RUN or a button
-//     works as it goes down (fingers at once on a phone). At the board the keys 1–4, Q–R and A–F
-//     are the pads' (Shift harder), on a TV the arrows choose a pad (onPick); at the synth the
-//     middle row from A plays the white keys and the row over it the black ones (onNoteOn, then
-//     onNoteOff as each comes up), Z and X move the octave (onOctave), and on a TV the arrows choose
-//     a key (onKeyPick). Escape (a cable carried first), Back or walking off steps away (stepAway).
-//     Where a cable carried is pointed: `aim` (the view's pointer), or in VR the hand that last chose
-//     (`selectHand`).
+//     works as it goes down (fingers at once on a phone); a jack works so on the other desk too, for
+//     a cable from one to the other. At the board the keys 1–4, Q–R and A–F are the pads' (Shift
+//     harder), on a TV the arrows choose a pad (onPick); at the synth the middle row from A plays the
+//     white keys and the row over it the black ones (onNoteOn, then onNoteOff as each comes up), Z
+//     and X move the octave (onOctave), and on a TV the arrows choose a key (onKeyPick). Escape (a
+//     cable carried first), Back or walking off steps away (stepAway).
+//     While a cable is `carrying`: a jack plugs it in, the controls where one plays work, the other
+//     desk walks there with it (`goingTo` while on the way), and choosing anything else, or Escape,
+//     drops it (onDrop). Where it is pointed: `aim` (the view's pointer), or in VR the hand that last
+//     chose (`selectHand`).
 // What a click, a tap, A, OK or a trigger is on comes to use(hit, how): the panel, the pieces, the
 // board and the synth here, and common's the doorway (onDoor) and the floor (a walk there, in VR a
 // teleport).
@@ -48,10 +51,10 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const PRESS = 0.85, KEY = 0.8;
 /** How hard a key slid onto, the press still down, is played (a glissando). */
 const GLISS = 0.6;
-/** What a ray can meet on the board, and of it what is a control, used at once while playing. */
+/** What a ray can meet on the board (and a jack on the synth too: deskOf), and of it what is a control, used at once while playing. */
 const ON_BOARD = new Set(['pad', 'step', 'knob', 'jack', 'run', 'board']);
 const AT_ONCE = new Set(['step', 'jack', 'run']);
-/** What a ray can meet on the synth. */
+/** What a ray can meet on the synth (and its jacks). */
 const ON_SYNTH = new Set(['key', 'dial', 'button', 'synth']);
 /** On a TV, playing: the arrows choose a pad, so many columns right and rows farther. @type {Readonly<Record<string, [number, number]>>} */
 const PICK = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
@@ -94,8 +97,10 @@ export class Controls extends Walking {
     this.aim = { has: false, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0 };
     /** In VR, the hand that last chose something (its index in hands), else -1. */
     this.selectHand = -1;
-    /** A cable is being carried (main.js): choosing anything but a control drops it, and so does Escape. */
+    /** A cable is being carried (main.js): choosing anything but a control or a desk drops it, and so does Escape. */
     this.carrying = false;
+    /** On a screen, the desk the visitor is walking up to, to play (a cable carried stays carried on the way), else null. @type {At | null} */
+    this.goingTo = null;
     /** (button id) when a button of the control panel is pressed. @type {(id: string) => void} */
     this.onPanel = () => {};
     /** (i, how) when piece i on a wall (layout.pieces) is chosen. @type {(i: number, how: How) => void} */
@@ -106,7 +111,7 @@ export class Controls extends Walking {
     this.onStep = () => {};
     /** (k, by) when knob k (board.js layoutBoard's knobs) is turned, by this much of its whole turn. @type {(k: number, by: number) => void} */
     this.onKnob = () => {};
-    /** (j) when jack j (board.js layoutBoard's panel.jacks) is chosen. @type {(j: number) => void} */
+    /** (j) when jack j (the room's list of them: board.js layoutBoard's panel.jacks, then the synth's) is chosen. @type {(j: number) => void} */
     this.onJack = () => {};
     /** RUN pressed: the clock started, or stopped. */
     this.onRun = () => {};
@@ -220,27 +225,40 @@ export class Controls extends Walking {
   }
 
   /**
+   * The desk a hit is on, the board or the synth (a jack by where it is in the room's list of
+   * them), else null.
+   * @param {BandHit | null} hit
+   * @returns {At | null}
+   */
+  deskOf(hit) {
+    if (!hit) return null;
+    if (hit.kind === 'jack') return hit.jack < this.board.panel.jacks.length ? 'board' : 'synth';
+    return ON_BOARD.has(hit.kind) ? 'board' : ON_SYNTH.has(hit.kind) ? 'synth' : null;
+  }
+
+  /**
    * Uses what a hit is on: a panel button, a piece on a wall, the board's controls (in VR, or while
-   * playing at the board: a pad played, a step key set, a jack, RUN; else, as the rest of the
-   * board, a walk up to it), the synth's likewise (a key played for a moment, a button pressed), or
-   * common's (the doorway, the floor). Carrying a cable, anything but one of the board's controls
-   * drops it.
+   * playing at the board: a pad played, a step key set, RUN; else, as the rest of the board, a walk
+   * up to it), the synth's likewise (a key played for a moment, a button pressed), a jack on either
+   * (in VR, or while playing at either: for a cable from one to the other), or common's (the doorway,
+   * the floor). Carrying a cable, a desk's controls work where one plays, the other desk walks there
+   * with it, and anything else drops it.
    * @param {BandHit | null} hit
    * @param {How} how
    */
   use(hit, how) {
-    const board = how === 'xr' || this.at === 'board', synth = how === 'xr' || this.at === 'synth';
-    if (this.carrying && !(board && hit && ON_BOARD.has(hit.kind) && hit.kind !== 'board')) this.onDrop();
+    const xr = how === 'xr', desk = this.deskOf(hit), here = !!desk && (xr || desk === this.at);
+    const control = here && !!hit && hit.kind !== 'board' && hit.kind !== 'synth';
+    if (hit?.kind === 'jack' && (xr || this.at)) this.onJack(hit.jack);
+    else if (this.carrying && !control && (here || !desk)) this.onDrop();
     else if (hit?.kind === 'panel') this._press(panelButtonAt(hit.u, hit.v));
     else if (hit?.kind === 'piece') this.onPiece(hit.piece, how);
-    else if (hit?.kind === 'pad' && board) this.onPad(hit.pad, PRESS);
-    else if (hit && AT_ONCE.has(hit.kind) && board) this._atOnce(hit);
-    else if (hit && ON_BOARD.has(hit.kind)) {
-      if (this.at !== 'board') this.walkToBoard();
-    } else if (hit?.kind === 'key' && synth) this.onNoteTap(this.lowest() + hit.key, PRESS);
-    else if (hit?.kind === 'button' && synth) this.onButton(hit.button);
-    else if (hit && ON_SYNTH.has(hit.kind)) {
-      if (this.at !== 'synth') this.walkToSynth();
+    else if (control && hit?.kind === 'pad') this.onPad(hit.pad, PRESS);
+    else if (control && hit && AT_ONCE.has(hit.kind)) this._atOnce(hit);
+    else if (control && hit?.kind === 'key') this.onNoteTap(this.lowest() + hit.key, PRESS);
+    else if (control && hit?.kind === 'button') this.onButton(hit.button);
+    else if (desk) {
+      if (this.at !== desk) this._walkTo(desk);
     } else super.use(hit, how);
   }
 
@@ -308,17 +326,20 @@ export class Controls extends Walking {
   }
 
   /**
-   * Playing: Space is RUN, Escape drops a cable carried or else steps away; at the board a pad's key
-   * plays it (Shift: harder) and on a TV the arrows choose a pad; at the synth its keys, the octave's
-   * and on a TV the arrows choosing a key. Otherwise walking's.
+   * Escape drops a cable carried, wherever one is. Playing: Space is RUN, Escape steps away; at the
+   * board a pad's key plays it (Shift: harder) and on a TV the arrows choose a pad; at the synth its
+   * keys, the octave's and on a TV the arrows choosing a key. Otherwise walking's.
    * @param {KeyboardEvent} e
    * @param {string} name
    */
   takeKey(e, name) {
+    if (name === 'Escape' && this.carrying) {
+      this.onDrop();
+      return true;
+    }
     if (!this.at) return false;
     if (name === 'Escape') {
-      if (this.carrying) this.onDrop();
-      else this.stepAway();
+      this.stepAway();
       return true;
     }
     if (name === 'Space' || name === ' ') {
@@ -441,6 +462,7 @@ export class Controls extends Walking {
     const h = at === 'synth' ? SYNTH.key.rise + SYNTH.key.blackRise : undefined;
     const f = boardFront(desk, { fov: view.fov, aspect: view.aspect, over: this.over(), h, free: (x, z) => !boardBlocks(other, x, z) });
     const p = this.rig.position;
+    this.goingTo = at;
     this._stop(false);
     this.stand();
     this.restPitch = clamp(f.pitch, -1.3, 0.3); // a little up: the board under the card on a phone
@@ -471,6 +493,7 @@ export class Controls extends Walking {
     this._playAt.x = x;
     this._playAt.z = z;
     this._leveling = false;
+    this.goingTo = null;
     this.at = at;
     this.onPlaying(at);
   }
@@ -504,7 +527,8 @@ export class Controls extends Walking {
   }
 
   /**
-   * Any walk but the one to the board or the synth leaves it.
+   * Any walk but the one to the board or the synth leaves it (and one taken over on the way there
+   * drops the cable carried).
    * @protected
    * @param {[number, number][]} points
    * @param {number | null} face
@@ -512,7 +536,12 @@ export class Controls extends Walking {
    * @param {boolean} [turn]
    */
   _startWalk(points, face, done = null, turn = points.length > 1) {
-    if (!this._toBoard) this._stop(false);
+    if (!this._toBoard) {
+      const going = this.goingTo;
+      this.goingTo = null;
+      this._stop(false);
+      if (going && this.carrying) this.onDrop();
+    }
     super._startWalk(points, face, done, turn);
   }
 
@@ -540,11 +569,11 @@ export class Controls extends Walking {
 
   /**
    * Presses where one plays, before walking's. At the board: one on a pad plays it as it goes down
-   * (as many fingers as there are), one on a step key, a jack or RUN works at once, one on a knob
-   * turns it as it is dragged up or down. At the synth: one on a key plays it until it comes up,
-   * sliding onto another plays that (as many fingers as there are: chords), one on a button works
-   * at once, one on a dial turns it as a knob. Elsewhere, walking's. Taken in the view's parent, as
-   * the press goes down to the view.
+   * (as many fingers as there are), one on a step key or RUN works at once, one on a knob turns it
+   * as it is dragged up or down. At the synth: one on a key plays it until it comes up, sliding onto
+   * another plays that (as many fingers as there are: chords), one on a button works at once, one on
+   * a dial turns it as a knob. At either, one on a jack of either works at once. Elsewhere,
+   * walking's. Taken in the view's parent, as the press goes down to the view.
    * @private
    */
   _bindBoard() {
@@ -554,7 +583,8 @@ export class Controls extends Walking {
       const hit = this._pickScreen(e.clientX, e.clientY);
       if (!hit) return;
       const board = this.at === 'board';
-      if (board && hit.kind === 'pad') this.onPad(hit.pad, e.shiftKey ? 1 : PRESS);
+      if (hit.kind === 'jack') this.onJack(hit.jack);
+      else if (board && hit.kind === 'pad') this.onPad(hit.pad, e.shiftKey ? 1 : PRESS);
       else if (board && AT_ONCE.has(hit.kind)) this._atOnce(hit);
       else if (board && hit.kind === 'knob') this._grab(e, hit.knob, false);
       else if (!board && hit.kind === 'key') {
