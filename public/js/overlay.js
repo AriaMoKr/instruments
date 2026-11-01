@@ -170,11 +170,13 @@ export class Overlay {
     this.play = el('button', { class: 'chip', type: 'button' }, 'Play at the board');
     this.play.addEventListener('click', () => this.onPlay());
     // A pad plays as it is pressed, as on the board; its click then is that press's. A key (Enter,
-    // Space), a screen reader or the TV's OK gives only the click, which plays it.
+    // Space), a screen reader or the TV's OK gives only the click, which plays it. Its name is the
+    // words on it (so a name said to voice control is the one shown), 'Kick, key A', the ', key '
+    // there for a screen reader only.
     this._pressed = null;
     this.pads = PADS.map((p, i) => {
-      const b = el('button', { class: 'pad', type: 'button', 'aria-label': `${p.name}, key ${keyLabel(p.key)}`, style: `--pad: ${p.color}` },
-        el('span', { class: 'pad-name' }, p.name), el('kbd', { 'aria-hidden': 'true' }, keyLabel(p.key)));
+      const b = el('button', { class: 'pad', type: 'button', style: `--pad: ${p.color}` },
+        el('span', { class: 'pad-name' }, p.name), el('span', { class: 'sr-only' }, ', key '), el('kbd', {}, keyLabel(p.key)));
       b.addEventListener('pointerdown', (e) => {
         if (e.button > 0) return;
         this._pressed = { pad: i, at: e.timeStamp };
@@ -611,15 +613,17 @@ export class Overlay {
   }
 
   /**
-   * The keys' notes from the lowest one's: their names, and the Cs' on them.
+   * The keys' notes from the lowest one's: the Cs' on them, which are their names (so a name said to
+   * voice control is the one shown), and the rest's names as they are said ('C sharp 4').
    * @private
    * @param {number} lowest
    */
   _labelKeys(lowest) {
     for (const [k, b] of this.keys.entries()) {
       const n = lowest + k;
-      b.setAttribute('aria-label', spokenNote(n));
       b.textContent = n % 12 === 0 ? noteName(n) : '';
+      if (b.textContent) b.removeAttribute('aria-label');
+      else b.setAttribute('aria-label', spokenNote(n));
     }
   }
 

@@ -55,7 +55,7 @@ test('Drums opens and closes in the card, beside the session and Settings', asyn
   }
 });
 
-test('every pad is a button, in the board\'s rows (the farthest first), that plays as it is pressed, and once', async () => {
+test('every pad is a button named by its words, in the board\'s rows (the farthest first), that plays as it is pressed, and once', async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
@@ -67,8 +67,11 @@ test('every pad is a button, in the board\'s rows (the farthest first), that pla
     for (const [i, p] of PADS.entries()) {
       const b = o.pads[i];
       assert.deepEqual([b.tagName, b.getAttribute('type')], ['BUTTON', 'button']);
-      assert.equal(b.getAttribute('aria-label'), `${p.name}, key ${keyLabel(p.key)}`);
-      assert.match(b.textContent, new RegExp(`^${p.name}${keyLabel(p.key)}$`));
+      // Its name is its text (WCAG's label in name), ', key ' out of sight between its name and key.
+      assert.equal(b.getAttribute('aria-label'), null);
+      assert.equal(b.textContent, `${p.name}, key ${keyLabel(p.key)}`);
+      assert.deepEqual(b.children.map((c) => [c.tagName, c.className, c.textContent, c.getAttribute('aria-hidden')]),
+        [['SPAN', 'pad-name', p.name, null], ['SPAN', 'sr-only', ', key ', null], ['KBD', '', keyLabel(p.key), null]]);
       assert.equal(b.style.cssText, `--pad: ${p.color}`);
     }
     // Pressed: it plays as it goes down; the click that ends the press does not play it again.
@@ -247,7 +250,7 @@ test('Synth and Sound open and close in the card, beside Drums', async () => {
   }
 });
 
-test('the synth\'s keys: a button each, named for its note, the Cs written on them, sounding while pressed, and a moment for a key or a screen reader', async () => {
+test('the synth\'s keys: a button each, named for its note, the Cs by the note written on them, sounding while pressed, and a moment for a key or a screen reader', async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
@@ -255,7 +258,8 @@ test('the synth\'s keys: a button each, named for its note, the Cs written on th
     assert.deepEqual([o.keyboard.getAttribute('role'), o.keyboard.getAttribute('aria-label')], ['group', 'Keys']);
     for (const [k, b] of o.keys.entries()) {
       const n = LOWEST + k;
-      assert.deepEqual([b.tagName, b.getAttribute('type'), b.getAttribute('aria-label')], ['BUTTON', 'button', spokenNote(n)]);
+      // A C's name is its text (WCAG's label in name), the rest's as said.
+      assert.deepEqual([b.tagName, b.getAttribute('type'), b.getAttribute('aria-label')], ['BUTTON', 'button', n % 12 ? spokenNote(n) : null]);
       assert.equal(b.classList.contains('black'), isBlack(n));
       assert.equal(b.textContent, n % 12 ? '' : noteName(n));
       assert.equal(b.getAttribute('tabindex'), k ? '-1' : '0', 'one stop among them');
@@ -333,7 +337,8 @@ test('the synth\'s sounds: the presets a choice (poly, then mono), Mono, As it c
     assert.deepEqual([o.octave.getAttribute('min'), o.octave.getAttribute('max'), o.octave.value], [String(OCTAVES.min), String(OCTAVES.max), '-1']);
     assert.equal(o.octaveOut.textContent, `${noteName(LOWEST - 12)}–${noteName(LOWEST - 13 + KEYS)}`);
     assert.equal(o.octave.getAttribute('aria-valuetext'), `Keys ${spokenNote(LOWEST - 12)} to ${spokenNote(LOWEST - 13 + KEYS)}`);
-    assert.deepEqual([o.keys[0].textContent, o.keys[0].getAttribute('aria-label')], [noteName(LOWEST - 12), spokenNote(LOWEST - 12)], 'the keys named an octave down');
+    assert.deepEqual(o.keys.slice(0, 2).map((b) => [b.textContent, b.getAttribute('aria-label')]),
+      [[noteName(LOWEST - 12), null], ['', spokenNote(LOWEST - 11)]], 'the keys named an octave down');
     // Chosen: a preset; the one chosen, again (back to it as it comes); Mono; the octave; As it comes.
     const pad = o.presetInputs.get('pad');
     pad.fire('click');
@@ -349,7 +354,7 @@ test('the synth\'s sounds: the presets a choice (poly, then mono), Mono, As it c
     // Changed since: none chosen.
     o.setSynth({ name: 'Acid, changed', preset: null, mono: true, octave: 0, lowest: LOWEST, arp: OFF });
     assert.ok(PRESETS.every((p) => !o.presetInputs.get(p.id).checked));
-    assert.equal(o.keys[0].getAttribute('aria-label'), spokenNote(LOWEST));
+    assert.deepEqual(o.keys.slice(0, 2).map((b) => [b.textContent, b.getAttribute('aria-label')]), [[noteName(LOWEST), null], ['', spokenNote(LOWEST + 1)]]);
   } finally {
     remove();
   }

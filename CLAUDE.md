@@ -281,8 +281,10 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
 - Accessibility, as the other sites pass it: every 3D control also on the page, 2 px focus rings,
   targets at least 24 px, text over the view at 4.5:1 (the card and pills nearly opaque), the card
   scrolling at 320×568 and 667×375, state shown under forced colours, and less motion stilling the
-  page's transitions. Check with axe (wcag2a/aa, wcag21aa, wcag22aa, best-practice) at a desktop
-  size and at 320×568, and with `?tv=emulate` at 960×540.
+  page's transitions. Check with axe 4.14 or newer (jsDelivr's; in 4.10 label in name was
+  experimental, run by no tag), wcag2a/aa, wcag21a/aa, wcag22aa and best-practice, at a desktop
+  size and at 320×568, and with `?tv=emulate` at 960×540: each part of the card open, swept a
+  screenful at a time and the keyboard across, as axe judges a name only against the text in view.
 - The TV (README, "On a TV"; common's README, "The TV app"): test with `?tv=emulate` and real key
   presses (OK is Enter with no `code`; `hallwayTV.menu()` / `.back()` for Menu and Back; Escape is
   Back in the card). On the TV, HallwayApp's `tools/tv-check.mjs --url <url>` needs its debug build
