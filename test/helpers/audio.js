@@ -1,13 +1,14 @@
-// Just enough of Web Audio for sound.js, drums.js and delay.js in Node: nodes that keep what they
-// are connected to (and let go of one, or all), params that keep their automation and refuse what a
-// browser would (a time, a value or a time constant that isn't finite, an exponential ramp to 0, a
-// negative time constant), sources that keep when they start and stop (and refuse a second start,
-// or a stop before one), and delays that refuse a longest time a browser wouldn't make. A test sets
-// the context's currentTime itself.
+// Just enough of Web Audio for sound.js, drums.js, delay.js and synth.js in Node: nodes that keep
+// what they are connected to (and let go of one, or all), params that keep their automation and
+// refuse what a browser would (a time, a value or a time constant that isn't finite, an exponential
+// ramp to 0, a negative time constant), sources that keep when they start and stop (and refuse a
+// second start, or a stop before one), delays that refuse a longest time a browser wouldn't make, and
+// a merger that refuses an input it hasn't. A test sets the context's currentTime itself.
 
 class Param {
   constructor(value) {
     this.value = value;
+    this.automationRate = 'a-rate';
     /** [kind, value, time, timeConstant?] in the order set */
     this.events = [];
   }
@@ -58,7 +59,8 @@ class Node {
     context.nodes.push(this);
   }
 
-  connect(node) {
+  connect(node, output = 0, input = 0) {
+    if (node.kind === 'merger' && !(input >= 0 && input < node.numberOfInputs)) throw new RangeError(`connect: the merger has no input ${input}`);
     this.outputs.push(node);
     return node;
   }
@@ -120,8 +122,22 @@ export class FakeContext {
     const n = new Node(this, 'filter');
     n.type = 'lowpass';
     n.frequency = new Param(350);
+    n.detune = new Param(0);
     n.Q = new Param(1);
     n.gain = new Param(0);
+    return n;
+  }
+
+  createConstantSource() {
+    const n = new Source(this, 'constant');
+    n.offset = new Param(1);
+    return n;
+  }
+
+  createChannelMerger(inputs = 6) {
+    if (!(inputs >= 1 && inputs <= 32)) throw new RangeError(`createChannelMerger(${inputs})`);
+    const n = new Node(this, 'merger');
+    n.numberOfInputs = inputs;
     return n;
   }
 

@@ -16,6 +16,9 @@
 // in, step a pattern of sixteen steps for each pad (pattern.js), set on the step keys; and a delay
 // (delay.js) any pad's sound can be patched into. The cables (patch.js) are taken from a jack and
 // plugged into another, or chosen in the card.
+// Beside it the synth (synthboard.js lays it out, synthkit.js draws it): six analog voices, poly or
+// mono (synth.js), its knobs and its presets, played with its keys on every device as the board's
+// pads are, from a computer's keys and a MIDI keyboard, and in the card.
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -31,6 +34,9 @@ import { CLOCK_OUTS, Clock, TEMPO } from './clock.js';
 import { Pattern, stepOf } from './pattern.js';
 import { Patch, padForJack } from './patch.js';
 import { Delay } from './delay.js';
+import { KEYS, Synth, noteName, synthText } from './synth.js';
+import { layoutSynth } from './synthboard.js';
+import { SynthKit } from './synthkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { setAnisotropy } from './textures.js';
@@ -356,34 +362,152 @@ overlay.onPlug = (input, output) => {
   if (output) patch.plug(output, input);
   else patch.unplug(input);
 };
+// ── The synth ────────────────────────────────────────────────────────────────
+// Six voices into the same sound, its knobs, its preset, Mono and its octave kept for the next visit
+// (synth.js). A key held sounds until it is let go: a press on it (on the synth, in the card), a
+// computer's key, a MIDI keyboard's, in VR a stick or a forefinger down in it. A click, OK, A or a
+// trigger on one plays it a moment. The keys down show on the synth and in the card, and what it
+// plays on its display.
+
+const synth = new Synth(sound, { key: `${ROOM.id}.synth` });
+/** The synth in 3D (synthkit.js), once the scene is made. @type {SynthKit | null} */
+let synthKit = null;
+/** The note each key of the synth (from the lowest) sounds while held there, -1 none: the octave may change before it is let go. */
+const keyNotes = new Int16Array(KEYS).fill(-1);
+let toldNoSound = false;
+/** No Web Audio: said once. */
+function noSound() {
+  if (!toldNoSound) overlay.toast('This browser makes no sound', 4);
+  toldNoSound = true;
+}
+/** A note played until it is let go (noteOff), `velocity` 0…1. */
+function noteOn(note, velocity) {
+  if (!synth.noteOn(note, velocity)) noSound();
+}
+/** A note let go. */
+function noteOff(note) {
+  synth.noteOff(note);
+}
+/** A note played for a moment (a click, OK, A, a trigger). */
+function tapNote(note, velocity = 0.85) {
+  if (!synth.tap(note, velocity)) noSound();
+}
+/** Key k of the synth (from the lowest) held down, as hard as `velocity`, until keyUp(k). */
+function keyDown(k, velocity) {
+  if (keyNotes[k] >= 0) noteOff(keyNotes[k]);
+  keyNotes[k] = synth.lowest + k;
+  noteOn(keyNotes[k], velocity);
+}
+/** Key k let go. */
+function keyUp(k) {
+  if (keyNotes[k] >= 0) noteOff(keyNotes[k]);
+  keyNotes[k] = -1;
+}
+/** What the synth plays, on it (its display, its lights) and in the card: its sound, its preset, Mono and its octave. */
+function showSynth() {
+  synthKit?.setState({ name: synth.name, mono: synth.mono, preset: synth.preset, lowest: synth.lowest });
+  overlay.setSynth({ name: synth.name, preset: synth.preset, mono: synth.mono, octave: synth.octave, lowest: synth.lowest });
+}
+/** Every knob at once (a preset, as it comes): on the synth's dials and the card's sliders. */
+function showSynthKnobs() {
+  synthKit?.setKnobs(synth.knobs);
+  overlay.setSynthKnobs(synth.knobs);
+}
+/** The keys down, on the synth and in the card. */
+function showNotes() {
+  synthKit?.setDown(synth.down, synth.lowest);
+  overlay.setNotes(synth.down, synth.lowest);
+}
+synth.onNotes = showNotes;
+/** A knob of the synth set 0…1: heard at once (or from the next note), on its dial and the display, and in the card. */
+function setSynthKnob(id, value) {
+  synth.setKnob(id, value);
+  const v = synth.knobs[id];
+  synthKit?.setKnob(id, v, synthText(id, v));
+  overlay.setSynthKnobs(synth.knobs);
+  showSynth();
+}
+/** A preset (synth.js PRESETS), its knobs and Mono. */
+function chooseSound(id) {
+  if (!synth.choose(id)) return;
+  showSynthKnobs();
+  showSynth();
+}
+/** The synth as it comes. */
+function resetSynth() {
+  synth.reset();
+  showSynthKnobs();
+  showSynth();
+}
+/** Mono, or poly (every note let go first). */
+function setMono(on) {
+  synth.setMono(on);
+  showSynth();
+}
+/** The octave the keys play in (synth.js OCTAVES). */
+function setOctave(octave) {
+  synth.setOctave(octave);
+  showSynth();
+  showNotes();
+}
+/** The keys' notes, in words (for a toast). */
+const keysText = () => `Keys ${noteName(synth.lowest)} to ${noteName(synth.lowest + KEYS - 1)}`;
+overlay.onKeyDown = keyDown;
+overlay.onKeyUp = keyUp;
+overlay.onKeyTap = (k) => tapNote(synth.lowest + k);
+overlay.onPreset = chooseSound;
+overlay.onMono = setMono;
+overlay.onOctave = setOctave;
+overlay.onSynthKnob = setSynthKnob;
+overlay.onResetSynth = resetSynth;
+showSynth();
+showSynthKnobs();
+
 for (const type of ['pointerup', 'touchend', 'keydown']) {
   addEventListener(type, () => {
     if (sound.ctx) sound.wake();
   }, { capture: true, passive: true });
 }
-addEventListener('pagehide', () => sound.sleep());
+// Put away: every note let go (none kept sounding, nor waiting to), and the sound asleep.
+addEventListener('pagehide', () => {
+  synth.allOff();
+  sound.sleep();
+});
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) sound.sleep();
+  if (!document.hidden) return;
+  synth.allOff();
+  sound.sleep();
 });
 
 // From a MIDI device (midi.js): asked for with the card's button, or at once when the visitor has
-// let this site use MIDI before. Its notes are the General MIDI drums' (drums.js padForNote), on any
-// channel. A note isn't a press: until the page has had one, the browser keeps it quiet, and says so.
+// let this site use MIDI before. Its notes on channel 10 are the General MIDI drums' (drums.js
+// padForNote); on another they are the synth's, or the drums' while the visitor plays at the board;
+// its sustain pedal, mod wheel and pitch bend the synth's. A note isn't a press: until the page has
+// had one, the browser keeps it quiet, and says so.
 let midi = null;
 let toldQuiet = false;
+/** Where the visitor plays (controls.js at): at the board a MIDI keyboard's notes are the drums'. @type {'board' | 'synth' | null} */
+let playingAt = null;
 async function listen() {
   if (midi) return;
   overlay.setMidi('Asking the browser…');
   try {
-    midi = await listenMidi((note, velocity) => {
-      const i = padForNote(note);
-      if (i < 0) return;
-      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
-        if (!toldQuiet) overlay.toast('Click or tap the page once, and the drums are heard', 5);
-        toldQuiet = true;
-        return;
-      }
-      play(i, velocity);
+    midi = await listenMidi((m) => {
+      if (m.type === 'on') {
+        if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
+          if (!toldQuiet) overlay.toast('Click or tap the page once, and the instruments are heard', 5);
+          toldQuiet = true;
+          return;
+        }
+        if (m.channel === 9 || playingAt === 'board') {
+          const i = padForNote(m.note);
+          if (i >= 0) play(i, m.velocity);
+        } else noteOn(m.note, m.velocity);
+      } else if (m.type === 'off') noteOff(m.note);
+      else if (m.type === 'sustain') synth.setSustain(m.on);
+      else if (m.type === 'mod') synth.setMod(m.value);
+      else if (m.type === 'bend') synth.setBend(m.value);
+      else synth.allOff();
     }, (names) => overlay.setMidi(names.length ? `Playing from ${names.join(', ')}` : 'No MIDI device is plugged in: plug one in to play from it'));
   } catch (err) {
     overlay.setMidi(`No MIDI: the browser said ${err instanceof Error ? err.message : err}`);
@@ -401,7 +525,7 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ antialias: true });
 } catch (err) {
-  overlay.noWebGL('This browser cannot show the room in 3D, but its drums play here in the card. The way back to the Hallway is above.');
+  overlay.noWebGL('This browser cannot show the room in 3D, but its drums and its synth play here in the card. The way back to the Hallway is above.');
   throw err;
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -411,7 +535,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a synth beside it (thirty-seven keys, its knobs, and a panel of sounds), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -443,6 +567,13 @@ select(drums.selected);
 kit.setTempo(clock.tempo);
 showDelay();
 showPatch();
+// The synth beside it, likewise.
+const synthDesk = layoutSynth(L, board);
+synthKit = new SynthKit(synthDesk, { lit: room.lit, lightColor: room.lightColor, anisotropy });
+scene.add(synthKit.group);
+showSynth();
+showSynthKnobs();
+showNotes();
 // Through the doorway, the view the Hallway publishes from its door to here (its views.json); until
 // it has loaded, or when there is none (a Hallway without this door yet), its glow and name.
 const views = hallwayViews(way, ROOM.id);
@@ -453,12 +584,15 @@ room.loadPictures().then(() => {
   pictured = true;
 });
 
-const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board });
+const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board, synth: synthDesk });
+controls.lowest = () => synth.lowest;
 // In VR: a stick in each hand that holds a controller, and the hands' joints, for a forefinger to
-// play with (kit.js), moving with the rig as the controllers do.
+// play with (kit.js, and the synth's keys: synthkit.js), moving with the rig as the controllers do.
 kit.holdSticks(controls.hands);
 const fingers = [renderer.xr.getHand(0), renderer.xr.getHand(1)];
 rig.add(...fingers);
+/** In VR, whether a hand at (x, y, z) is near the synth's keys, for its stick to show there too. */
+const nearSynth = (x, y, z) => x > synthDesk.x0 - 0.5 && x < synthDesk.x1 + 0.5 && z > synthDesk.zBack - 0.2 && z < synthDesk.zFront + 0.9 && y > 0.3;
 const nav = loadNav();
 controls.setNav(nav);
 // The accessibility settings every site on the origin shares (common/access.js, hallway.access):
@@ -547,26 +681,29 @@ overlay.setHint(tv ? 'tv' : matchMedia('(pointer: coarse)').matches ? 'touch' : 
 
 /**
  * Back on a TV while walking: the room's own step back, true when it took one: playing at the drum
- * board, a step away from it. (A step the page's history has an entry for is the app's back, not
- * one of these: common's README, "The TV app".)
+ * board or the synth, a step away from it. (A step the page's history has an entry for is the app's
+ * back, not one of these: common's README, "The TV app".)
  */
 function stepBack() {
-  if (!controls.playing) return false;
-  controls.leaveBoard();
+  if (!controls.at) return false;
+  controls.stepAway();
   return true;
 }
 
+/** On a TV at the synth, the key the arrows chose (from the lowest), which OK plays: middle C to start with. */
+let chosenKey = 12;
 let remote = null;
 if (tv) {
   controls.aimMiddle = true;
   renderer.domElement.setAttribute('aria-describedby', overlay.hint.id);
-  // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its steps.
+  // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its steps; at the
+  // synth, the key they chose, and Menu goes to its sounds.
   remote = new Remote({
     root: overlay.root,
     view: renderer.domElement,
-    use: () => (controls.playing ? play(drums.selected, 0.85) : controls.useMiddle()),
+    use: () => (controls.at === 'board' ? play(drums.selected, 0.85) : controls.at === 'synth' ? tapNote(synth.lowest + chosenKey) : controls.useMiddle()),
     step: stepBack,
-    first: () => (controls.playing ? overlay.stepsBox : null),
+    first: () => (controls.at === 'board' ? overlay.stepsBox : controls.at === 'synth' ? overlay.presetsBox : null),
   });
   remote.onMode = (inCard) => overlay.setHint(inCard ? 'tv-card' : 'tv');
   remote.answerApp(tv);
@@ -658,26 +795,74 @@ controls.over = () => {
   for (const b of overlay.buttons.children) if (!b.hidden) rects.push(rect(b.getBoundingClientRect()));
   return rects;
 };
-controls.onPlaying = (on) => {
-  overlay.setPlaying(on);
-  if (!on) putDown();
-  if (on) sound.wake(); // ready for the first pad: the walk here began with a press
-  if (on && remote) {
-    overlay.openDrums(true);
-    remote.forget(); // Menu goes to the knobs now
+controls.onPlaying = (at) => {
+  playingAt = at;
+  overlay.setPlaying(at);
+  if (at !== 'board') putDown();
+  if (at) sound.wake(); // ready for the first pad or key: the walk here began with a press
+  if (at && remote) {
+    if (at === 'board') overlay.openDrums(true);
+    else overlay.openSynth(true);
+    remote.forget(); // Menu goes to its steps, or its sounds, now
   }
 };
+// On a TV the remote leaves the card first: the arrows choose the pads there, OK plays them, and
+// arriving (at once with less motion) has Menu go to the steps rather than back to this button.
 overlay.onPlay = () => {
-  if (controls.playing) controls.leaveBoard();
+  if (controls.at === 'board') controls.stepAway();
   else {
+    remote?.walk();
     controls.walkToBoard();
-    remote?.walk(); // on a TV the arrows choose the pads there, and OK plays them
   }
 };
 kit.onStrike = (i, velocity, source) => {
   play(i, velocity);
   source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.2 + 0.6 * velocity, 18);
 };
+
+// ── The synth's keys, dials and buttons ──────────────────────────────────────
+// A key held down: a press on it, a computer's key at the synth, in VR a stick or a forefinger in it
+// (which the controller feels); a click, A, OK or a trigger plays one a moment. A dial turned: a
+// drag, the wheel, a stick. Its panel's buttons: a preset, Mono, the octave (Z and X too), said.
+// Walking up to it to play it, and stepping away; on a TV the arrows choose a key.
+
+controls.onNoteOn = noteOn;
+controls.onNoteOff = noteOff;
+controls.onNoteTap = tapNote;
+controls.onDial = (d, by) => {
+  const id = synthDesk.dials[d]?.id;
+  if (id) setSynthKnob(id, synth.knobs[id] + by);
+};
+controls.onButton = (i) => {
+  const id = synthDesk.panel.buttons[i]?.id;
+  if (!id) return;
+  if (id === 'mono') setMono(!synth.mono);
+  else if (id.startsWith('octave.')) {
+    setOctave(synth.octave + (id === 'octave.up' ? 1 : -1));
+    overlay.toast(keysText(), 2);
+    return;
+  } else chooseSound(id.slice('preset.'.length));
+  overlay.toast(synth.title, 2);
+};
+controls.onOctave = (by) => {
+  setOctave(synth.octave + by);
+  overlay.toast(keysText(), 2);
+};
+controls.onKeyPick = (by) => {
+  chosenKey = Math.min(KEYS - 1, Math.max(0, chosenKey + by));
+};
+overlay.onPlaySynth = () => {
+  if (controls.at === 'synth') controls.stepAway();
+  else {
+    remote?.walk(); // as the board's: the arrows choose a key there, OK plays it, Menu goes to its sounds
+    controls.walkToSynth();
+  }
+};
+synthKit.onKeyDown = (k, velocity, source) => {
+  keyDown(k, velocity);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.15 + 0.5 * velocity, 14);
+};
+synthKit.onKeyUp = keyUp;
 
 // ── Fullscreen, and the gamepad ──────────────────────────────────────────────
 
@@ -709,7 +894,7 @@ controls.onPadActive = (on) => {
 controls.onPadBack = () => {
   if (remote) remote.padBack();
   else if (carried) putDown();
-  else if (controls.playing) controls.leaveBoard();
+  else if (controls.at) controls.stepAway();
   else if (fullscreenElement()) toggleFullscreen();
 };
 
@@ -744,6 +929,7 @@ renderer.xr.addEventListener('sessionend', () => {
   overlay.setVR(false);
   showPanel();
   kit.endXR();
+  synthKit.endXR();
   putDown();
 });
 // Not on a TV, which has no headset (nor, so far, a WebXR in its WebView): the panel says so.
@@ -914,7 +1100,10 @@ function step(dt) {
   // the cable carried, its free end where it is pointed, and the pads' glow. In VR a cable goes
   // where the hand that took it points, and so does its ring.
   const xr = renderer.xr.isPresenting;
-  if (xr) kit.updateXR(controls.hands, fingers, dt);
+  if (xr) {
+    kit.updateXR(controls.hands, fingers, dt, nearSynth);
+    synthKit.updateXR(controls.hands, fingers, kit.sticks, dt);
+  }
   kit.hover(controls.hoverPad);
   kit.hoveredStep = controls.hoverStep;
   const held = carried && xr ? controls.hands[controls.selectHand]?.last ?? null : null;
@@ -926,6 +1115,9 @@ function step(dt) {
   }
   if (carried) kit.aimAt(xr ? (held && held.kind !== 'ceiling' ? held : null) : controls.aim.has ? controls.aim : null);
   kit.update(dt);
+  // The synth: its keys down and the one pointed at (on a TV at it, the one the arrows chose).
+  synthKit.hovered = remote && controls.at === 'synth' && !remote.inCard ? chosenKey : controls.hoverKey;
+  synthKit.update(dt);
   // The dot: a gamepad's aim, or on a TV the remote's OK while walking (playing, the arrows choose a pad).
   overlay.setAim((controls.padActive || (remote !== null && !remote.inCard && !controls.playing)) && !renderer.xr.isPresenting, !!controls.hover);
   // On a TV, walking, the hint says what OK does with the dot on something on the walls.
@@ -953,6 +1145,11 @@ fade.to(0, blink(0.8));
 window.__room = {
   THREE, renderer, scene, camera, rig, room, layout: L, controls, overlay, fade, vignette, xrDevice, go, enterVR, together, remote, tv, way, visit, setAccess,
   sound, drums, board, kit, play, select, setKnob, clock, pattern, patch, delay, toggleClock, setTempo, toggleStep, setDelayKnob, schedule,
+  synth, synthDesk, synthKit, noteOn, noteOff, tapNote, keyDown, keyUp, chooseSound, resetSynth, setSynthKnob, setMono, setOctave,
+  /** On a TV at the synth, the key the arrows chose. */
+  get chosenKey() {
+    return chosenKey;
+  },
   /** The cable carried (the jack it hangs from), else null. */
   get carried() {
     return carried;

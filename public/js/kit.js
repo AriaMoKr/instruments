@@ -30,24 +30,24 @@ import { GOLD, SANS, SERIF } from './textures.js';
 /** A cable to draw: the jacks it joins (their indices in B.panel.jacks) and its colour. @typedef {{ from: number, to: number, color: string }} DrawnCable */
 
 /** @param {string} hex @returns {[number, number, number]} linear */
-const lin = (hex) => {
+export const lin = (hex) => {
   const c = new THREE.Color(hex);
   return [c.r, c.g, c.b];
 };
 /** @param {number[]} v @param {number} k @returns {[number, number, number]} */
-const times = (v, k) => [v[0] * k, v[1] * k, v[2] * k];
+export const times = (v, k) => [v[0] * k, v[1] * k, v[2] * k];
 
 const WOOD = lin('#3b2a1d'), TOP = lin('#23211f'), RIM = lin('#151413'), CAP = lin('#4a4540');
 /** How much brighter than its rubber a pad lights up at full glow, in its colour. */
 const BOOST = 3;
 /** A stick: from just behind the hand to its tip, along the controller's aim (-z). */
-const STICK = { back: 0.04, tip: 0.36 };
+export const STICK = Object.freeze({ back: 0.04, tip: 0.36 });
 /** The pads' atlas: a cell each, this many pixels square. */
 const CELL = 256;
 /** How far the RUN button stands out of the panel. */
 const BUTTON = 0.008;
-/** What a hand's reticle shows on near the board, where its laser is a stick. */
-const AIMED = new Set(['knob', 'jack', 'run', 'step']);
+/** What a hand's reticle shows on near the board (or the synth: its dials and buttons), where its laser is a stick. */
+const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button']);
 /**
  * A cable: its radius, its plug's length out of the panel and radius, how far it hangs (`sag`, and
  * `sagPer` metre between its ends, to `sagMax`), and how far the one carried reaches from its jack;
@@ -65,7 +65,7 @@ const LED = { off: lin('#2a1d18'), on: lin('#36c766'), beat: lin('#dcffe6') };
 const KEY = { w: 64, h: 96 };
 
 /** @param {number} w @param {number} h */
-function canvas(w, h) {
+export function canvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -73,7 +73,7 @@ function canvas(w, h) {
 }
 
 /** @param {HTMLCanvasElement} c */
-const context = (c) => /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+export const context = (c) => /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
 
 /**
  * Sets the largest font, from `size` px down, in which `text` fits `width`.
@@ -83,7 +83,7 @@ const context = (c) => /** @type {CanvasRenderingContext2D} */ (c.getContext('2d
  * @param {number} size
  * @param {string} [weight]
  */
-function fit(g, text, width, size, weight = '600') {
+export function fit(g, text, width, size, weight = '600') {
   for (let s = size; s >= 10; s--) {
     g.font = `${weight} ${s}px ${SANS}`;
     if (g.measureText(text).width <= width) return;
@@ -221,8 +221,15 @@ function panelFace(B) {
   return c;
 }
 
-/** The sign over the board: "Drums" in gold on a dark plate edged in gold, and what they are. @param {number} w @param {number} h */
-function signPlate(w, h) {
+/**
+ * The sign over an instrument: its name in gold on a dark plate edged in gold ("Drums" over the
+ * board), and what it is.
+ * @param {number} w
+ * @param {number} h
+ * @param {string} [name]
+ * @param {string} [words]
+ */
+export function signPlate(w, h, name = 'Drums', words = 'twelve analog pads') {
   const c = canvas(w, h), g = context(c);
   g.fillStyle = '#1d1b19';
   g.fillRect(0, 0, w, h);
@@ -233,15 +240,15 @@ function signPlate(w, h) {
   g.textBaseline = 'middle';
   g.fillStyle = GOLD;
   g.font = `600 ${Math.round(h * 0.42)}px ${SERIF}`;
-  g.fillText('Drums', w / 2, h * 0.44);
+  g.fillText(name, w / 2, h * 0.44);
   g.fillStyle = '#efe5cf';
-  fit(g, 'twelve analog pads', w - 96, Math.round(h * 0.12), '500');
-  g.fillText('twelve analog pads', w / 2, h * 0.76);
+  fit(g, words, w - 96, Math.round(h * 0.12), '500');
+  g.fillText(words, w / 2, h * 0.76);
   return c;
 }
 
 /** @param {HTMLCanvasElement} c @param {number} anisotropy */
-function texture(c, anisotropy) {
+export function texture(c, anisotropy) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = anisotropy;
@@ -1067,7 +1074,7 @@ export class Kit {
     g.fillStyle = '#b9a98d';
     g.font = `22px ${SANS}`;
     g.fillText(`key ${keyLabel(pad.key)}`, dx + 20, dy + dh * 0.8);
-    // Each knob: its name over it, its setting under it.
+    // Each knob: in front of it (a knob would hide what is behind it), its name, then its setting.
     g.textAlign = 'center';
     const r = (BOARD.knob.r / B.width) * W, room = (BOARD.knob.spacing / B.width) * W - 8;
     for (const k of B.knobs) {
@@ -1075,10 +1082,10 @@ export class Kit {
       const kx = x(k.a), ky = y(k.b), text = knobText(this.selected, k.name, this._knobs[k.name]);
       g.fillStyle = '#e0bb72';
       g.font = `600 21px ${SANS}`;
-      g.fillText(k.name.toUpperCase(), kx, ky - r - 17);
+      g.fillText(k.name.toUpperCase(), kx, ky + r + 19);
       g.fillStyle = '#efe5cf';
       fit(g, text, room, 20, '500');
-      g.fillText(text, kx, ky + r + 18);
+      g.fillText(text, kx, ky + r + 43);
     }
     this._stripTexture.needsUpdate = true;
   }
@@ -1130,21 +1137,23 @@ export class Kit {
 
   /**
    * In VR, per frame, after the controls' update (the rig's matrices are this frame's): each stick
-   * shows while its hand holds a controller near the board (and that hand's laser hides, its reticle
-   * too but on a knob, a jack, RUN or a step key), and each stick's tip, or forefinger of a hand
-   * without one, plays a pad, or sets a step, it comes down on.
+   * shows while its hand holds a controller near the board, or where `nearAlso` says (the synth's
+   * keys), and that hand's laser hides, its reticle too but on a knob, a jack, RUN, a step key, a
+   * dial or a button; and each stick's tip, or forefinger of a hand without one, plays a pad, or sets
+   * a step, it comes down on.
    * @param {Hand[]} hands
    * @param {THREE.XRHandSpace[]} fingers the hands' joints (renderer.xr.getHand)
    * @param {number} dt
+   * @param {((x: number, y: number, z: number) => boolean) | null} [nearAlso] whether a hand at (x, y, z) is near something else played with a stick
    */
-  updateXR(hands, fingers, dt) {
+  updateXR(hands, fingers, dt, nearAlso = null) {
     const B = this.board, at = this._at;
     for (let i = 0; i < 2; i++) {
       const h = hands[i], stick = this.sticks[i], source = h?.source ?? null;
       let near = false;
       if (h && source && !source.hand && source.targetRayMode === 'tracked-pointer') {
         at.setFromMatrixPosition(h.controller.matrixWorld);
-        near = at.x > B.x0 - 0.7 && at.x < B.x1 + 0.7 && at.z > B.zBack - 0.2 && at.z < B.zFront + 0.9 && at.y > 0.3;
+        near = (at.x > B.x0 - 0.7 && at.x < B.x1 + 0.7 && at.z > B.zBack - 0.2 && at.z < B.zFront + 0.9 && at.y > 0.3) || !!nearAlso?.(at.x, at.y, at.z);
         if (near) {
           at.set(0, 0, -STICK.tip).applyMatrix4(h.controller.matrixWorld);
           h.laser.visible = false;

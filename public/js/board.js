@@ -10,7 +10,8 @@
 // ray meets on it (hitBoard), where one may walk round it (clampBoard, boardBlocks), where to stand
 // to play it (boardFront on a screen: as far back as all of it needs to be in view, clear of the card
 // over it; boardStand in VR: at arm's length), and when a stick's tip, or a finger, comes down on a
-// pad or a step key (strikeAt).
+// pad or a step key (strikeAt). Its shape, a desk (a top, a panel at its back, a sign over it), is
+// the synth's too (synthboard.js): the functions here that take a Desk work on either.
 //
 // Coordinates as room.js's. On the top, `a` runs from its left edge to the right (world +x) and `b`
 // from its front edge up the slope, away from the player; its normal leans towards the player. On the
@@ -62,6 +63,36 @@ export const BOARD = Object.freeze({
 
 /** @typedef {{ a0: number, a1: number, b0: number, b1: number }} Area */
 
+/**
+ * A desk: the drum board's shape, and the synth's (synthboard.js layoutSynth). Its footprint (x0…x1,
+ * zBack at the wall's side to zFront); its top, leaning `tilt` towards the player (`origin` its front
+ * left corner, `up` along it away from the player, `normal` out of it; `width` across, `length` up
+ * the slope; its front edge `front` high, its back `top`); its panel, from the top's back edge up
+ * (`origin` its left end, `up` its face, `normal` out of it, `height`, leaning back `lean`, its top
+ * edge `top` high); and the sign over it on the wall (x0…x1, y0…y1 at z).
+ * @typedef {object} Desk
+ * @property {number} x0
+ * @property {number} x1
+ * @property {number} zBack
+ * @property {number} zFront
+ * @property {number} width
+ * @property {number} length
+ * @property {number} tilt
+ * @property {number} front
+ * @property {number} top
+ * @property {[number, number, number]} origin
+ * @property {[number, number, number]} up
+ * @property {[number, number, number]} normal
+ * @property {{ origin: [number, number, number], up: [number, number, number], normal: [number, number, number], height: number, lean: number, top: number }} panel
+ * @property {{ x0: number, x1: number, y0: number, y1: number, z: number }} sign
+ */
+
+/**
+ * Where a ray meets a desk (meetDesk): on its top, its panel, its front, its sign or a side ('' none),
+ * how far along the ray, where on the top or the panel (a across, b up it), and the way out of it.
+ * @typedef {{ on: '' | 'top' | 'panel' | 'front' | 'sign' | 'side', t: number, a: number, b: number, nx: number, ny: number, nz: number }} DeskHit
+ */
+
 /** How far a stick's tip, or a finger, comes back up off a pad before it can strike again. */
 export const REARM = 0.012;
 
@@ -108,9 +139,11 @@ export function layoutBoard(L) {
     ...PADS.map((p) => ({ id: `pad.${p.id}`, a: 0.4 + p.col * panel.pitch, b: row(p.row), out: true, color: p.color })),
     { id: 'delay.in', a: 0.68, b: row(2), out: false, color: null },
   ];
+  // The pad's knobs to the back of the strip, what they are and are set to in front of them (kit.js),
+  // where a knob can't hide them from the player.
   /** @type {BoardKnob[]} */
   const knobs = [
-    ...KNOBS.map((name, k) => /** @type {BoardKnob} */ ({ part: 'drum', name, on: 'top', a: width - knob.inset - (KNOBS.length - 1 - k) * knob.spacing, b: stripB0 + strip / 2 })),
+    ...KNOBS.map((name, k) => /** @type {BoardKnob} */ ({ part: 'drum', name, on: 'top', a: width - knob.inset - (KNOBS.length - 1 - k) * knob.spacing, b: stripB0 + strip - knob.r - 0.018 })),
     { part: 'clock', name: 'tempo', on: 'panel', a: 0.155, b: 0.15 },
     ...DELAY_KNOBS.map((name, k) => /** @type {BoardKnob} */ ({ part: 'delay', name, on: 'panel', a: 0.69 + k * 0.08, b: 0.07 })),
   ];
@@ -155,7 +188,7 @@ export function layoutBoard(L) {
 
 /**
  * The point `a` across the top, `b` up it and `h` out of it, in the world, written into out.
- * @param {Board} B
+ * @param {Desk} B
  * @param {number} a
  * @param {number} b
  * @param {number} [h]
@@ -171,7 +204,7 @@ export function boardPoint(B, a, b, h = 0, out = [0, 0, 0]) {
 
 /**
  * The point `a` across the panel, `b` up its face and `h` out of it, in the world, written into out.
- * @param {Board} B
+ * @param {Desk} B
  * @param {number} a
  * @param {number} b
  * @param {number} [h]
@@ -248,9 +281,113 @@ export function jackAt(B, a, b) {
 
 /**
  * What room.js castRay writes, with the board's: which pad, step key, knob (B.knobs) and jack
- * (B.panel.jacks), each else -1.
- * @typedef {import('./room.js').RoomHit & { pad: number, step: number, knob: number, jack: number }} BandHit
+ * (B.panel.jacks); and the synth's (synthboard.js): which key, dial and button; each else -1.
+ * @typedef {import('./room.js').RoomHit & { pad: number, step: number, knob: number, jack: number, key: number, dial: number, button: number }} BandHit
  */
+
+/**
+ * Where a ray first meets a desk, if nearer than `within`: its top (coming down on it, a plane `rise`
+ * over it), its panel (facing the player), its front (under the top's front edge), its sign on the
+ * wall, or its sides (under the top as it rises, then the panel's as it rises further). Written into
+ * `at`; whether it met it.
+ * @param {Desk} D
+ * @param {number} ox
+ * @param {number} oy
+ * @param {number} oz
+ * @param {number} dx
+ * @param {number} dy
+ * @param {number} dz
+ * @param {number} within
+ * @param {number} rise
+ * @param {DeskHit} at
+ */
+export function meetDesk(D, ox, oy, oz, dx, dy, dz, within, rise, at) {
+  at.on = '';
+  at.t = within;
+  at.a = at.b = at.nx = at.ny = at.nz = 0;
+  const [Ox, Oy, Oz] = D.origin, [, Uy, Uz] = D.up, [, Ny, Nz] = D.normal;
+  const dn = dy * Ny + dz * Nz;
+  if (dn < 0) {
+    const s = ((Oy + Ny * rise - oy) * Ny + (Oz + Nz * rise - oz) * Nz) / dn;
+    if (s > 0 && s < at.t) {
+      const a = ox + dx * s - Ox, b = (oy + dy * s - Oy) * Uy + (oz + dz * s - Oz) * Uz;
+      if (a >= 0 && a <= D.width && b >= 0 && b <= D.length) {
+        at.on = 'top';
+        at.t = s;
+        at.a = a;
+        at.b = b;
+        at.ny = Ny;
+        at.nz = Nz;
+      }
+    }
+  }
+  const P = D.panel, [Px, Py, Pz] = P.origin, [, Qy, Qz] = P.up, [, My, Mz] = P.normal;
+  const dm = dy * My + dz * Mz;
+  if (dm < 0) {
+    const s = ((Py - oy) * My + (Pz - oz) * Mz) / dm;
+    if (s > 0 && s < at.t) {
+      const a = ox + dx * s - Px, b = (oy + dy * s - Py) * Qy + (oz + dz * s - Pz) * Qz;
+      if (a >= 0 && a <= D.width && b >= 0 && b <= P.height) {
+        at.on = 'panel';
+        at.t = s;
+        at.a = a;
+        at.b = b;
+        at.nx = 0;
+        at.ny = My;
+        at.nz = Mz;
+      }
+    }
+  }
+  if (dz < 0) {
+    facing(D.zFront, D.x0, D.x1, 0, D.front, 'front', ox, oy, oz, dx, dy, dz, at);
+    facing(D.sign.z, D.sign.x0, D.sign.x1, D.sign.y0, D.sign.y1, 'sign', ox, oy, oz, dx, dy, dz, at);
+  }
+  const zFoot = P.origin[2], steep = Math.cos(P.lean) / Math.sin(P.lean);
+  for (let side = -1; side <= 1; side += 2) {
+    if (dx * side >= 0) continue;
+    const s = ((side < 0 ? D.x0 : D.x1) - ox) / dx;
+    const y = oy + dy * s, z = oz + dz * s;
+    const high = z >= zFoot ? D.front + (D.zFront - z) * Math.tan(D.tilt) : Math.min(P.top, D.top + (zFoot - z) * steep);
+    if (s > 0 && s < at.t && z >= D.zBack && z <= D.zFront && y >= 0 && y <= high) {
+      at.on = 'side';
+      at.t = s;
+      at.a = at.b = 0;
+      at.nx = side;
+      at.ny = at.nz = 0;
+    }
+  }
+  return at.on !== '';
+}
+
+/**
+ * A ray meeting a rectangle facing the player (+z) at z, x0…x1 across and y0…y1 up, nearer than
+ * what `at` holds: written into it as `on`.
+ * @param {number} z
+ * @param {number} x0
+ * @param {number} x1
+ * @param {number} y0
+ * @param {number} y1
+ * @param {'front' | 'sign'} on
+ * @param {number} ox
+ * @param {number} oy
+ * @param {number} oz
+ * @param {number} dx
+ * @param {number} dy
+ * @param {number} dz
+ * @param {DeskHit} at
+ */
+function facing(z, x0, x1, y0, y1, on, ox, oy, oz, dx, dy, dz, at) {
+  const s = (z - oz) / dz;
+  const x = ox + dx * s, y = oy + dy * s;
+  if (!(s > 0 && s < at.t && x >= x0 && x <= x1 && y >= y0 && y <= y1)) return;
+  at.on = on;
+  at.t = s;
+  at.a = at.b = at.nx = at.ny = 0;
+  at.nz = 1;
+}
+
+/** Where the last ray met the board (hitBoard's), kept to write no new object per ray. @type {DeskHit} */
+const MET = { on: '', t: 0, a: 0, b: 0, nx: 0, ny: 0, nz: 0 };
 
 /**
  * What a ray meets on the board, if nearer than `within` (what it meets in the room otherwise): a
@@ -269,102 +406,68 @@ export function jackAt(B, a, b) {
  * @param {number} [within]
  */
 export function hitBoard(B, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
-  let t = within, kind = '', nx = 0, ny = 0, nz = 0, pad = -1, step = -1, knob = -1, jack = -1, u = 0, v = 0;
-  const [Ox, Oy, Oz] = B.origin, [, Uy, Uz] = B.up, [, Ny, Nz] = B.normal;
-  // The top, coming down on it.
-  const dn = dy * Ny + dz * Nz;
-  if (dn < 0) {
-    const s = ((Oy + Ny * BOARD.rise - oy) * Ny + (Oz + Nz * BOARD.rise - oz) * Nz) / dn;
-    if (s > 0 && s < t) {
-      const a = ox + dx * s - Ox, b = (oy + dy * s - Oy) * Uy + (oz + dz * s - Oz) * Uz;
-      if (a >= 0 && a <= B.width && b >= 0 && b <= B.length) {
-        t = s;
-        kind = 'board';
-        ny = Ny;
-        nz = Nz;
-        pad = padAt(B, a, b);
-        step = pad < 0 ? stepAt(B, a, b) : -1;
-        knob = pad < 0 && step < 0 ? knobAt(B, a, b) : -1;
-        const on = pad >= 0 ? B.pads[pad] : step >= 0 ? B.steps[step] : null;
-        if (on) {
-          kind = pad >= 0 ? 'pad' : 'step';
-          u = (a - on.a0) / (on.a1 - on.a0);
-          v = (b - on.b0) / (on.b1 - on.b0);
-        } else if (knob >= 0) kind = 'knob';
-      }
-    }
+  if (!meetDesk(B, ox, oy, oz, dx, dy, dz, within, BOARD.rise, MET)) return false;
+  let kind = 'board', pad = -1, step = -1, knob = -1, jack = -1, u = 0, v = 0;
+  const { a, b } = MET;
+  if (MET.on === 'top') {
+    pad = padAt(B, a, b);
+    step = pad < 0 ? stepAt(B, a, b) : -1;
+    knob = pad < 0 && step < 0 ? knobAt(B, a, b) : -1;
+    const on = pad >= 0 ? B.pads[pad] : step >= 0 ? B.steps[step] : null;
+    if (on) {
+      kind = pad >= 0 ? 'pad' : 'step';
+      u = (a - on.a0) / (on.a1 - on.a0);
+      v = (b - on.b0) / (on.b1 - on.b0);
+    } else if (knob >= 0) kind = 'knob';
+  } else if (MET.on === 'panel') {
+    const run = B.panel.run;
+    jack = jackAt(B, a, b);
+    knob = jack < 0 ? knobAt(B, a, b, 'panel') : -1;
+    kind = jack >= 0 ? 'jack' : knob >= 0 ? 'knob' : a >= run.a0 && a <= run.a1 && b >= run.b0 && b <= run.b1 ? 'run' : 'board';
   }
-  // The panel, facing the player.
-  const P = B.panel, [Px, Py, Pz] = P.origin, [, Qy, Qz] = P.up, [, My, Mz] = P.normal;
-  const dm = dy * My + dz * Mz;
-  if (dm < 0) {
-    const s = ((Py - oy) * My + (Pz - oz) * Mz) / dm;
-    if (s > 0 && s < t) {
-      const a = ox + dx * s - Px, b = (oy + dy * s - Py) * Qy + (oz + dz * s - Pz) * Qz;
-      if (a >= 0 && a <= B.width && b >= 0 && b <= P.height) {
-        t = s;
-        nx = u = v = 0;
-        ny = My;
-        nz = Mz;
-        pad = step = -1;
-        jack = jackAt(B, a, b);
-        knob = jack < 0 ? knobAt(B, a, b, 'panel') : -1;
-        kind = jack >= 0 ? 'jack' : knob >= 0 ? 'knob' : areaAt([P.run], a, b) >= 0 ? 'run' : 'board';
-      }
-    }
-  }
-  // Its front, under the top's front edge, and its sign on the wall.
-  if (dz < 0) {
-    for (const [z, x0, x1, y0, y1] of [[B.zFront, B.x0, B.x1, 0, B.front], [B.sign.z, B.sign.x0, B.sign.x1, B.sign.y0, B.sign.y1]]) {
-      const s = (z - oz) / dz;
-      const x = ox + dx * s, y = oy + dy * s;
-      if (s > 0 && s < t && x >= x0 && x <= x1 && y >= y0 && y <= y1) {
-        t = s;
-        kind = 'board';
-        nx = ny = 0;
-        nz = 1;
-        pad = step = knob = jack = -1;
-      }
-    }
-  }
-  // Its sides, under the top as it rises, then the panel's as it rises further.
-  const zFoot = P.origin[2], steep = Math.cos(P.lean) / Math.sin(P.lean);
-  for (const side of [-1, 1]) {
-    if (dx * side >= 0) continue;
-    const s = ((side < 0 ? B.x0 : B.x1) - ox) / dx;
-    const y = oy + dy * s, z = oz + dz * s;
-    const high = z >= zFoot ? B.front + (B.zFront - z) * Math.tan(B.tilt) : Math.min(P.top, B.top + (zFoot - z) * steep);
-    if (s > 0 && s < t && z >= B.zBack && z <= B.zFront && y >= 0 && y <= high) {
-      t = s;
-      kind = 'board';
-      nx = side;
-      ny = nz = 0;
-      pad = step = knob = jack = -1;
-    }
-  }
-  if (!kind) return false;
-  out.t = t;
-  out.kind = kind;
-  out.x = ox + dx * t;
-  out.y = oy + dy * t;
-  out.z = oz + dz * t;
-  out.nx = nx;
-  out.ny = ny;
-  out.nz = nz;
-  out.u = u;
-  out.v = v;
-  out.walkable = false;
-  out.piece = -1;
+  writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
   out.pad = pad;
   out.step = step;
   out.knob = knob;
   out.jack = jack;
+  out.key = out.dial = out.button = -1;
   return true;
 }
 
 /**
- * Whether (x, z) is too near the board to stand at: on it, or within `keep` of its front or sides.
- * @param {Board} B
+ * A desk's hit written into out as room.js castRay writes one, of `kind`, `u`, `v` where on what it
+ * is (the rest of a band's hit, which pad or key, is the caller's).
+ * @param {import('./room.js').RoomHit} out
+ * @param {DeskHit} at
+ * @param {string} kind
+ * @param {number} ox
+ * @param {number} oy
+ * @param {number} oz
+ * @param {number} dx
+ * @param {number} dy
+ * @param {number} dz
+ * @param {number} u
+ * @param {number} v
+ */
+export function writeHit(out, at, kind, ox, oy, oz, dx, dy, dz, u, v) {
+  out.t = at.t;
+  out.kind = kind;
+  out.x = ox + dx * at.t;
+  out.y = oy + dy * at.t;
+  out.z = oz + dz * at.t;
+  out.nx = at.nx;
+  out.ny = at.ny;
+  out.nz = at.nz;
+  out.u = u;
+  out.v = v;
+  out.walkable = false;
+  out.piece = -1;
+}
+
+/**
+ * Whether (x, z) is too near the board (a desk) to stand at: on it, or within `keep` of its front or
+ * sides.
+ * @param {Desk} B
  * @param {number} x
  * @param {number} z
  */
@@ -374,9 +477,9 @@ export function boardBlocks(B, x, z) {
 }
 
 /**
- * The nearest place to (x, z) a head coming from (fx, fz) may be, round the board: `keep` from its
- * front or its sides, the side it came from, sliding along it. Writes { x, z } into out.
- * @param {Board} B
+ * The nearest place to (x, z) a head coming from (fx, fz) may be, round the board (a desk): `keep`
+ * from its front or its sides, the side it came from, sliding along it. Writes { x, z } into out.
+ * @param {Desk} B
  * @param {number} fx
  * @param {number} fz
  * @param {number} x
@@ -479,13 +582,15 @@ function hull(points) {
 }
 
 /**
- * The board's outline, what stands out of it (the knobs) included: points along the top's front edge,
- * up its right side and the panel's, along the panel's top edge, and down the left sides.
- * @param {Board} B
+ * The board's outline (a desk's), what stands `h` out of it (the knobs) included: points along the
+ * top's front edge, up its right side and the panel's, along the panel's top edge, and down the left
+ * sides.
+ * @param {Desk} B
  * @param {number} [n] points along each edge
+ * @param {number} [h]
  */
-export function boardOutline(B, n = 16) {
-  const h = BOARD.knob.h, W = B.width, D = B.length, H = B.panel.height;
+export function boardOutline(B, n = 16, h = BOARD.knob.h) {
+  const W = B.width, D = B.length, H = B.panel.height;
   /** @type {((f: number) => [number, number, number])[]} */
   const edges = [
     (f) => boardPoint(B, f * W, 0, h),
@@ -504,13 +609,14 @@ export function boardOutline(B, n = 16) {
  * degrees high, `aspect` wide for 1 high, from EYE), within `fill` of its edges and clear of what the
  * page shows over it (`over`: the card, the buttons). Facing it, looking down at the middle of it in
  * the middle of the view; where something covers that, with the board beside it, or below or above
- * it: at each distance, the first of those that fits.
- * @param {Board} B
- * @param {{ fov?: number, aspect?: number, fill?: number, over?: Rect[] }} [o]
+ * it: at each distance, the first of those that fits. For any desk, what stands out of it `h` high,
+ * and only where one may stand (`free`: not at another desk).
+ * @param {Desk} B
+ * @param {{ fov?: number, aspect?: number, fill?: number, over?: Rect[], h?: number, free?: (x: number, z: number) => boolean }} [o]
  */
-export function boardFront(B, { fov = 70, aspect = 16 / 9, fill = 0.88, over = [] } = {}) {
+export function boardFront(B, { fov = 70, aspect = 16 / 9, fill = 0.88, over = [], h = BOARD.knob.h, free = () => true } = {}) {
   const ty = Math.tan((fov * Math.PI) / 360), tx = ty * aspect;
-  const outline = boardOutline(B);
+  const outline = boardOutline(B, 16, h);
   // Its middle: halfway between the top's front edge and the panel's top edge.
   const front = boardPoint(B, B.width / 2, 0), back = panelPoint(B, B.width / 2, B.panel.height);
   const c = [front[0], (front[1] + back[1]) / 2, (front[2] + back[2]) / 2];
@@ -529,7 +635,7 @@ export function boardFront(B, { fov = 70, aspect = 16 / 9, fill = 0.88, over = [
   };
   /** @param {{ x: number, z: number, yaw: number, pitch: number }} at */
   const fits = (at) => {
-    if (Math.abs(at.x - x) > ASIDE) return false;
+    if (Math.abs(at.x - x) > ASIDE || !free(at.x, at.z)) return false;
     /** @type {[number, number][]} */
     const seen = [];
     for (const [px, py, pz] of outline) {
@@ -555,23 +661,28 @@ export function boardFront(B, { fov = 70, aspect = 16 / 9, fill = 0.88, over = [
 
 /**
  * Where to stand to play the board in VR: the head a little back from its front edge, the step keys
- * and the pads in reach of a stick (the panel's jacks and knobs are pointed at), facing it.
- * @param {Board} B
+ * and the pads in reach of a stick (the panel's jacks and knobs are pointed at), facing it. For any
+ * desk, `back` from its front edge, across at x.
+ * @param {Desk} B
+ * @param {number} [back]
+ * @param {number} [x]
  */
-export function boardStand(B) {
-  return { x: (B.x0 + B.x1) / 2, z: B.zFront + 0.27, yaw: 0 };
+export function boardStand(B, back = 0.27, x = (B.x0 + B.x1) / 2) {
+  return { x, z: B.zFront + back, yaw: 0 };
 }
 
 /**
- * How far the point (x, y, z) is out of the pads' faces (below them: < 0).
- * @param {Board} B
+ * How far the point (x, y, z) is out of the pads' faces (below them: < 0); for any desk, out of a
+ * plane `rise` over its top.
+ * @param {Desk} B
  * @param {number} x
  * @param {number} y
  * @param {number} z
+ * @param {number} [rise]
  */
-export function heightOver(B, x, y, z) {
+export function heightOver(B, x, y, z, rise = BOARD.rise) {
   const [, Oy, Oz] = B.origin, [, Ny, Nz] = B.normal;
-  return (y - Oy) * Ny + (z - Oz) * Nz - BOARD.rise;
+  return (y - Oy) * Ny + (z - Oz) * Nz - rise;
 }
 
 /**

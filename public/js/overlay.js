@@ -2,25 +2,30 @@
 // the page's <nav>: the room's name, the way back to the hallway as a real link (for keyboards,
 // screen readers and browsers without WebGL), its description, what hangs on its walls (each one
 // that leads somewhere a link there, the rest buttons that walk up to them), Start / Leave shared session (and,
-// in one, how it's going), Drums, and Settings, the control panel's choices: motion (common/access.js, for
-// a screen too), how to move and turn in VR, the comfort vignette and seated mode. The view is the
-// page's <main>, with a hint on how to move, the Wave, Copy invite link, Fullscreen and Enter VR
-// buttons, the dot a gamepad aims with, and short messages, said politely. So everything the room
-// offers in 3D is a control here too: the doorway is the link, the panel's buttons are Settings,
-// the session's button and Enter VR, and the pieces on the walls are On the walls. In a shared session the card also has the visitor's name.
+// in one, how it's going), Drums, Synth, Sound, and Settings, the control panel's choices: motion
+// (common/access.js, for a screen too), how to move and turn in VR, the comfort vignette and seated
+// mode. The view is the page's <main>, with a hint on how to move, the Wave, Copy invite link,
+// Fullscreen and Enter VR buttons, the dot a gamepad aims with, and short messages, said politely. So
+// everything the room offers in 3D is a control here too: the doorway is the link, the panel's
+// buttons are Settings, the session's button and Enter VR, and the pieces on the walls are On the
+// walls. In a shared session the card also has the visitor's name.
 // Drums is the drum board: a button to go and play it (or step away), its clock (Start or Stop, and
 // the tempo), its pads as buttons (each plays as it is pressed, as on the board), the steps of the
-// pad last played as toggles (the step playing marked), its knobs and the delay's as sliders, the
-// cables as a choice for each input, the volume and mute over the room's sound, and a MIDI device to
-// play it from, where the browser has Web MIDI.
+// pad last played as toggles (the step playing marked), its knobs and the delay's as sliders, and the
+// cables as a choice for each input. Synth is the synth: a button to go and play it, its keys (each
+// sounds while pressed, one stop among them with the arrows going along them), its sounds (the
+// presets a choice, Mono, the octave) and its knobs as sliders, a section each as on its top. Sound
+// is the volume and mute over the room's sound, and a MIDI device to play from, where the browser has
+// Web MIDI.
 // On a TV (common's tv.js) the remote reaches only the card, so Wave is in it, and there is nothing
 // to copy a link to: the invite link is shown to type on another device. Fullscreen and Enter VR
-// are not offered there (main.js).
+// are not offered there (main.js), nor the synth's keys (its remote plays them at the synth).
 import { KNOBS, PADS, ROWS, keyLabel, knobText } from './drums.js';
 import { TEMPO } from './clock.js';
 import { STEPS } from './pattern.js';
 import { DELAY_KNOBS, MAX_STEPS, delaySteps, delayText } from './delay.js';
 import { JACKS } from './patch.js';
+import { KEYS, LOWEST, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack, noteName, spokenNote, synthText } from './synth.js';
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -36,26 +41,33 @@ function el(tag, attrs = {}, ...children) {
 // tv: walking with a remote, and a line for TalkBack, which keeps the arrows (the view is described
 // by the hint); tv-card: in the card. The hallway's.
 const HINTS = {
-  touch: 'Drag to look · tap the floor to walk there, or the drums to play them · tap the doorway to go back',
-  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, or the drums to play them',
-  gamepad: 'Right stick to look · left stick to walk · A on the drums plays them, on the doorway goes back',
-  tv: 'Arrows: walk and turn · OK: the drums, the doorway or the panel in the middle · Menu or hold Back: the drums, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
+  touch: 'Drag to look · tap the floor to walk there, or the drums or the synth to play them · tap the doorway to go back',
+  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, or the drums or the synth to play them',
+  gamepad: 'Right stick to look · left stick to walk · A on the drums or the synth plays them, on the doorway goes back',
+  tv: 'Arrows: walk and turn · OK: the drums, the synth, the doorway or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
   'tv-card': 'Up, down: from control to control · left, right: a choice · OK: choose · Back: walk again',
 };
-// At the drum board, playing it (controls.js playing).
+// At the drum board, playing it (controls.js at).
 const BOARD_HINTS = {
   touch: 'Tap the pads, with as many fingers as you like, and the step keys · drag a knob · tap two jacks to patch · tap the floor to step away',
   mouse: 'Click the pads, or press 1–4, Q–R and A–F (Shift: harder) · click the step keys · Space: the clock · drag or scroll a knob · click two jacks to patch · Esc steps away',
   gamepad: 'Right stick to aim · A plays the pad in the middle, sets a step, takes or plugs in a cable · B steps away',
   tv: 'Arrows: choose a pad · OK: play it · Play/pause: the clock · Back: step away · Menu: its steps, its knobs and the rest',
 };
+// At the synth, playing it.
+const SYNTH_HINTS = {
+  touch: 'Touch the keys, with as many fingers as you like, and slide along them · drag a knob · tap a button on its panel · tap the floor to step away',
+  mouse: 'Play the keys from A (white) and W (black), Shift harder, or click them · Z, X: an octave down, up · drag or scroll a knob · Esc steps away',
+  gamepad: 'Right stick to aim · A plays the key in the middle, presses a button · B steps away',
+  tv: 'Arrows: choose a key, up and down an octave · OK: play it · Back: step away · Menu: its sounds and knobs',
+};
 // With something on the walls (config.js's pieces), each names the pictures too.
 const PIECE_HINTS = {
   ...HINTS,
-  touch: 'Drag to look · tap the floor to walk there, a picture, or the drums to play them · tap the doorway to go back',
-  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, a picture, or the drums to play them',
-  gamepad: 'Right stick to look · left stick to walk · A on a picture goes to it, on the drums plays them, on the doorway goes back',
-  tv: 'Arrows: walk and turn · OK: the drums, the doorway, a picture or the panel in the middle · Menu or hold Back: the drums, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
+  touch: 'Drag to look · tap the floor to walk there, a picture, or the drums or the synth to play them · tap the doorway to go back',
+  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, a picture, or the drums or the synth to play them',
+  gamepad: 'Right stick to look · left stick to walk · A on a picture goes to it, on the drums or the synth plays them, on the doorway goes back',
+  tv: 'Arrows: walk and turn · OK: the drums, the synth, the doorway, a picture or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
 };
 
 export class Overlay {
@@ -260,6 +272,123 @@ export class Overlay {
     });
     this.resetKnobs = el('button', { class: 'chip', type: 'button' }, 'As it comes');
     this.resetKnobs.addEventListener('click', () => this.onResetKnobs());
+    this.knobsBox = el('fieldset', { class: 'knobs' }, el('legend', {}, 'Knobs: ', this.knobPad), ...knobRows, el('div', { class: 'actions' }, this.resetKnobs));
+    this.playRow = el('div', { class: 'actions' }, this.play);
+    this.drums = el('div', { class: 'part drums', id: 'drums', hidden: '' },
+      this.playRow,
+      this.clockBox,
+      el('div', { class: 'pads', role: 'group', 'aria-label': 'Pads', style: `--rows: ${ROWS}` }, ...order.map((i) => this.pads[i])),
+      this.stepsBox,
+      this.knobsBox,
+      this.delayBox,
+      this.cablesBox);
+    // The synth, as on it: going to play it, its keys, its sounds and its knobs.
+    /** Play at the synth, or step away from it. */
+    this.onPlaySynth = () => {};
+    /** (k, velocity) key k (from the lowest) pressed, until onKeyUp(k). @type {(k: number, velocity: number) => void} */
+    this.onKeyDown = () => {};
+    /** (k) key k let go. @type {(k: number) => void} */
+    this.onKeyUp = () => {};
+    /** (k) key k played for a moment: a key's Enter or Space, a screen reader. @type {(k: number) => void} */
+    this.onKeyTap = () => {};
+    /** (id) a preset chosen (synth.js PRESETS); chosen again, back to it as it comes. @type {(id: string) => void} */
+    this.onPreset = () => {};
+    /** (on) Mono, or poly. @type {(on: boolean) => void} */
+    this.onMono = () => {};
+    /** (octave) the keys' octave, OCTAVES.min…max. @type {(octave: number) => void} */
+    this.onOctave = () => {};
+    /** (id, value) a knob of the synth set 0…1. @type {(id: import('./synth.js').SynthKnob, value: number) => void} */
+    this.onSynthKnob = () => {};
+    /** The synth's knobs as it comes, in poly. */
+    this.onResetSynth = () => {};
+    this.synthToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'synth' }, 'Synth');
+    this.synthToggle.addEventListener('click', () => this.openSynth(this.synth.hidden));
+    this.playSynth = el('button', { class: 'chip', type: 'button' }, 'Play at the synth');
+    this.playSynth.addEventListener('click', () => this.onPlaySynth());
+    // Its keys, each sounding while it is pressed (as on the synth; for a key's Enter or Space, or a
+    // screen reader, a moment). One stop among them: the arrows, Home and End go along them.
+    /** @private the presses on the keys: which key each pointer holds @type {Map<number, number>} */
+    this._keyHeld = new Map();
+    /** @private keys pressed by a pointer whose click (which ends the press) is still to come @type {Set<number>} */
+    this._keyPressed = new Set();
+    this.keys = Array.from({ length: KEYS }, (_, k) => {
+      const b = el('button', { class: isBlack(LOWEST + k) ? 'key black' : 'key', type: 'button', tabindex: k ? '-1' : '0' });
+      b.addEventListener('pointerdown', (e) => {
+        if (e.button > 0) return;
+        this._keyHeld.set(e.pointerId, k);
+        this._keyPressed.add(k);
+        b.setPointerCapture?.(e.pointerId);
+        this.onKeyDown(k, 0.85);
+      });
+      const up = (/** @type {PointerEvent} */ e) => {
+        if (this._keyHeld.get(e.pointerId) !== k) return;
+        this._keyHeld.delete(e.pointerId);
+        if (e.type !== 'pointerup') this._keyPressed.delete(k); // no click to come
+        this.onKeyUp(k);
+      };
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('lostpointercapture', up);
+      b.addEventListener('click', () => {
+        if (this._keyPressed.delete(k)) return;
+        this.onKeyTap(k);
+      });
+      return b;
+    });
+    this.keyboard = el('div', { class: 'keyboard', role: 'group', 'aria-label': 'Keys' }, ...this.keys);
+    this.keyboard.addEventListener('keydown', (e) => {
+      const at = this.keys.indexOf(e.target), key = e.key;
+      const to = key === 'ArrowLeft' ? at - 1 : key === 'ArrowRight' ? at + 1 : key === 'Home' ? 0 : key === 'End' ? KEYS - 1 : null;
+      if (at < 0 || to === null) return;
+      e.preventDefault();
+      e.stopPropagation(); // not walking's
+      this._focusKey(Math.min(KEYS - 1, Math.max(0, to)));
+    });
+    // Its sounds: the presets a choice (poly, then mono), Mono, the octave the keys play in.
+    /** @private the preset chosen (setSynth), else null */
+    this._preset = null;
+    this.soundName = el('span', {}, 'As it comes');
+    /** Each preset's choice. @type {Map<string, HTMLInputElement>} */
+    this.presetInputs = new Map();
+    const presets = PRESETS.map((p) => {
+      const input = el('input', { type: 'radio', name: 'synth-preset', value: p.id });
+      input.addEventListener('change', () => {
+        if (input.checked) this.onPreset(p.id);
+      });
+      // The one chosen, chosen again (changed since): back to it as it comes. Its click comes before
+      // any change, while the one chosen is still the last.
+      input.addEventListener('click', () => {
+        if (this._preset === p.id) this.onPreset(p.id);
+      });
+      this.presetInputs.set(p.id, input);
+      return el('label', {}, input, p.mono ? `${p.name} (mono)` : p.name);
+    });
+    this.monoInput = el('input', { type: 'checkbox', name: 'synth-mono' });
+    this.monoInput.addEventListener('change', () => this.onMono(this.monoInput.checked));
+    const octave = range('Octave', OCTAVES.min, OCTAVES.max, (o) => this.onOctave(o));
+    this.octave = octave.input;
+    this.octaveOut = octave.out;
+    this.resetSynth = el('button', { class: 'chip', type: 'button' }, 'As it comes');
+    this.resetSynth.addEventListener('click', () => this.onResetSynth());
+    this.presetsBox = el('fieldset', { class: 'presets' }, el('legend', {}, 'Sound: ', this.soundName),
+      el('div', { class: 'choices' }, ...presets),
+      el('div', { class: 'actions' }, el('label', { class: 'check' }, this.monoInput, 'Mono'), this.resetSynth),
+      octave.row);
+    // Its knobs, a section each as on its top.
+    /** Each of the synth's sliders and the words for its setting. @type {Map<import('./synth.js').SynthKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.synthInputs = new Map();
+    this.sectionBoxes = SECTIONS.map((s) => el('fieldset', { class: 'section' }, el('legend', {}, s.name),
+      ...SYNTH_KNOBS.filter((k) => k.section === s.id).map((k) => {
+        const row = slider(k.name, (v) => this.onSynthKnob(k.id, v));
+        this.synthInputs.set(k.id, row);
+        return row.row;
+      })));
+    this.synthPlayRow = el('div', { class: 'actions' }, this.playSynth);
+    this.synth = el('div', { class: 'part synth', id: 'synth', hidden: '' }, this.synthPlayRow, this.keyboard, this.presetsBox, ...this.sectionBoxes);
+    this._labelKeys(LOWEST);
+    // The room's sound: its volume and Mute, and a MIDI device to play from.
+    this.soundToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'sound' }, 'Sound');
+    this.soundToggle.addEventListener('click', () => this.openSound(this.sound.hidden));
     const volume = slider('Volume', (v) => this.onVolume(v));
     this.volume = volume.input;
     this.volumeOut = volume.out;
@@ -270,19 +399,9 @@ export class Overlay {
     this.midi.addEventListener('click', () => this.onMidi());
     this.midiStatus = el('p', { class: 'midi-status', role: 'status' });
     this.midiBox = el('div', { class: 'midi', hidden: '' }, this.midi, this.midiStatus);
-    this.knobsBox = el('fieldset', { class: 'knobs' }, el('legend', {}, 'Knobs: ', this.knobPad), ...knobRows, el('div', { class: 'actions' }, this.resetKnobs));
-    this.playRow = el('div', { class: 'actions' }, this.play);
-    this.drums = el('div', { class: 'drums', id: 'drums', hidden: '' },
-      this.playRow,
-      this.clockBox,
-      el('div', { class: 'pads', role: 'group', 'aria-label': 'Pads', style: `--rows: ${ROWS}` }, ...order.map((i) => this.pads[i])),
-      this.stepsBox,
-      this.knobsBox,
-      this.delayBox,
-      this.cablesBox,
-      el('fieldset', { class: 'mixer' }, el('legend', {}, 'Sound'), volume.row, el('label', { class: 'check' }, this.mute, 'Mute')),
-      this.midiBox);
-    this._playing = false;
+    this.sound = el('div', { class: 'part sound', id: 'sound', hidden: '' }, volume.row, el('label', { class: 'check' }, this.mute, 'Mute'), this.midiBox);
+    /** @private where the visitor plays (controls.js at): 'board', 'synth', or null @type {'board' | 'synth' | null} */
+    this._at = null;
     // In a shared session: how it's going, the visitor's name in it, and on a TV the invite link.
     this.status = el('p', { class: 'together-status' });
     this.myName = el('input', { class: 'my-name', type: 'text', maxlength: '24', autocomplete: 'off', spellcheck: 'false' });
@@ -302,9 +421,11 @@ export class Overlay {
       el('p', { class: 'tagline' }, room.description),
       ...(this.walls ? [this.walls] : []),
       this.inRoom = el('section', { class: 'in-room', 'aria-label': 'In the room' },
-        el('div', { class: 'actions' }, this.session, ...(tv ? [this.wave] : []), this.drumsToggle, this.settingsToggle),
+        el('div', { class: 'actions' }, this.session, ...(tv ? [this.wave] : []), this.drumsToggle, this.synthToggle, this.soundToggle, this.settingsToggle),
         this.together,
         this.drums,
+        this.synth,
+        this.sound,
         this.settings));
     this.hint = el('p', { class: 'hint', id: 'hint' });
     this.fullscreen = el('button', { class: 'pill', type: 'button', hidden: '' }, 'Fullscreen');
@@ -348,7 +469,8 @@ export class Overlay {
    * OK does there, as music's does on the gramophone.
    */
   _hintText() {
-    if (this._playing && this._how in BOARD_HINTS) return BOARD_HINTS[this._how];
+    const playing = this._at === 'board' ? BOARD_HINTS : this._at === 'synth' ? SYNTH_HINTS : null;
+    if (playing && this._how in playing) return playing[this._how];
     const text = this._hints[this._how];
     if (this._how !== 'tv' || this._aimed < 0) return text;
     const p = this.pieces[this._aimed];
@@ -413,15 +535,17 @@ export class Overlay {
   }
 
   /**
-   * At the drum board playing it (controls.js playing), or not: the card's button steps away, or goes
-   * to play, and the hint says how to play there, shown again; stepping away, the hint changes back
-   * where it is still shown.
+   * Playing at the drum board or the synth (controls.js at: 'board', 'synth'), or not (null): the
+   * card's button there steps away, the other goes to play, and the hint says how to play there,
+   * shown again; stepping away, the hint changes back where it is still shown.
+   * @param {'board' | 'synth' | null} at
    */
-  setPlaying(on) {
-    if (on === this._playing) return;
-    this._playing = on;
-    this.play.textContent = on ? 'Step away from the board' : 'Play at the board';
-    if (on && this._how !== 'tv-card') this.setHint(this._how);
+  setPlaying(at) {
+    if (at === this._at) return;
+    this._at = at;
+    this.play.textContent = at === 'board' ? 'Step away from the board' : 'Play at the board';
+    this.playSynth.textContent = at === 'synth' ? 'Step away from the synth' : 'Play at the synth';
+    if (at && this._how !== 'tv-card') this.setHint(this._how);
     else {
       this.hint.textContent = this._hintText();
       this._placeHint();
@@ -432,6 +556,86 @@ export class Overlay {
   openDrums(open) {
     this.drums.hidden = !open;
     this.drumsToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  /** Synth open in the card, or closed. */
+  openSynth(open) {
+    this.synth.hidden = !open;
+    this.synthToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  /** Sound open in the card, or closed. */
+  openSound(open) {
+    this.sound.hidden = !open;
+    this.soundToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  /**
+   * The focus to key k, the one stop among the keys.
+   * @private
+   * @param {number} k
+   */
+  _focusKey(k) {
+    for (const [i, b] of this.keys.entries()) b.setAttribute('tabindex', i === k ? '0' : '-1');
+    this.keys[k].focus();
+  }
+
+  /**
+   * The keys' notes from the lowest one's: their names, and the Cs' on them.
+   * @private
+   * @param {number} lowest
+   */
+  _labelKeys(lowest) {
+    for (const [k, b] of this.keys.entries()) {
+      const n = lowest + k;
+      b.setAttribute('aria-label', spokenNote(n));
+      b.textContent = n % 12 === 0 ? noteName(n) : '';
+    }
+  }
+
+  /**
+   * The synth as it is (synth.js Synth): what it plays (its name, `title`, over the presets), the
+   * preset chosen, Mono, and the octave (the keys' notes, on them too).
+   * @param {{ name: string, preset: string | null, mono: boolean, octave: number, lowest: number }} synth
+   */
+  setSynth({ name, preset, mono, octave, lowest }) {
+    this._preset = preset;
+    if (this.soundName.textContent !== name) this.soundName.textContent = name;
+    for (const [id, input] of this.presetInputs) if (input.checked !== (id === preset)) input.checked = id === preset;
+    if (this.monoInput.checked !== mono) this.monoInput.checked = mono;
+    const value = String(octave);
+    if (this.octave.value !== value) this.octave.value = value;
+    const text = `${noteName(lowest)}–${noteName(lowest + KEYS - 1)}`;
+    if (this.octaveOut.textContent === text) return;
+    this.octaveOut.textContent = text;
+    this.octave.setAttribute('aria-valuetext', `Keys ${spokenNote(lowest)} to ${spokenNote(lowest + KEYS - 1)}`);
+    this._labelKeys(lowest);
+  }
+
+  /** The synth's knobs (synth.js): their sliders and words. @param {Readonly<Record<import('./synth.js').SynthKnob, number>>} knobs */
+  setSynthKnobs(knobs) {
+    for (const [id, { input, out }] of this.synthInputs) {
+      const value = String(Math.round(knobs[id] * 100));
+      if (input.value !== value) input.value = value;
+      const text = synthText(id, knobs[id]);
+      if (out.textContent !== text) {
+        out.textContent = text;
+        input.setAttribute('aria-valuetext', text);
+      }
+    }
+  }
+
+  /**
+   * The notes sounding from a key held down (synth.js Synth down), the lowest key's note as it is:
+   * those keys marked. Seen, not said, as the step playing.
+   * @param {ReadonlySet<number>} notes
+   * @param {number} lowest
+   */
+  setNotes(notes, lowest) {
+    for (const [k, b] of this.keys.entries()) {
+      const down = notes.has(lowest + k);
+      if (b.classList.contains('down') !== down) b.classList.toggle('down', down);
+    }
   }
 
   /** Pad i's knobs (drums.js), i the pad last played: its name over the sliders, their places and their words. */
@@ -623,8 +827,9 @@ export class Overlay {
   }
 
   /**
-   * No 3D view: the way back, where the pieces lead (the rest are just named), and the drums, which
-   * play without one (open, with no board to go to).
+   * No 3D view: the way back, where the pieces lead (the rest are just named), and the drums, the
+   * synth and the sound, which play without one (open, each under its name, with nothing to walk up
+   * to).
    */
   noWebGL(message) {
     this.card.classList.add('alone');
@@ -632,8 +837,11 @@ export class Overlay {
     for (const b of this.walls?.querySelectorAll('button.piece') ?? []) b.replaceWith(el('span', { class: 'piece-title' }, b.textContent));
     this.card.append(el('p', { class: 'no-webgl' }, message));
     this.playRow.remove();
-    this.drums.hidden = false;
-    this.card.append(el('section', { class: 'in-room', 'aria-label': 'Drums' }, this.drums));
+    this.synthPlayRow.remove();
+    for (const [name, part] of [['Drums', this.drums], ['Synth', this.synth], ['Sound', this.sound]]) {
+      part.hidden = false;
+      this.card.append(el('section', { class: 'in-room' }, el('h2', { class: 'part-title' }, name), part));
+    }
     this.hint.remove();
   }
 }

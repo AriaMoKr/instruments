@@ -79,9 +79,14 @@ class Element {
     (this.listeners[type] ??= []).push(fn);
   }
 
-  /** Fires `type` at it: a click, or a change (an input's), with what else the event has (`props`: a press's button, its timeStamp). */
+  /** Fires `type` at it: a click, or a change (an input's), with what else the event has (`props`: a press's button, its timeStamp, its target). */
   fire(type, props = {}) {
-    for (const fn of this.listeners[type] ?? []) fn({ type, target: this, preventDefault() {}, ...props });
+    for (const fn of this.listeners[type] ?? []) fn({ type, target: this, preventDefault() {}, stopPropagation() {}, ...props });
+  }
+
+  /** Focused: the document's activeElement. */
+  focus() {
+    globalThis.document.activeElement = this;
   }
 
   getBoundingClientRect() {
@@ -114,6 +119,7 @@ export function installDom() {
     createElement: (tag) => new Element(tag),
     getElementById: (id) => roots[id] ?? null,
     documentElement: new Element('html'),
+    activeElement: null,
   });
   set('ResizeObserver', class { constructor(fn) { this.fn = fn; } observe() {} });
   set('addEventListener', () => {});

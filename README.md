@@ -5,8 +5,10 @@
 A room of instruments behind the [Hallway](https://ariamokr.github.io/hallway/)'s door. The first is
 a drum board against the far wall: twelve analog drums, synthesized in the browser as they are
 played, each with its knobs, and a little modular panel: a clock that steps a sixteen-step pattern
-for each pad, and a delay, patched with cables (below, "The drums"). A synth, a keyboard and an
-electric guitar come next, all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
+for each pad, and a delay, patched with cables (below, "The drums"). Beside it stands a synth: six
+analog voices, poly or mono, with thirty-seven keys, twenty-five knobs and eight sounds to start
+from (below, "The synth"). Its patch bay, a keyboard and an electric guitar come next, all
+patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
 makes: a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the
 doorway back to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay
 walls, and is a little larger than the template, 7 by 8 metres, to leave room for the instruments
@@ -37,7 +39,7 @@ and the hint says how to play it.
 | Headset | hit it with a stick (a hand holding a controller has one near the board) or a forefinger, as hard as it comes down | point at it and push the stick up or down | walk off |
 | Gamepad | the dot on it and A | in the card | B |
 | TV remote | the arrows choose a pad, OK plays it | in the card: Menu goes to them | Back |
-| MIDI drum pad | General MIDI's drum notes: a pad controller's first bank, 36–51, plays all but the cowbell, 56 | | |
+| MIDI drum pad | General MIDI's drum notes on channel 10, the drums' (on any channel while you play at the board): a pad controller's first bank, 36–51, plays all but the cowbell, 56 | | |
 
 | | Set a step | Start or stop the clock | Patch a cable |
 |---|---|---|---|
@@ -51,13 +53,13 @@ A keyboard's play/pause key starts and stops the clock too, anywhere on the page
 but a control on the board while carrying a cable puts it away.
 
 The card's **Drums** has the same twelve pads as buttons, each with its key, the clock, the steps
-and the knobs of the pad last played (**As it comes** sets the knobs back), the delay, the cables
-(below), and **Sound**: the volume and **Mute**, over every instrument. On a TV it opens when you
-walk up to play, and the board stands beside it. Where
-the browser has Web MIDI (Chrome, Edge and Firefox on a computer or an Android phone; not Safari, nor
-the Quest's browser), **Play from a MIDI device** asks for the devices plugged in; once you have said
-yes, the room listens to them on every visit, on any channel, and to any plugged in later. The knobs
-are kept for the next visit (`localStorage`, `instruments.drums`), as are the volume and mute
+and the knobs of the pad last played (**As it comes** sets the knobs back), the delay and the cables
+(below). On a TV it opens when you walk up to play, and the board stands beside it. The card's
+**Sound** has the volume and **Mute**, over every instrument, and where the browser has Web MIDI
+(Chrome, Edge and Firefox on a computer or an Android phone; not Safari, nor the Quest's browser),
+**Play from a MIDI device**, which asks for the devices plugged in; once you have said yes, the room
+listens to them on every visit, on every channel, and to any plugged in later. The knobs are kept
+for the next visit (`localStorage`, `instruments.drums`), as are the volume and mute
 (`instruments.sound`).
 
 Every sound is made in the browser as it is played (Web Audio), the way the drum machines of the
@@ -117,6 +119,54 @@ The clock keeps time by the audio clock, not by a timer: each step's notes are s
 ahead to start exactly on it, from the frame loop and from a timer every 25 ms (a slow frame, or no
 3D view, moves no note), and what a step shows (the step lit, the pads, RUN's light) waits until it
 is heard. A step that fell too far behind while the page stalled is skipped rather than played late.
+
+## The synth
+
+To the right of the board, under a sign that says **Synth**, stands a synth with six analog voices:
+thirty-seven keys along its front, from C3 to C6 to start with, its twenty-five knobs behind them in
+two rows, and at the back a panel with its display (the sound, Mono or poly, the keys' octave, and
+the knob turned last), the eight presets' buttons, **MONO**, and the octave's **−** and **+**. Choose
+it or its sign, as the board, and you walk up to play; on a screen the view comes down over it,
+clear of the card and of the board.
+
+| | Play a key | Turn a knob | A preset, Mono, the octave | Step away |
+|---|---|---|---|---|
+| Desktop | click it and hold (drag along the keys to slide from one to the next), or its key: the row from A plays the white keys from middle C, the row above (W, E, T, Y, U, O, P) the black ones; Shift plays harder | drag it up or down, or scroll over it | click its button; Z and X: an octave down and up | Esc, or walk off |
+| Phone | touch it and hold, with as many fingers as you like, and slide along them | drag it up or down | tap its button | tap the floor |
+| Headset | press it down with a stick (it shows near the synth too) or a forefinger, as hard as you like, and slide along them; or point at it and pull the trigger | point at it and push the stick up or down | point at its button and pull the trigger | walk off |
+| Gamepad | the dot on it and A | in the card | the dot on its button and A | B |
+| TV remote | the arrows choose a key (up and down an octave), OK plays it | in the card: Menu goes to its sounds | in the card | Back |
+| MIDI keyboard | any channel but 10, the drums' (all of them go to the drums while you play at the board); its sustain pedal, its mod wheel (vibrato) and its pitch bend (two semitones) too | | | |
+
+A key held sounds until it is let go; a click, A, OK or a trigger plays it a moment. In **poly** each
+key has a voice of its own, six at most (a seventh takes the voice held longest), each voice's filter
+a little apart from the others', as an analog synth's are. In **mono** the last key held sounds, on
+all six voices spread by **DETUNE** into one thick note (on one, with no detune), and a key pressed
+while another is held glides to it (**GLIDE**) without starting again, as does letting it go back to
+one still held.
+
+The knobs are in sections, as on its top:
+
+- **Oscillator**: the levels of the **SAW**, the **PULSE** (its **WIDTH**), the **SUB** an octave
+  down and **NOISE**, and **DETUNE**, the voices apart (in mono, how thick).
+- **LFO**: its **RATE**, and how much it moves the pitch (**VIBRATO**, the mod wheel too), the
+  filter (**WAH**) and the pulse's width (**PWM**).
+- **Filter**: a 24 dB low-pass, its **CUTOFF**, **RESO** (resonance) and **ENV**, how far its
+  envelope opens it.
+- **Filter envelope** and **Amp envelope**: **A**, **D**, **S** and **R** each.
+- **Output**: **GLIDE** (in mono), **DRIVE** into a soft clip, **CHORUS**, and the **LEVEL**.
+
+The presets are four poly sounds (**Pad**, **Strings**, **Brass**, **Pluck**) and four mono ones
+(**Fat Bass**, **Acid**, **Wobble**, **Sweep**). A knob turned after one is a change, said on the
+display; choosing that preset again brings it back as it comes. The knobs, Mono, the preset and the
+octave are kept for the next visit (`instruments.synth`).
+
+The card's **Synth** has the same: its keys as buttons (each sounds while it is pressed; one stop
+among them for a keyboard, the arrows, Home and End going along them; not on a TV, where the remote
+plays the synth's own), the presets, **Mono**, **As it comes** and the octave, and its knobs as
+sliders, a section each. Its sound is made as the drums' are, in the browser as it is played, and
+goes out through **Sound**'s volume with the drums. Patching it (its sound into the delay, the clock
+into an arpeggiator, the LFO into whatever takes it) is its next step.
 
 ## Moving about
 
@@ -178,15 +228,15 @@ is not the Hallway, the doorway shows its glow and the name of where it leads.
 
 ## The Hallway's door
 
-The Hallway does not have a door to here yet. Its entry for the Hallway's
-[`public/js/environments.js`](https://github.com/AriaMoKr/hallway/blob/main/public/js/environments.js)
-is the config's `hallwayDoor()`:
+The Hallway's door to here is its entry in its
+[`public/js/environments.js`](https://github.com/AriaMoKr/hallway/blob/main/public/js/environments.js),
+the config's `hallwayDoor()`:
 
 ```js
 {
   id: 'instruments',
   title: 'instruments',
-  subtitle: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads to play, and soon a keyboard, a synth and an electric guitar. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
+  subtitle: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads and a six-voice analog synth to play, and soon a keyboard and an electric guitar. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
   sign: 'Band Room',
   url: 'https://ariamokr.github.io/instruments/',
   preview: 'https://ariamokr.github.io/instruments/hallway-preview.jpg',
@@ -195,8 +245,9 @@ is the config's `hallwayDoor()`:
 ```
 
 As the Hallway's README asks ("Adding a door"), the title on the plaque by the door is the
-repository's name and the subtitle is the page's description word for word. Once the door is there
-and the Hallway has rendered its `views/` again, the doorway back here shows the hall.
+repository's name and the subtitle is the page's description word for word, so a change to the
+description here is one for the Hallway's entry too. Once the Hallway has rendered its `views/`
+with the door, the doorway back here shows the hall.
 
 ## Together
 
@@ -254,8 +305,8 @@ site full screen in a WebView whose user agent ends ` HallwayTV/<version>`), or 
 `?tv=emulate`, the room is walked with the TV's remote, as common's README has it ("The TV app"),
 through its `tv.js`:
 
-- The arrows walk and turn. OK uses what the dot in the middle of the view is on: the drums (the
-  board, or the sign over it, which is at the dot's height: it walks up to play them), the doorway,
+- The arrows walk and turn. OK uses what the dot in the middle of the view is on: the drums or the
+  synth (it, or the sign over it, which is at the dot's height: it walks up to play), the doorway,
   a picture on the walls, a button on the panel, or the floor (it walks there). With the dot on a
   picture, the hint says what OK does there: `OK: The studio` for one that leads somewhere,
   `OK: walk up to …` for the rest. It comes back for that if it had faded, and fades again when the
@@ -270,6 +321,9 @@ through its `tv.js`:
 - At the drums, the card opens on them and the board stands to the right of it: the arrows choose a
   pad, OK plays it, Menu goes to its steps in the card (its knobs, the delay and the cables follow),
   play/pause starts and stops the clock, and Back steps away from the board.
+- At the synth likewise, the card open on it: the arrows choose a key (the one chosen lit; up and
+  down an octave), OK plays it a moment, Menu goes to its sounds in the card (its knobs follow), and
+  Back steps away. The card's keys aren't there on a TV: they would be thirty-seven more stops.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -305,7 +359,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board, MIDI, the card), and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
