@@ -2,19 +2,21 @@
 // as browsers allow sound only after one, and the mixer the instruments play into: a channel each,
 // the volume and mute over them all, and a soft clipper, so that many hits at once bend rather than
 // crackle (a WaveShaper, which adds no delay, where a compressor would wait on its look-ahead). A
-// note starts in the event that plays it (a key, a press, a stick on a pad, a MIDI note) at the
-// context's current time: nothing waits for a scheduler, so the time from the hit to the sound is
-// the device's own output latency (latencyHint 'interactive'). Each instrument hands its notes to
-// add(): the last of a group (a drum's circuit) is cut short when the next starts, and the oldest
-// when too many sound at once. The volume and mute are kept for the next visit (localStorage).
+// note played live starts in the event that plays it (a key, a press, a stick on a pad, a MIDI
+// note) at the context's current time: nothing waits for a scheduler, so the time from the hit to
+// the sound is the device's own output latency (latencyHint 'interactive'). The clock's notes are
+// set a little ahead instead, each at its step's time. Each instrument hands its notes to add(): of
+// two notes on one circuit (a drum's), the later cuts the earlier short when it starts, and past
+// MAX_NOTES the oldest is cut. The volume and mute are kept for the next visit (localStorage).
 
 /** How many notes sound at once, at most: past it the oldest is cut short. */
 export const MAX_NOTES = 32;
 
 /**
- * A note sounding (drums.js playDrum's): when it will have died away, its own gain (to cut it short
- * with) and that gain's level, and its sources.
+ * A note sounding, or set to (drums.js playDrum's): when it starts and when it will have died away,
+ * its own gain (to cut it short with) and that gain's level, and its sources.
  * @typedef {object} Note
+ * @property {number} start
  * @property {number} end
  * @property {GainNode} out
  * @property {number} level
@@ -120,6 +122,8 @@ export class Sound {
     this._channels = new Map();
     /** @private @type {{ note: Note, group: string }[]} */
     this._notes = [];
+    /** Once the sound has woken for the first time, its graph made (to plug in what is patched). */
+    this.onReady = () => {};
     this._load();
   }
 
@@ -151,6 +155,7 @@ export class Sound {
         return null;
       }
       this._build(this.ctx);
+      this.onReady();
     }
     if (this.ctx.state !== 'running' && this.ctx.state !== 'closed') this.ctx.resume().catch(() => {});
     return this.ctx;
@@ -196,22 +201,28 @@ export class Sound {
   }
 
   /**
-   * Keeps a note that has started: the one before it in its group is cut short, and past MAX_NOTES
-   * the oldest.
+   * Keeps a note that has started, or is set to: a note of its group that starts before it is cut
+   * short when it starts, and one that starts after it (the clock's, set ahead) cuts it short then;
+   * past MAX_NOTES the oldest is cut when it starts.
    * @param {Note} note
    * @param {string} group
    */
   add(note, group) {
     const now = this.ctx?.currentTime ?? 0;
+    const at = Math.max(note.start, now);
     this._notes = this._notes.filter((n) => {
       if (n.note.end <= now) return false;
       if (n.group !== group) return true;
-      cut(n.note, now);
-      return false;
+      if (n.note.start <= note.start) {
+        cut(n.note, at);
+        return false;
+      }
+      cut(note, n.note.start);
+      return true;
     });
     while (this._notes.length >= MAX_NOTES) {
       const oldest = this._notes.shift();
-      if (oldest) cut(oldest.note, now);
+      if (oldest) cut(oldest.note, at);
     }
     this._notes.push({ note, group });
   }

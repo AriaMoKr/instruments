@@ -11,7 +11,8 @@
 // board's, 1–4 farthest, A–F nearest), the General MIDI drum notes that play it (a pad controller's
 // first bank, 36–51, plays all but the cowbell, 56), how long it rings at decay 0.5, and the colour
 // it lights up in.
-// Drums keeps each pad's knobs (localStorage) and plays a pad into the sound's 'drums' channel.
+// Drums keeps each pad's knobs (localStorage) and plays a pad, now or at a step's time, through its
+// own out (a jack to patch) into the sound's 'drums' channel.
 import { pageStorage } from './sound.js';
 
 /** @typedef {import('./sound.js').Sound} Sound */
@@ -329,10 +330,13 @@ export function playDrum(ctx, out, noise, i, velocity, knobs, when) {
   const stop = end() + 0.02;
   for (const s of sources) s.stop(stop);
   if (sources[0]) sources[0].onended = () => gain.disconnect();
-  return { end: stop, out: gain, level, sources };
+  return { start: when, end: stop, out: gain, level, sources };
 }
 
-/** The drums: each pad's knobs, kept for the next visit, the pad they turn, and playing a pad. */
+/**
+ * The drums: each pad's knobs, kept for the next visit, the pad they turn, each pad's out (its jack,
+ * patch.js `pad.<id>`: into the drums' channel, and wherever it is patched), and playing a pad.
+ */
 export class Drums {
   /**
    * @param {Sound} sound
@@ -350,20 +354,49 @@ export class Drums {
     this._key = key;
     /** @private @type {ReturnType<typeof setTimeout> | undefined} */
     this._saving = undefined;
+    /** @private each pad's out, made with the sound @type {(GainNode | undefined)[]} */
+    this._outs = [];
     this._load();
   }
 
   /**
-   * Plays pad i now, `velocity` 0…1 loud: the note, or null where there is no sound (no Web Audio).
+   * Pad i's out, into the drums' channel: made the first time it is asked for once the sound has
+   * woken, else null.
+   * @param {number} i
+   */
+  out(i) {
+    let g = this._outs[i] ?? null;
+    const channel = this.sound.channel('drums');
+    if (!g && channel && this.sound.ctx && PADS[i]) {
+      g = this.sound.ctx.createGain();
+      g.connect(channel);
+      this._outs[i] = g;
+    }
+    return g;
+  }
+
+  /**
+   * Plays pad i now, `velocity` 0…1 loud, waking the sound (a press, a key, a stick): the note, or
+   * null where there is no sound (no Web Audio).
    * @param {number} i
    * @param {number} [velocity]
    */
   hit(i, velocity = 0.8) {
     const ctx = this.sound.wake();
-    const out = this.sound.channel('drums');
-    const pad = PADS[i];
+    return ctx ? this.play(i, velocity, ctx.currentTime) : null;
+  }
+
+  /**
+   * Plays pad i at `when` on the sound's clock (a step of the pattern, set ahead; now if that has
+   * passed), without waking the sound: the note, or null before it has woken.
+   * @param {number} i
+   * @param {number} velocity
+   * @param {number} when
+   */
+  play(i, velocity, when) {
+    const ctx = this.sound.ctx, out = this.out(i), pad = PADS[i];
     if (!ctx || !out || !this.sound.noise || !pad) return null;
-    const note = playDrum(ctx, out, this.sound.noise, i, velocity, this.knobs[i], ctx.currentTime);
+    const note = playDrum(ctx, out, this.sound.noise, i, velocity, this.knobs[i], Math.max(when, ctx.currentTime));
     this.sound.add(note, pad.choke ?? pad.id);
     return note;
   }

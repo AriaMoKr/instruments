@@ -1,11 +1,17 @@
 // The drums in the card (overlay.js): every pad a button that plays as it is pressed (and once, for a
-// key or a screen reader), in the board's rows; the knobs of the pad last played and the volume as
-// sliders with their settings in words; Mute; MIDI where there is Web MIDI; playing at the board and
-// stepping away, with its hint; and the drums kept, open, where there is no 3D view.
+// key or a screen reader), in the board's rows; the clock's Start and tempo; the steps of the pad
+// last played as toggles, the one playing marked; its knobs, the delay's and the volume as sliders
+// with their settings in words; the cables as a choice for each input; Mute; MIDI where there is Web
+// MIDI; playing at the board and stepping away, with its hint; and the drums kept, open, where there
+// is no 3D view.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
 import { KNOBS, PADS, keyLabel, knobText } from '../public/js/drums.js';
+import { TEMPO } from '../public/js/clock.js';
+import { STEPS } from '../public/js/pattern.js';
+import { DELAY_KNOBS, MAX_STEPS, delayText } from '../public/js/delay.js';
+import { JACKS, Patch } from '../public/js/patch.js';
 import { installDom } from './helpers/dom.js';
 
 const way = { url: 'https://ariamokr.github.io/hallway/?from=instruments', label: '← Hallway', title: 'Back to the Hallway' };
@@ -15,7 +21,7 @@ async function card(options = {}) {
   const { Overlay } = await import('../public/js/overlay.js');
   const o = new Overlay({ ...ROOM, pieces: [] }, way, options);
   const calls = [];
-  for (const name of ['onPad', 'onPlay', 'onKnob', 'onResetKnobs', 'onVolume', 'onMute', 'onMidi']) o[name] = (...args) => calls.push([name, ...args]);
+  for (const name of ['onPad', 'onPlay', 'onKnob', 'onResetKnobs', 'onVolume', 'onMute', 'onMidi', 'onRun', 'onTempo', 'onStep', 'onClearSteps', 'onResetPattern', 'onDelay', 'onResetDelay', 'onPlug']) o[name] = (...args) => calls.push([name, ...args]);
   return { o, calls };
 }
 
@@ -100,6 +106,108 @@ test('the knobs of the pad last played: sliders named for them, set in words, tu
   }
 });
 
+test('the clock: Start or Stop, and its tempo a slider in beats a minute', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.equal(o.clockBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Clock');
+    assert.equal(o.run.textContent, 'Start');
+    o.run.fire('click');
+    o.setRunning(true);
+    assert.equal(o.run.textContent, 'Stop');
+    assert.deepEqual([o.tempo.getAttribute('min'), o.tempo.getAttribute('max'), o.tempo.getAttribute('step')], [String(TEMPO.min), String(TEMPO.max), '1']);
+    o.setTempo(126);
+    assert.deepEqual([o.tempo.value, o.tempoOut.textContent, o.tempo.getAttribute('aria-valuetext')], ['126', '126 BPM', '126 beats a minute']);
+    o.tempo.value = '90';
+    o.tempo.fire('input');
+    assert.deepEqual(calls, [['onRun'], ['onTempo', 90]]);
+  } finally {
+    remove();
+  }
+});
+
+test('the steps of the pad last played: sixteen toggles, pressed where it plays, the one playing marked', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.equal(o.steps.length, STEPS);
+    assert.equal(o.stepsBox.tagName, 'FIELDSET');
+    const snare = PADS.findIndex((p) => p.id === 'snare');
+    const steps = Array.from({ length: STEPS }, (_, s) => s === 4 || s === 12);
+    o.setSteps(snare, steps);
+    assert.equal(o.stepsBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Steps: Snare');
+    assert.equal(o.stepGrid.style.cssText, `--pad: ${PADS[snare].color}`, 'in its colour');
+    for (const [s, b] of o.steps.entries()) {
+      assert.deepEqual([b.tagName, b.getAttribute('type'), b.textContent], ['BUTTON', 'button', String(s + 1)]);
+      assert.equal(b.getAttribute('aria-pressed'), String(steps[s]));
+      assert.equal(b.classList.contains('beat'), s % 4 === 0, 'a beat\'s first step');
+    }
+    o.steps[7].fire('click');
+    o.clearSteps.fire('click');
+    o.resetPattern.fire('click');
+    assert.deepEqual(calls, [['onStep', 7], ['onClearSteps'], ['onResetPattern']]);
+    o.setPlayhead(3);
+    o.setPlayhead(4);
+    assert.deepEqual(o.steps.map((b) => b.classList.contains('now')).flatMap((on, s) => (on ? [s] : [])), [4]);
+    o.setRunning(false);
+    assert.ok(o.steps.every((b) => !b.classList.contains('now')), 'stopped, none');
+  } finally {
+    remove();
+  }
+});
+
+test('the delay: its time a slider in steps, its feedback and level in percent, set in words and reset', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    o.setDelay({ time: 2 / 7, feedback: 0.45, level: 0.6 });
+    assert.equal(o.delayBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Delay');
+    const time = o.delayInputs.get('time');
+    assert.deepEqual([time.input.getAttribute('min'), time.input.getAttribute('max'), time.input.value], ['1', String(MAX_STEPS), '3']);
+    assert.equal(time.out.textContent, '3 steps, a dotted 8th');
+    for (const name of DELAY_KNOBS) {
+      const { input, out } = o.delayInputs.get(name);
+      assert.equal(input.getAttribute('aria-valuetext'), out.textContent, name);
+    }
+    assert.equal(o.delayInputs.get('feedback').out.textContent, delayText('feedback', 0.45));
+    time.input.value = '8';
+    time.input.fire('input');
+    const level = o.delayInputs.get('level').input;
+    level.value = '25';
+    level.fire('input');
+    o.resetDelay.fire('click');
+    assert.deepEqual(calls, [['onDelay', 'time', 1], ['onDelay', 'level', 0.25], ['onResetDelay']]);
+  } finally {
+    remove();
+  }
+});
+
+test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    const ins = JACKS.filter((j) => j.dir === 'in');
+    assert.deepEqual([...o.plugs.keys()], ins.map((j) => j.id));
+    for (const j of ins) {
+      const select = o.plugs.get(j.id);
+      assert.equal(select.parentNode.children[0].textContent, j.name, 'its label');
+      const options = select.children.map((c) => [c.getAttribute('value'), c.textContent]);
+      assert.deepEqual(options, [['', 'Nothing'], ...JACKS.filter((x) => x.dir === 'out' && x.kind === j.kind).map((x) => [x.id, x.name])]);
+    }
+    const patch = new Patch({ storage: null });
+    patch.plug('pad.snare', 'delay.in');
+    o.setPatch(patch);
+    assert.deepEqual([o.plugs.get('drums.clock').value, o.plugs.get('delay.in').value], ['clock.x1', 'pad.snare']);
+    o.plugs.get('drums.clock').value = 'clock.d4';
+    o.plugs.get('drums.clock').fire('change');
+    o.plugs.get('delay.in').value = '';
+    o.plugs.get('delay.in').fire('change');
+    assert.deepEqual(calls, [['onPlug', 'drums.clock', 'clock.d4'], ['onPlug', 'delay.in', null]]);
+  } finally {
+    remove();
+  }
+});
+
 test('the sound: the volume a slider in percent, Mute a checkbox', async () => {
   const remove = installDom();
   try {
@@ -154,7 +262,8 @@ test('playing at the board: the button steps away, and the hint says how to play
     assert.equal(o.play.textContent, 'Step away from the board');
     assert.match(o.hint.textContent, /^Click the pads, or press 1–4, Q–R and A–F/);
     assert.ok(!o.hint.classList.contains('gone'), 'shown again');
-    for (const [how, words] of [['touch', /^Tap the pads/], ['gamepad', /A plays the pad in the middle/], ['tv', /^Arrows: choose a pad · OK: play it · Back: step away/]]) {
+    assert.match(o.hint.textContent, /click the step keys · Space: the clock · .* click two jacks to patch · Esc steps away$/);
+    for (const [how, words] of [['touch', /^Tap the pads.* the step keys .* tap two jacks to patch/],['gamepad', /A plays the pad in the middle, sets a step, takes or plugs in a cable/], ['tv', /^Arrows: choose a pad · OK: play it · Play\/pause: the clock · Back: step away · Menu: its steps/]]) {
       o.setHint(how, 0);
       assert.match(o.hint.textContent, words, how);
     }
@@ -180,6 +289,7 @@ test('with no 3D view, the drums stay in the card, open, with no board to go to'
     assert.ok(o.card.findAll((c) => c === o.drums).length === 1);
     assert.equal(o.drums.findAll((c) => c === o.play).length, 0);
     assert.equal(o.drums.findAll((c) => c.className === 'pad').length, PADS.length);
+    for (const box of [o.clockBox, o.stepsBox, o.knobsBox, o.delayBox, o.cablesBox]) assert.equal(o.drums.findAll((c) => c === box).length, 1, 'the clock, the steps, the knobs, the delay and the cables too');
   } finally {
     remove();
   }

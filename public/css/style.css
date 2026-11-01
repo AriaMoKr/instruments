@@ -93,9 +93,10 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 .settings label { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; font-size: 13px; cursor: pointer; }
 .settings input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
-/* Drums: going to play at the board (or stepping away), the pads as they lie on it (the far row at
-   the top), each edged in the colour it lights up in, with its key; the knobs of the pad last played
-   and the volume, a slider each with what it is set to above it; Mute; a MIDI device to play from. */
+/* Drums: going to play at the board (or stepping away), the clock, the pads as they lie on it (the
+   far row at the top), each edged in the colour it lights up in, with its key; the steps of the pad
+   last played; its knobs, the delay's and the volume, a slider each with what it is set to above
+   it; the cables; Mute; a MIDI device to play from. */
 .drums { display: grid; gap: 10px; margin-top: 8px; }
 .pads { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .pad {
@@ -118,6 +119,25 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 .check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .midi { display: grid; justify-items: start; gap: 4px; }
 .midi-status { margin: 0; color: var(--muted); font-size: 13px; }
+/* The steps of the pad last played, two rows of eight: each one it plays on filled in its colour,
+   the first of each beat edged brighter, the one playing ringed. */
+.steps { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.step {
+  min-width: 24px; min-height: 30px; padding: 0; border-radius: 6px; border: 1px solid rgba(224, 187, 114, 0.3);
+  background: #2c2a27; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; touch-action: manipulation;
+}
+.step.beat { border-color: var(--line); }
+.step:hover { border-color: var(--pad); }
+.step[aria-pressed="true"] { background: var(--pad); color: #1a1208; font-weight: 700; }
+.step.now { box-shadow: inset 0 0 0 2px var(--text); }
+.step[aria-pressed="true"].now { box-shadow: inset 0 0 0 2px #1a1208; }
+/* The cables: each input's output, chosen. */
+.plug { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; font-size: 13px; }
+.plug span { color: var(--muted); }
+.plug select {
+  min-width: 0; min-height: 28px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--line);
+  background: #2c2a27; color: var(--text); font: inherit;
+}
 
 /* How to move. */
 .hint {
@@ -203,7 +223,10 @@ html.tv .drums { gap: 14px; margin-top: 12px; }
 html.tv .pads { gap: 10px; }
 html.tv .pad { min-height: 64px; font-size: 15px; }
 html.tv .pad kbd { font-size: 18px; }
-html.tv .drums legend, html.tv .slider, html.tv .check, html.tv .midi-status { font-size: 16px; }
+html.tv .drums legend, html.tv .slider, html.tv .check, html.tv .midi-status, html.tv .plug { font-size: 16px; }
+html.tv .steps { gap: 8px; }
+html.tv .step { min-height: 40px; font-size: 16px; }
+html.tv .plug select { min-height: 40px; padding: 4px 8px; font-size: 17px; }
 html.tv .check input { width: 20px; height: 20px; }
 html.tv .check:has(input:focus-visible) { outline: 4px solid #ffd98a; outline-offset: 4px; border-radius: 4px; }
 html.tv .check input:focus-visible { outline-width: 2px; outline-offset: 1px; box-shadow: none; }
@@ -217,9 +240,11 @@ html.tv .toast { font-size: 17px; }
 html.tv .aim { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-width: 3px; }
 
 @media (forced-colors: active) {
-  .card, .hint, .toast, .chip, .pill, .way-back, .piece, .my-name, .pad { border: 1px solid CanvasText; }
+  .card, .hint, .toast, .chip, .pill, .way-back, .piece, .my-name, .pad, .step, .plug select { border: 1px solid CanvasText; }
   .pad { border-bottom-width: 3px; }
   .pad kbd { color: CanvasText; }
+  .step[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
+  .step.now { forced-color-adjust: none; border: 3px double CanvasText; box-shadow: none; }
   .pill.on, .chip[aria-expanded="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
   .aim { forced-color-adjust: none; border-color: CanvasText; box-shadow: none; }
   .aim.hover { background: Highlight; }

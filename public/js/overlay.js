@@ -8,13 +8,19 @@
 // buttons, the dot a gamepad aims with, and short messages, said politely. So everything the room
 // offers in 3D is a control here too: the doorway is the link, the panel's buttons are Settings,
 // the session's button and Enter VR, and the pieces on the walls are On the walls. In a shared session the card also has the visitor's name.
-// Drums is the drum board: a button to go and play it (or step away), its pads as buttons (each plays
-// as it is pressed, as on the board), the knobs of the pad last played as sliders, the volume and
-// mute over the room's sound, and a MIDI device to play it from, where the browser has Web MIDI.
+// Drums is the drum board: a button to go and play it (or step away), its clock (Start or Stop, and
+// the tempo), its pads as buttons (each plays as it is pressed, as on the board), the steps of the
+// pad last played as toggles (the step playing marked), its knobs and the delay's as sliders, the
+// cables as a choice for each input, the volume and mute over the room's sound, and a MIDI device to
+// play it from, where the browser has Web MIDI.
 // On a TV (common's tv.js) the remote reaches only the card, so Wave is in it, and there is nothing
 // to copy a link to: the invite link is shown to type on another device. Fullscreen and Enter VR
 // are not offered there (main.js).
 import { KNOBS, PADS, ROWS, keyLabel, knobText } from './drums.js';
+import { TEMPO } from './clock.js';
+import { STEPS } from './pattern.js';
+import { DELAY_KNOBS, MAX_STEPS, delaySteps, delayText } from './delay.js';
+import { JACKS } from './patch.js';
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -38,10 +44,10 @@ const HINTS = {
 };
 // At the drum board, playing it (controls.js playing).
 const BOARD_HINTS = {
-  touch: 'Tap the pads, with as many fingers as you like · drag a knob up or down · tap the floor to step away',
-  mouse: 'Click the pads, or press 1–4, Q–R and A–F (Shift: harder) · drag or scroll a knob · Esc steps away',
-  gamepad: 'Right stick to aim · A plays the pad in the middle · B steps away',
-  tv: 'Arrows: choose a pad · OK: play it · Back: step away · Menu: its knobs, the volume and the rest',
+  touch: 'Tap the pads, with as many fingers as you like, and the step keys · drag a knob · tap two jacks to patch · tap the floor to step away',
+  mouse: 'Click the pads, or press 1–4, Q–R and A–F (Shift: harder) · click the step keys · Space: the clock · drag or scroll a knob · click two jacks to patch · Esc steps away',
+  gamepad: 'Right stick to aim · A plays the pad in the middle, sets a step, takes or plugs in a cable · B steps away',
+  tv: 'Arrows: choose a pad · OK: play it · Play/pause: the clock · Back: step away · Menu: its steps, its knobs and the rest',
 };
 // With something on the walls (config.js's pieces), each names the pictures too.
 const PIECE_HINTS = {
@@ -171,12 +177,79 @@ export class Overlay {
     // In the board's rows, the farthest at the top, as on the board seen from where one plays it and
     // as the keys are on a keyboard.
     const order = [...PADS.keys()].sort((a, b) => PADS[b].row - PADS[a].row || PADS[a].col - PADS[b].col);
-    const slider = (label, apply) => {
-      const input = el('input', { type: 'range', min: '0', max: '100', step: '1', value: '50' });
+    // A slider from min to max in whole steps, its setting in words beside its label (and said as its
+    // value); a knob's from 0 to 100, given to `apply` as 0…1.
+    const range = (label, min, max, apply) => {
+      const input = el('input', { type: 'range', min: String(min), max: String(max), step: '1', value: String(Math.round((min + max) / 2)) });
       const out = el('output', { 'aria-hidden': 'true' });
-      input.addEventListener('input', () => apply(Number(input.value) / 100));
+      input.addEventListener('input', () => apply(Number(input.value)));
       return { row: el('label', { class: 'slider' }, el('span', {}, label), input, out), input, out };
     };
+    const slider = (label, apply) => range(label, 0, 100, (v) => apply(v / 100));
+    // The clock: Start or Stop, and the tempo.
+    /** Start the clock, or stop it. */
+    this.onRun = () => {};
+    /** (bpm) the tempo set. @type {(bpm: number) => void} */
+    this.onTempo = () => {};
+    this.run = el('button', { class: 'chip', type: 'button' }, 'Start');
+    this.run.addEventListener('click', () => this.onRun());
+    const tempo = range('Tempo', TEMPO.min, TEMPO.max, (bpm) => this.onTempo(bpm));
+    this.tempo = tempo.input;
+    this.tempoOut = tempo.out;
+    this.clockBox = el('fieldset', { class: 'clock' }, el('legend', {}, 'Clock'), el('div', { class: 'actions' }, this.run), tempo.row);
+    // The steps of the pad last played: one toggle each, a beat's first edged brighter.
+    /** (s) step s of the pad last played pressed: it plays there now, or no longer. @type {(s: number) => void} */
+    this.onStep = () => {};
+    /** That pad's steps all rests. */
+    this.onClearSteps = () => {};
+    /** Every pad's steps as the beat comes. */
+    this.onResetPattern = () => {};
+    this.stepPad = el('span', {}, PADS[0].name);
+    this.steps = Array.from({ length: STEPS }, (_, s) => {
+      const b = el('button', { class: s % 4 ? 'step' : 'step beat', type: 'button', 'aria-pressed': 'false' }, String(s + 1));
+      b.addEventListener('click', () => this.onStep(s));
+      return b;
+    });
+    this.stepGrid = el('div', { class: 'steps', style: `--pad: ${PADS[0].color}` }, ...this.steps);
+    this.clearSteps = el('button', { class: 'chip', type: 'button' }, 'Clear');
+    this.clearSteps.addEventListener('click', () => this.onClearSteps());
+    this.resetPattern = el('button', { class: 'chip', type: 'button' }, 'Beat as it comes');
+    this.resetPattern.addEventListener('click', () => this.onResetPattern());
+    this.stepsBox = el('fieldset', { class: 'pattern' }, el('legend', {}, 'Steps: ', this.stepPad), this.stepGrid, el('div', { class: 'actions' }, this.clearSteps, this.resetPattern));
+    /** @private the step marked as playing, else -1 */
+    this._playhead = -1;
+    // The delay's knobs: its time in steps of the clock, its feedback and level.
+    /** (name, value) a knob of the delay set 0…1. @type {(name: import('./delay.js').DelayKnob, value: number) => void} */
+    this.onDelay = () => {};
+    /** The delay's knobs as it comes. */
+    this.onResetDelay = () => {};
+    /** Each of the delay's sliders and the words for its setting. @type {Map<import('./delay.js').DelayKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.delayInputs = new Map();
+    const delayRows = DELAY_KNOBS.map((name) => {
+      const label = name[0].toUpperCase() + name.slice(1);
+      const s = name === 'time'
+        ? range(label, 1, MAX_STEPS, (n) => this.onDelay(name, (n - 1) / (MAX_STEPS - 1)))
+        : slider(label, (v) => this.onDelay(name, v));
+      this.delayInputs.set(name, s);
+      return s.row;
+    });
+    this.resetDelay = el('button', { class: 'chip', type: 'button' }, 'Delay as it comes');
+    this.resetDelay.addEventListener('click', () => this.onResetDelay());
+    this.delayBox = el('fieldset', { class: 'delay' }, el('legend', {}, 'Delay'), ...delayRows, el('div', { class: 'actions' }, this.resetDelay));
+    // The cables: for each input, the output plugged into it, or nothing.
+    /** (input, output) the output chosen for an input (patch.js ids), null for nothing. @type {(input: string, output: string | null) => void} */
+    this.onPlug = () => {};
+    /** Each input's choice. @type {Map<string, HTMLSelectElement>} */
+    this.plugs = new Map();
+    const plugRows = JACKS.filter((j) => j.dir === 'in').map((j) => {
+      const select = el('select', { name: j.id },
+        el('option', { value: '' }, 'Nothing'),
+        ...JACKS.filter((o) => o.dir === 'out' && o.kind === j.kind).map((o) => el('option', { value: o.id }, o.name)));
+      select.addEventListener('change', () => this.onPlug(j.id, select.value || null));
+      this.plugs.set(j.id, select);
+      return el('label', { class: 'plug' }, el('span', {}, j.name), select);
+    });
+    this.cablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows);
     this.knobPad = el('span', {}, PADS[0].name);
     /** Each knob's slider and the words for its setting. @type {Map<import('./drums.js').Knob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
     this.knobInputs = new Map();
@@ -201,8 +274,12 @@ export class Overlay {
     this.playRow = el('div', { class: 'actions' }, this.play);
     this.drums = el('div', { class: 'drums', id: 'drums', hidden: '' },
       this.playRow,
+      this.clockBox,
       el('div', { class: 'pads', role: 'group', 'aria-label': 'Pads', style: `--rows: ${ROWS}` }, ...order.map((i) => this.pads[i])),
+      this.stepsBox,
       this.knobsBox,
+      this.delayBox,
+      this.cablesBox,
       el('fieldset', { class: 'mixer' }, el('legend', {}, 'Sound'), volume.row, el('label', { class: 'check' }, this.mute, 'Mute')),
       this.midiBox);
     this._playing = false;
@@ -368,6 +445,64 @@ export class Overlay {
         out.textContent = text;
         input.setAttribute('aria-valuetext', text);
       }
+    }
+  }
+
+  /** The clock running, or not: its button stops it, or starts it. */
+  setRunning(on) {
+    const label = on ? 'Stop' : 'Start';
+    if (this.run.textContent !== label) this.run.textContent = label;
+    if (!on) this.setPlayhead(-1);
+  }
+
+  /** The clock's tempo, in beats per minute: its slider and words. */
+  setTempo(bpm) {
+    const value = String(bpm);
+    if (this.tempo.value !== value) this.tempo.value = value;
+    if (this.tempoOut.textContent !== `${value} BPM`) {
+      this.tempoOut.textContent = `${value} BPM`;
+      this.tempo.setAttribute('aria-valuetext', `${value} beats a minute`);
+    }
+  }
+
+  /** Pad i's steps (pattern.js), i the pad last played: its name over them, each pressed where it plays, in its colour. */
+  setSteps(i, steps) {
+    if (this.stepPad.textContent !== PADS[i].name) {
+      this.stepPad.textContent = PADS[i].name;
+      this.stepGrid.style.cssText = `--pad: ${PADS[i].color}`;
+    }
+    this.steps.forEach((b, s) => {
+      const on = String(!!steps[s]);
+      if (b.getAttribute('aria-pressed') !== on) b.setAttribute('aria-pressed', on);
+    });
+  }
+
+  /** The step playing (0…15), marked, else -1. Seen, not said: a screen reader would say nothing else. */
+  setPlayhead(s) {
+    if (s === this._playhead) return;
+    this.steps[this._playhead]?.classList.remove('now');
+    this._playhead = s;
+    this.steps[s]?.classList.add('now');
+  }
+
+  /** The delay's knobs (delay.js): their sliders and words. */
+  setDelay(knobs) {
+    for (const [name, { input, out }] of this.delayInputs) {
+      const value = String(name === 'time' ? delaySteps(knobs[name]) : Math.round(knobs[name] * 100));
+      if (input.value !== value) input.value = value;
+      const text = delayText(name, knobs[name]);
+      if (out.textContent !== text) {
+        out.textContent = text;
+        input.setAttribute('aria-valuetext', text);
+      }
+    }
+  }
+
+  /** The cables (patch.js's Patch): each input's choice, the output plugged into it or nothing. */
+  setPatch(patch) {
+    for (const [id, select] of this.plugs) {
+      const value = patch.source(id) ?? '';
+      if (select.value !== value) select.value = value;
     }
   }
 

@@ -1,7 +1,8 @@
 // The drums (drums.js): the twelve pads, where each is, its key and its MIDI notes; the knobs in
 // numbers and in words; every drum made, at every setting, as a browser would take it (on
-// test/helpers/audio.js's fake Web Audio, which refuses what a browser would); the hi-hats' one
-// circuit; and the knobs kept for the next visit.
+// test/helpers/audio.js's fake Web Audio, which refuses what a browser would); each pad through its
+// own out (a jack), played now or set for a step's time; the hi-hats' one circuit; and the knobs
+// kept for the next visit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -108,25 +109,51 @@ test('every drum, at every setting and velocity, is made as a browser takes it, 
   }
 });
 
-test('a pad played: into the drums channel; again, the last one cut; the closed hi-hat stops the open one', () => {
+test('a pad played: through its own out (a jack) into the drums channel; again, the last one cut; the closed hi-hat stops the open one', () => {
   const sound = new Sound({ Context: /** @type {any} */ (FakeContext), storage: null });
   const drums = new Drums(sound, { storage: null });
-  assert.equal(drums.hit(padForKey('KeyA'), 1)?.out.outputs[0], sound.channel('drums'));
+  const kick = padForKey('KeyA');
+  assert.equal(drums.out(kick), null, 'none before the sound has woken');
+  const first = drums.hit(kick, 1);
+  const out = drums.out(kick);
+  assert.deepEqual([first?.out.outputs, out?.outputs], [[out], [sound.channel('drums')]]);
+  assert.equal(drums.out(kick), out, 'one out a pad, made once');
+  assert.notEqual(drums.out(padForKey('KeyS')), out);
+  assert.equal(drums.out(99), null);
   const ctx = /** @type {FakeContext} */ (/** @type {unknown} */ (sound.ctx));
   ctx.currentTime = 0.1;
   const open = drums.hit(padForKey('KeyF'));
   ctx.currentTime = 0.2;
-  const kick = drums.hit(padForKey('KeyA'));
+  const second = drums.hit(kick);
   ctx.currentTime = 0.3;
   drums.hit(padForKey('KeyD'));
   assert.ok(near(open.end, 0.32), `the open hat cut by the closed one: ${open.end}`);
-  assert.ok(kick.end > 0.6, 'the kick rings on');
+  assert.ok(second.end > 0.6, 'the kick rings on');
   ctx.currentTime = 0.4;
-  drums.hit(padForKey('KeyA'));
-  assert.ok(near(kick.end, 0.42), 'the kick cut by the next');
+  drums.hit(kick);
+  assert.ok(near(second.end, 0.42), 'the kick cut by the next');
   // No such pad, or no Web Audio: nothing.
   assert.equal(drums.hit(99), null);
   assert.equal(new Drums(new Sound({ Context: null, storage: null }), { storage: null }).hit(0), null);
+});
+
+test("a pad set for a step's time: it starts then, or now if that has gone by; nothing before the sound wakes", () => {
+  const sound = new Sound({ Context: /** @type {any} */ (FakeContext), storage: null });
+  const drums = new Drums(sound, { storage: null });
+  const snare = padForKey('KeyS'), kick = padForKey('KeyA');
+  assert.equal(drums.play(snare, 0.8, 1), null, 'the clock plays nothing until a press has woken the sound');
+  const ctx = /** @type {FakeContext} */ (/** @type {unknown} */ (sound.wake()));
+  ctx.currentTime = 2;
+  const ahead = drums.play(snare, 0.8, 2.1);
+  assert.equal(ahead?.start, 2.1);
+  assert.ok(ahead.sources.every((s) => s.started === 2.1));
+  assert.deepEqual(ahead.out.outputs, [drums.out(snare)]);
+  const behind = drums.play(kick, 0.8, 1.9);
+  assert.equal(behind?.start, 2, 'a time gone by: now');
+  // A snare hit now, before the one set ahead: it rings until that one starts.
+  const now = drums.hit(snare);
+  assert.ok(near(now.end, 2.12), `${now.end}`);
+  assert.ok(ahead.end > 2.2, 'the one set ahead rings on');
 });
 
 test('the knobs: set within 0…1, reset as the drum comes, kept a moment later for the next visit and read back', async (t) => {

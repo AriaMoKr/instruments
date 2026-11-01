@@ -9,11 +9,16 @@
 //     hand's reticle on one is 1.3 times its size
 //   the walks through the doorway (walkInto) and up to a piece (walkUpTo; in VR a teleport)
 //   the drum board (board.js): one walks round it, and a ray meets its pads (onPad(i, velocity)),
-//     its knobs (onKnob(k, by): a drag, the wheel, or in VR a stick pushed while pointing at one)
-//     and the rest of it. Choosing it walks up to it to play it (walkToBoard): on a screen the
-//     visitor is then `playing` (onPlaying), so a press on a pad plays it as it goes down (fingers
-//     at once on a phone), the keys 1–4, Q–R and A–F are the pads' (Shift harder), on a TV the
-//     arrows choose a pad (onPick), and Escape, Back or walking off steps away (leaveBoard).
+//     its step keys (onStep(s)), its knobs, the strip's and the panel's (onKnob(k, by): a drag, the
+//     wheel, or in VR a stick pushed while pointing at one), the panel's jacks (onJack(j): a cable
+//     picked up, then plugged in; while `carrying`, choosing anything else but a control drops it,
+//     onDrop), RUN (onRun; Space too) and the rest of it.
+//     Choosing it walks up to it to play it (walkToBoard): on a screen the visitor is then
+//     `playing` (onPlaying), so a press on a pad plays it as it goes down (fingers at once on a
+//     phone), and one on a step key, a jack or RUN works at once; the keys 1–4, Q–R and A–F are
+//     the pads' (Shift harder), on a TV the arrows choose a pad (onPick), and Escape (a cable
+//     carried first), Back or walking off steps away (leaveBoard). Where a cable carried is
+//     pointed: `aim` (the view's pointer), or in VR the hand that last chose (`selectHand`).
 // What a click, a tap, A, OK or a trigger is on comes to use(hit, how): the panel, the pieces and the
 // board here, and common's the doorway (onDoor) and the floor (a walk there, in VR a teleport).
 import { Controls as Walking } from 'common/controls.js';
@@ -29,8 +34,9 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /** How hard a pad is played by a press, a trigger, A or OK, and by a key (Shift: as hard as can be). */
 const PRESS = 0.85, KEY = 0.8;
-/** What a ray can meet on the board. */
-const ON_BOARD = new Set(['pad', 'knob', 'board']);
+/** What a ray can meet on the board, and of it what is a control, used at once while playing. */
+const ON_BOARD = new Set(['pad', 'step', 'knob', 'jack', 'run', 'board']);
+const AT_ONCE = new Set(['step', 'jack', 'run']);
 /** On a TV, playing: the arrows choose a pad, so many columns right and rows farther. @type {Readonly<Record<string, [number, number]>>} */
 const PICK = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
 /** How far the visitor goes from where they play before they have stepped away. */
@@ -46,24 +52,40 @@ export class Controls extends Walking {
    *   common's, the room's layout (room.js layoutRoom) and the drum board's (board.js layoutBoard)
    */
   constructor({ layout, board, ...options }) {
-    super({ ...options, eye: EYE, hit: () => ({ t: 0, kind: '', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, u: 0, v: 0, walkable: false, piece: -1, pad: -1, knob: -1 }) });
+    super({ ...options, eye: EYE, hit: () => ({ t: 0, kind: '', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, u: 0, v: 0, walkable: false, piece: -1, pad: -1, step: -1, knob: -1, jack: -1 }) });
     this.layout = layout; // after super(): common's constructor calls none of the methods below
     this.board = board;
     /** The control panel's button pointed at, or null. @type {string | null} */
     this.hoverPanel = null;
     /** What hangs on the walls pointed at: its index in layout.pieces, else -1. */
     this.hoverPiece = -1;
-    /** The drum board's pad pointed at (its index in drums.js PADS), else -1, and its knob. */
+    /** The drum board's pad pointed at (its index in drums.js PADS), else -1, its step key, knob and jack. */
     this.hoverPad = -1;
+    this.hoverStep = -1;
     this.hoverKnob = -1;
+    this.hoverJack = -1;
+    /** Where the view's pointer, or its middle, is on something, and the way out of it (`has` false: nothing). */
+    this.aim = { has: false, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0 };
+    /** In VR, the hand that last chose something (its index in hands), else -1. */
+    this.selectHand = -1;
+    /** A cable is being carried (main.js): choosing anything but a control drops it, and so does Escape. */
+    this.carrying = false;
     /** (button id) when a button of the control panel is pressed. @type {(id: string) => void} */
     this.onPanel = () => {};
     /** (i, how) when piece i on a wall (layout.pieces) is chosen. @type {(i: number, how: How) => void} */
     this.onPiece = () => {};
     /** (i, velocity) when pad i is played: a key, a press, a trigger, A or OK on it. @type {(i: number, velocity: number) => void} */
     this.onPad = () => {};
+    /** (s) when step key s is pressed. @type {(s: number) => void} */
+    this.onStep = () => {};
     /** (k, by) when knob k (board.js layoutBoard's knobs) is turned, by this much of its whole turn. @type {(k: number, by: number) => void} */
     this.onKnob = () => {};
+    /** (j) when jack j (board.js layoutBoard's panel.jacks) is chosen. @type {(j: number) => void} */
+    this.onJack = () => {};
+    /** RUN pressed: the clock started, or stopped. */
+    this.onRun = () => {};
+    /** The cable carried dropped. */
+    this.onDrop = () => {};
     /** (columns, rows) the arrows, choosing a pad on a TV while playing. @type {(dc: number, dr: number) => void} */
     this.onPick = () => {};
     /** (on) when the visitor starts playing at the board on a screen, or steps away. @type {(on: boolean) => void} */
@@ -102,7 +124,7 @@ export class Controls extends Walking {
    */
   castRay(ox, oy, oz, dx, dy, dz, out) {
     const hit = /** @type {BandHit | null} */ (castRay(this.layout, ox, oy, oz, dx, dy, dz, out)); // out, or null
-    out.pad = out.knob = -1;
+    out.pad = out.step = out.knob = out.jack = -1;
     if (hitBoard(this.board, ox, oy, oz, dx, dy, dz, out, hit ? hit.t : Infinity)) return out;
     if (hit?.kind === 'floor' && hit.walkable && boardBlocks(this.board, hit.x, hit.z)) hit.walkable = false;
     return hit;
@@ -122,8 +144,8 @@ export class Controls extends Walking {
   }
 
   /**
-   * What could be used where a hit is: a panel button's id, 'piece', 'pad', 'knob' or 'board' (to
-   * walk up to it; not while playing it), or common's ('door').
+   * What could be used where a hit is: a panel button's id, 'piece', 'pad', 'step', 'knob', 'jack',
+   * 'run' or 'board' (to walk up to it; not while playing it), or common's ('door').
    * @param {BandHit | null} hit
    */
   usable(hit) {
@@ -134,19 +156,44 @@ export class Controls extends Walking {
   }
 
   /**
-   * Uses what a hit is on: a panel button, a piece on a wall, a pad (played in VR, or while playing
-   * at the board; else, as the rest of the board, a walk up to it), or common's (the doorway, the
-   * floor).
+   * Uses what a hit is on: a panel button, a piece on a wall, the board's controls (in VR, or while
+   * playing at the board: a pad played, a step key set, a jack, RUN; else, as the rest of the
+   * board, a walk up to it), or common's (the doorway, the floor). Carrying a cable, anything but
+   * one of the board's controls drops it.
    * @param {BandHit | null} hit
    * @param {How} how
    */
   use(hit, how) {
-    if (hit?.kind === 'panel') this._press(panelButtonAt(hit.u, hit.v));
+    const near = how === 'xr' || this.playing;
+    if (this.carrying && !(near && hit && ON_BOARD.has(hit.kind) && hit.kind !== 'board')) this.onDrop();
+    else if (hit?.kind === 'panel') this._press(panelButtonAt(hit.u, hit.v));
     else if (hit?.kind === 'piece') this.onPiece(hit.piece, how);
-    else if (hit?.kind === 'pad' && (how === 'xr' || this.playing)) this.onPad(hit.pad, PRESS);
+    else if (hit?.kind === 'pad' && near) this.onPad(hit.pad, PRESS);
+    else if (hit && AT_ONCE.has(hit.kind) && near) this._atOnce(hit);
     else if (hit && ON_BOARD.has(hit.kind)) {
       if (!this.playing) this.walkToBoard();
     } else super.use(hit, how);
+  }
+
+  /**
+   * A step key, a jack or RUN used.
+   * @private
+   * @param {BandHit} hit
+   */
+  _atOnce(hit) {
+    if (hit.kind === 'step') this.onStep(hit.step);
+    else if (hit.kind === 'jack') this.onJack(hit.jack);
+    else this.onRun();
+  }
+
+  /**
+   * In VR, the hand that chooses (and carries what it picks up), then common's.
+   * @protected
+   * @param {import('common/controls.js').Hand<BandHit>} hand
+   */
+  _xrSelect(hand) {
+    this.selectHand = this.hands.indexOf(hand);
+    super._xrSelect(hand);
   }
 
   /**
@@ -159,29 +206,46 @@ export class Controls extends Walking {
     this.hoverPanel = hit?.kind === 'panel' ? usable : null;
     this.hoverPiece = hit?.kind === 'piece' ? hit.piece : -1;
     this.hoverPad = hit?.kind === 'pad' ? hit.pad : -1;
+    this.hoverStep = hit?.kind === 'step' ? hit.step : -1;
     this.hoverKnob = hit?.kind === 'knob' ? hit.knob : -1;
+    this.hoverJack = hit?.kind === 'jack' ? hit.jack : -1;
+    const a = this.aim;
+    a.has = !!hit && hit.kind !== 'ceiling';
+    if (!hit) return;
+    a.x = hit.x;
+    a.y = hit.y;
+    a.z = hit.z;
+    a.nx = hit.nx;
+    a.ny = hit.ny;
+    a.nz = hit.nz;
   }
 
   /**
-   * A hand's reticle on a piece, a pad or a knob; the rest as common's.
+   * A hand's reticle on a piece, a pad, a step key, a knob, a jack or RUN; the rest as common's.
    * @param {string | null} use
    * @param {BandHit} hit
    */
   reticleScale(use, hit) {
     if (use === 'piece') return 1.3;
     if (use === 'pad') return 0.9;
-    if (use === 'knob') return 0.6;
+    if (use === 'knob' || use === 'step' || use === 'run') return 0.6;
+    if (use === 'jack') return 0.45;
     return super.reticleScale(use, hit);
   }
 
   /**
-   * Playing at the board: a pad's key plays it (Shift: harder), Escape steps away, and on a TV the
-   * arrows choose a pad. Otherwise walking's.
+   * Playing at the board: a pad's key plays it (Shift: harder), Space is RUN, Escape drops a cable
+   * carried or else steps away, and on a TV the arrows choose a pad. Otherwise walking's.
    * @param {KeyboardEvent} e
    * @param {string} name
    */
   takeKey(e, name) {
     if (!this.playing) return false;
+    if (name === 'Space' || name === ' ') {
+      e.preventDefault();
+      if (!e.repeat) this.onRun();
+      return true;
+    }
     const pad = padForKey(name);
     if (pad >= 0) {
       e.preventDefault();
@@ -189,7 +253,8 @@ export class Controls extends Walking {
       return true;
     }
     if (name === 'Escape') {
-      this.leaveBoard();
+      if (this.carrying) this.onDrop();
+      else this.leaveBoard();
       return true;
     }
     const pick = this.arrowsPick ? PICK[name] : undefined;
@@ -243,7 +308,7 @@ export class Controls extends Walking {
     const p = this.rig.position;
     this._stop(false);
     this.stand();
-    this.restPitch = clamp(f.pitch, -1.3, 0);
+    this.restPitch = clamp(f.pitch, -1.3, 0.3); // a little up: the board under the card on a phone
     this._toBoard = true;
     try {
       this._startWalk(this.route(p.x, p.z, f.x, f.z), f.yaw, () => this._play(f.x, f.z));
@@ -325,8 +390,9 @@ export class Controls extends Walking {
 
   /**
    * Presses on the board while playing, before walking's: one on a pad plays it as it goes down (as
-   * many fingers as there are), one on a knob turns it as it is dragged up or down; elsewhere,
-   * walking's. Taken in the view's parent, as the press goes down to the view.
+   * many fingers as there are), one on a step key, a jack or RUN works at once, one on a knob turns
+   * it as it is dragged up or down; elsewhere, walking's. Taken in the view's parent, as the press
+   * goes down to the view.
    * @private
    */
   _bindBoard() {
@@ -338,6 +404,10 @@ export class Controls extends Walking {
         e.stopPropagation();
         this.onActivity();
         this.onPad(hit.pad, e.shiftKey ? 1 : PRESS);
+      } else if (hit && AT_ONCE.has(hit.kind)) {
+        e.stopPropagation();
+        this.onActivity();
+        this._atOnce(hit);
       } else if (hit?.kind === 'knob') {
         e.stopPropagation();
         this.onActivity();

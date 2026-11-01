@@ -1,49 +1,79 @@
-// The drum board (board.js): where it stands and what is on its top, what a ray meets on it, where
-// one may walk round it, where one stands to play it (all of it in view on a screen, a desktop's or
-// a phone's; in reach in VR), and a stick's tip or a finger coming down on a pad.
+// The drum board (board.js): where it stands and what is on it (the step keys, the pads, the strip
+// and the panel with its jacks), what a ray meets on it, where one may walk round it, where one
+// stands to play it (all of it in view on a screen, a desktop's or a phone's; in reach in VR), and
+// a stick's tip or a finger coming down on a pad or a step key.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
 import { EYE, MARGIN, layoutRoom } from '../public/js/room.js';
 import {
-  BOARD, REARM, boardBlocks, boardFront, boardPoint, boardStand, clampBoard, heightOver, hitBoard, knobAt, layoutBoard, padAt,
-  strikeAt, strikeVelocity,
+  BOARD, REARM, boardBlocks, boardFront, boardOutline, boardPoint, boardStand, clampBoard, heightOver, hitBoard, jackAt, knobAt,
+  layoutBoard, padAt, panelPoint, stepAt, strikeAt, strikeVelocity,
 } from '../public/js/board.js';
 import { COLUMNS, KNOBS, PADS, ROWS } from '../public/js/drums.js';
+import { DELAY_KNOBS } from '../public/js/delay.js';
+import { STEPS } from '../public/js/pattern.js';
+import { JACKS } from '../public/js/patch.js';
 
 const L = layoutRoom(ROOM);
 const B = layoutBoard(L);
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
-const blank = () => ({ t: 0, kind: '', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, u: 0, v: 0, walkable: true, piece: -1, pad: -1, knob: -1 });
+const blank = () => ({ t: 0, kind: '', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, u: 0, v: 0, walkable: true, piece: -1, pad: -1, step: -1, knob: -1, jack: -1 });
 /** What a ray from o towards the point t meets on the board, else null. */
 function ray(o, t, within = Infinity) {
   const d = [t[0] - o[0], t[1] - o[1], t[2] - o[2]], n = Math.hypot(...d), out = blank();
   return hitBoard(B, o[0], o[1], o[2], d[0] / n, d[1] / n, d[2] / n, out, within) ? out : null;
 }
-/** The middle of pad i's face, and of knob k's top. */
+/** The middle of pad i's face, and of step key s's. */
 const padMiddle = (i) => boardPoint(B, (B.pads[i].a0 + B.pads[i].a1) / 2, (B.pads[i].b0 + B.pads[i].b1) / 2, BOARD.rise);
-const knobTop = (k) => boardPoint(B, B.knobs[k].a, B.knobs[k].b, BOARD.knob.h);
+const keyMiddle = (s) => boardPoint(B, (B.steps[s].a0 + B.steps[s].a1) / 2, (B.steps[s].b0 + B.steps[s].b1) / 2, BOARD.rise);
+/** The strip's knobs (the pad's), and the panel's. */
+const topKnobs = [...B.knobs.keys()].filter((k) => B.knobs[k].on === 'top');
+const panelKnobs = [...B.knobs.keys()].filter((k) => B.knobs[k].on === 'panel');
+/** Where one plays from on a screen, seen from: in front of it, a little back. */
+const eye = [0, EYE, B.zFront + 0.6];
 
-test('it stands against the middle of the far wall, with room to walk round it', () => {
-  assert.ok(near(B.zBack, L.z1 + BOARD.wall));
+test('it stands against the middle of the far wall, with room to walk round it, its panel at the back', () => {
   assert.ok(near(B.x0, -B.x1));
   assert.ok(B.x0 - BOARD.keep > L.x0 + MARGIN + 0.3 && B.x1 + BOARD.keep < L.x1 - MARGIN - 0.3, 'a way past it on either side');
   assert.ok(B.zFront < L.z1 + L.depth / 2, 'in the far half of the room');
-  assert.ok(near(B.zFront - B.zBack, B.length * Math.cos(BOARD.tilt)));
-  // Its top: from its front edge, leaning back and up.
+  // Its top: from its front edge, leaning back and up to the panel's foot.
   assert.deepEqual(boardPoint(B, 0, 0), B.origin);
   assert.ok(near(boardPoint(B, 0, B.length)[1], B.top) && B.top > B.front);
+  assert.deepEqual(boardPoint(B, 0, B.length).map((x) => x.toFixed(9)), B.panel.origin.map((x) => x.toFixed(9)), 'the panel stands on its back edge');
   assert.ok(B.front > 0.75 && B.top < 1.2, 'at the height of a table, a hand low');
   const n = B.normal, u = B.up;
   assert.ok(near(Math.hypot(...n), 1) && near(Math.hypot(...u), 1) && near(n[1] * u[1] + n[2] * u[2], 0));
   assert.ok(n[2] > 0, 'it faces the player a little');
+  // The panel: leaning back, facing the player and a little up; its back, at the top, `wall` from the wall.
+  const N = B.panel.normal, U = B.panel.up;
+  assert.ok(near(Math.hypot(...N), 1) && near(Math.hypot(...U), 1) && near(N[1] * U[1] + N[2] * U[2], 0));
+  assert.ok(N[2] > 0.9 && N[1] > 0.2 && U[2] < 0, 'upright, leaning back');
+  assert.ok(near(panelPoint(B, 0, B.panel.height, -BOARD.panel.thick)[2], L.z1 + BOARD.wall) && near(B.zBack, L.z1 + BOARD.wall));
+  assert.ok(near(panelPoint(B, 0, B.panel.height)[1], B.panel.top));
+  assert.ok(B.panel.top < B.sign.y0 && B.panel.top > 1.3, `under the sign, ${B.panel.top}`);
 });
 
-test('the pads in their rows and columns, row 0 nearest, apart and on the top; behind them the knobs and the display', () => {
+test('the step keys along the front edge, four over each column of pads; behind them the pads, then the knobs and the display', () => {
+  assert.equal(B.steps.length, STEPS);
+  for (const [s, k] of B.steps.entries()) {
+    assert.ok(near(k.b0, BOARD.step.front) && near(k.b1 - k.b0, BOARD.step.depth), `${s}`);
+    if (s) assert.ok(k.a0 > B.steps[s - 1].a1, `${s} right of ${s - 1}`);
+    assert.equal(stepAt(B, (k.a0 + k.a1) / 2, (k.b0 + k.b1) / 2), s);
+    assert.equal(padAt(B, (k.a0 + k.a1) / 2, (k.b0 + k.b1) / 2), -1);
+  }
+  for (let c = 0; c < COLUMNS; c++) {
+    const pad = B.pads[PADS.findIndex((p) => p.col === c && p.row === 0)];
+    const first = B.steps[c * (STEPS / COLUMNS)], last = B.steps[(c + 1) * (STEPS / COLUMNS) - 1];
+    assert.ok(near(first.a0, pad.a0) && near(last.a1, pad.a1), `column ${c}: its four keys as wide as it`);
+    assert.ok(pad.b0 > first.b1 + 0.02, 'the pads behind the keys');
+  }
+  assert.ok(B.steps[0].a1 - B.steps[0].a0 > 0.035, 'a key wide enough for a stick, or a finger');
+  assert.equal(stepAt(B, B.steps[0].a1 + BOARD.step.gap / 2, B.steps[0].b0 + 0.01), -1, 'between two');
   for (const [i, p] of PADS.entries()) {
     const q = B.pads[i];
     assert.ok(near(q.a1 - q.a0, BOARD.pad) && near(q.b1 - q.b0, BOARD.pad));
-    assert.ok(q.a0 >= BOARD.margin - 1e-9 && q.a1 <= B.width - BOARD.margin + 1e-9 && q.b0 >= BOARD.margin - 1e-9 && q.b1 < B.strip.b0, p.id);
+    assert.ok(q.a0 >= BOARD.margin - 1e-9 && q.a1 <= B.width - BOARD.margin + 1e-9 && q.b1 < B.strip.b0, p.id);
     for (const [j, r] of PADS.entries()) {
       if (r.col === p.col + 1 && r.row === p.row) assert.ok(near(B.pads[j].a0 - q.a1, BOARD.gap), `${p.id}, then ${r.id} to its right`);
       if (r.row === p.row + 1 && r.col === p.col) assert.ok(near(B.pads[j].b0 - q.b1, BOARD.gap), `${p.id}, then ${r.id} beyond it`);
@@ -51,33 +81,73 @@ test('the pads in their rows and columns, row 0 nearest, apart and on the top; b
     assert.equal(padAt(B, (q.a0 + q.a1) / 2, (q.b0 + q.b1) / 2), i);
   }
   assert.equal(padAt(B, B.pads[0].a1 + BOARD.gap / 2, B.pads[0].b0 + 0.01), -1, 'between two');
-  assert.equal(B.knobs.length, KNOBS.length);
-  B.knobs.forEach((k, n) => {
-    assert.equal(k.name, KNOBS[n]);
+  // The pad's knobs on the strip, first, then the panel's: the tempo and the delay's.
+  assert.deepEqual(B.knobs.map((k) => `${k.part}.${k.name}`), [...KNOBS.map((n) => `drum.${n}`), 'clock.tempo', ...DELAY_KNOBS.map((n) => `delay.${n}`)]);
+  assert.deepEqual(topKnobs, [0, 1, 2]);
+  for (const n of topKnobs) {
+    const k = B.knobs[n];
     assert.ok(k.b > B.strip.b0 && k.b < B.strip.b1 && k.a + BOARD.knob.r < B.width);
     assert.ok(k.a - BOARD.knob.r > B.display.a1, 'right of the display');
     assert.equal(knobAt(B, k.a, k.b), n);
     if (n) assert.ok(near(k.a - B.knobs[n - 1].a, BOARD.knob.spacing));
-  });
+  }
   assert.ok(B.display.a1 - B.display.a0 > 0.25, 'room for a pad\'s name');
   assert.ok(B.strip.b1 < B.length && near(B.width, 2 * BOARD.margin + COLUMNS * BOARD.pad + (COLUMNS - 1) * BOARD.gap));
-  assert.ok(B.pads.every((q) => q.b1 <= BOARD.margin + ROWS * BOARD.pad + (ROWS - 1) * BOARD.gap + 1e-9));
+  assert.ok(near(B.pads[PADS.findIndex((p) => p.row === ROWS - 1)].b1 + 0.04, B.strip.b0));
 });
 
-test('a ray meets the pad it points at (where on it), a knob, the rest of the board, its front and its sides', () => {
-  const eye = [0, EYE, B.zFront + 0.6];
+test('on the panel: every jack of the patch once, in its module\'s section, apart; the pads\' outs as the pads lie; the knobs and RUN clear of them', () => {
+  const P = B.panel, r = BOARD.panel.jack, jack = (id) => P.jacks.find((j) => j.id === id);
+  assert.deepEqual(P.jacks.map((j) => j.id).sort(), JACKS.map((j) => j.id).sort());
+  for (const j of P.jacks) {
+    const J = JACKS.find((x) => x.id === j.id);
+    assert.equal(j.out, J.dir === 'out', `${j.id}: an output on a plate`);
+    const s = P.sections.find((x) => x.name.toLowerCase() === J.module);
+    assert.ok(j.a - r * 1.5 > s.a0 && j.a + r * 1.5 < s.a1, `${j.id} in ${s.name}`);
+    assert.ok(j.b - r * 1.5 > 0 && j.b + r * 1.5 < P.height - 0.03, `${j.id} under the sections' names`);
+    assert.equal(jackAt(B, j.a, j.b), P.jacks.indexOf(j));
+    for (const o of P.jacks) if (o !== j) assert.ok(Math.hypot(o.a - j.a, o.b - j.b) > r * 3, `${j.id} and ${o.id} apart`);
+  }
+  for (const p of PADS) {
+    const j = jack(`pad.${p.id}`);
+    assert.equal(j.color, p.color, `${p.id}: ringed in its colour`);
+    for (const q of PADS) {
+      const k = jack(`pad.${q.id}`);
+      if (q.row === p.row && q.col > p.col) assert.ok(k.a > j.a && near(k.b, j.b), `${q.id} right of ${p.id}`);
+      if (q.col === p.col && q.row > p.row) assert.ok(k.b > j.b && near(k.a, j.a), `${q.id} over ${p.id}`);
+    }
+  }
+  // The cable the room comes with, short: the clock's ×1 level with the drums' clock in, beside it.
+  assert.ok(near(jack('clock.x1').b, jack('drums.clock').b) && jack('drums.clock').a - jack('clock.x1').a < 0.1);
+  // The knobs, RUN and the display: on the panel, clear of the jacks and of each other.
+  const things = [...panelKnobs.map((k) => [B.knobs[k].a, B.knobs[k].b, BOARD.knob.r * 1.25]), [(P.run.a0 + P.run.a1) / 2, (P.run.b0 + P.run.b1) / 2, 0.035]];
+  for (const [a, b, size] of things) {
+    assert.ok(a - size > 0 && a + size < B.width && b - size > 0 && b + size < P.height - 0.03, `${a}, ${b} on the panel`);
+    for (const j of P.jacks) assert.ok(Math.hypot(j.a - a, j.b - b) > size + r * 1.5, `${a}, ${b} clear of ${j.id}`);
+    assert.ok(!(a > P.display.a0 - size && a < P.display.a1 + size && b > P.display.b0 - size && b < P.display.b1 + size), `${a}, ${b} clear of the display`);
+  }
+  for (const k of panelKnobs) assert.equal(knobAt(B, B.knobs[k].a, B.knobs[k].b, 'panel'), k);
+  assert.equal(knobAt(B, B.knobs[panelKnobs[0]].a, B.knobs[panelKnobs[0]].b), -1, 'not on the top');
+});
+
+test('a ray meets the pad or the step key it points at (where on it), a knob, the rest of the board, its front and its sides', () => {
   for (const i of PADS.keys()) {
     const h = ray(eye, padMiddle(i));
-    assert.deepEqual([h?.kind, h?.pad, h?.knob], ['pad', i, -1], PADS[i].id);
+    assert.deepEqual([h?.kind, h?.pad, h?.step, h?.knob], ['pad', i, -1, -1], PADS[i].id);
     assert.ok(near(h.u, 0.5, 1e-6) && near(h.v, 0.5, 1e-6), `${h.u} ${h.v}`);
     assert.equal(h.walkable, false);
+  }
+  for (const s of B.steps.keys()) {
+    const h = ray(eye, keyMiddle(s));
+    assert.deepEqual([h?.kind, h?.step, h?.pad], ['step', s, -1], `step ${s}`);
+    assert.ok(near(h.u, 0.5, 1e-6) && near(h.v, 0.5, 1e-6), `${h.u} ${h.v}`);
   }
   // A pad's front left corner is u, v 0, 0.
   const q = B.pads[5];
   const corner = ray(eye, boardPoint(B, q.a0 + 0.001, q.b0 + 0.001, BOARD.rise));
   assert.ok(corner.u < 0.01 && corner.v < 0.01);
   // The knobs: a ray on the knob's top meets the top's plane at its foot, a little nearer.
-  for (const k of B.knobs.keys()) {
+  for (const k of topKnobs) {
     const h = ray(eye, boardPoint(B, B.knobs[k].a, B.knobs[k].b, BOARD.rise));
     assert.deepEqual([h?.kind, h?.knob, h?.pad], ['knob', k, -1], KNOBS[k]);
   }
@@ -91,6 +161,9 @@ test('a ray meets the pad it points at (where on it), a knob, the rest of the bo
   assert.deepEqual([side?.kind, side?.nx], ['board', 1]);
   const left = ray([B.x0 - 1, 0.5, (B.zBack + B.zFront) / 2], [B.x0, 0.5, (B.zBack + B.zFront) / 2]);
   assert.deepEqual([left?.kind, left?.nx], ['board', -1]);
+  // The panel's side, as it rises over the top.
+  const z = panelPoint(B, 0, B.panel.height / 2)[2], y = panelPoint(B, 0, B.panel.height / 2, -0.01)[1];
+  assert.deepEqual(ray([B.x1 + 1, y, z - 0.01], [B.x1, y, z - 0.01])?.kind, 'board', 'the panel\'s side');
   // Its sign on the wall over it, as wide as it: a level gaze from across the room (a TV's dot, which
   // can't look down) meets it over the board.
   assert.ok(B.sign.y0 < EYE && B.sign.y1 > EYE && B.sign.y0 > B.top && near(B.sign.x0, B.x0) && near(B.sign.x1, B.x1));
@@ -106,6 +179,28 @@ test('a ray meets the pad it points at (where on it), a knob, the rest of the bo
   assert.equal(ray([B.x1 + 1, 0.5, B.zFront + 1], [B.x1 + 2, 0.5, B.zFront + 1]), null, 'away from it');
   assert.equal(ray(eye, padMiddle(0), 0.1), null, 'the room nearer');
   assert.equal(ray([0, 0.5, B.zFront + 1], [0, 0.5, B.zFront], 0.5), null);
+});
+
+test('on the panel a ray meets each jack, each knob and RUN, and the rest of it as the board', () => {
+  const P = B.panel;
+  for (const [j, jack] of P.jacks.entries()) {
+    // At the nut's edge too: half as large again to point at.
+    for (const da of [0, BOARD.panel.jack * 1.3]) {
+      const h = ray(eye, panelPoint(B, jack.a + da, jack.b));
+      assert.deepEqual([h?.kind, h?.jack, h?.knob, h?.pad, h?.step], ['jack', j, -1, -1, -1], `${jack.id} +${da}`);
+      assert.ok(near(h.ny, P.normal[1]) && near(h.nz, P.normal[2]), 'facing out of the panel');
+    }
+  }
+  for (const k of panelKnobs) {
+    const h = ray(eye, panelPoint(B, B.knobs[k].a, B.knobs[k].b));
+    assert.deepEqual([h?.kind, h?.knob, h?.jack], ['knob', k, -1], B.knobs[k].name);
+  }
+  assert.deepEqual(ray(eye, panelPoint(B, (P.run.a0 + P.run.a1) / 2, (P.run.b0 + P.run.b1) / 2))?.kind, 'run');
+  for (const [a, b] of [[(P.display.a0 + P.display.a1) / 2, (P.display.b0 + P.display.b1) / 2], [0.8, 0.2], [0.005, 0.24]]) {
+    assert.deepEqual(ray(eye, panelPoint(B, a, b))?.kind, 'board', `${a}, ${b}`);
+  }
+  // A level gaze passes over it, to the sign.
+  assert.ok(P.top < EYE - 0.15);
 });
 
 test('one walks round it: kept from its front and sides, sliding along them; the floor there is no place to walk to', () => {
@@ -137,15 +232,28 @@ function project(p, at, fov, aspect) {
 }
 /** main.js fitCamera's field of view for an aspect. */
 const fovFor = (aspect) => Math.min(100, Math.max(70, (2 * Math.atan(Math.tan(Math.PI / 6) / aspect) * 180) / Math.PI));
-/** The board's top outline, the knobs' height over it, as a ring of points. */
+/**
+ * All of the board, the knobs' height out of it, as a ring of points: the top's front edge and
+ * sides, and the panel's sides and top edge.
+ */
 const outline = [];
-for (const [a0, b0, a1, b1] of [[0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1], [0, 1, 0, 0]]) {
-  for (let i = 0; i < 40; i++) outline.push(boardPoint(B, (a0 + ((a1 - a0) * i) / 40) * B.width, (b0 + ((b1 - b0) * i) / 40) * B.length, BOARD.knob.h));
+const h = BOARD.knob.h, W = B.width, D = B.length, H = B.panel.height;
+for (let i = 0; i < 40; i++) {
+  const f = i / 40;
+  outline.push(boardPoint(B, f * W, 0, h), boardPoint(B, W, f * D, h), boardPoint(B, 0, f * D, h));
+  outline.push(panelPoint(B, W, f * H, h), panelPoint(B, f * W, H, h), panelPoint(B, 0, f * H, h));
 }
 /** A page element's box (CSS pixels) in the view's terms. */
 const box = (w, h, left, top, right, bottom) => ({ x0: (left / w) * 2 - 1, x1: (right / w) * 2 - 1, y0: 1 - (bottom / h) * 2, y1: 1 - (top / h) * 2 });
 
-test('on a screen one plays it from where all of its top is in view, a desktop near and a phone held upright further back', () => {
+test('its outline: round the top and the panel, the knobs\' height out of them', () => {
+  const ring = boardOutline(B, 4);
+  assert.equal(ring.length, 24);
+  assert.deepEqual(ring[0], boardPoint(B, 0, 0, h));
+  assert.deepEqual(ring[12], panelPoint(B, W, H, h), 'the panel\'s top right corner');
+});
+
+test('on a screen one plays it from where all of it is in view, a desktop near and a phone held upright further back', () => {
   const at = {};
   for (const [name, aspect] of [['desktop', 16 / 9], ['laptop', 16 / 10], ['phone', 9 / 19.5], ['phone on its side', 19.5 / 9]]) {
     const fov = fovFor(aspect);
@@ -160,7 +268,7 @@ test('on a screen one plays it from where all of its top is in view, a desktop n
       assert.ok(v.ahead && Math.abs(v.x) <= 0.88 + 1e-9 && Math.abs(v.y) <= 0.88 + 1e-9, `${name}: its outline at ${v.x.toFixed(2)}, ${v.y.toFixed(2)}`);
     }
   }
-  assert.ok(near(at.desktop.z, B.zFront + BOARD.keep), 'as near as one may');
+  assert.ok(at.desktop.z < B.zFront + BOARD.keep + 0.3, `a desktop near: ${at.desktop.z - B.zFront}`);
   assert.ok(at.phone.z > at.desktop.z + 0.2, `a phone further back: ${at.phone.z - B.zFront}`);
 });
 
@@ -178,7 +286,7 @@ test('clear of the card over the view: beside it on a desktop and a TV, below it
     const aspect = w / h, fov = fovFor(aspect);
     const over = boxes.map((b) => box(w, h, ...b));
     const f = boardFront(B, { fov, aspect, over });
-    assert.ok(!boardBlocks(B, f.x, f.z) && f.z < B.zFront + 2, `${name}: near enough to play, ${f.z - B.zFront}`);
+    assert.ok(!boardBlocks(B, f.x, f.z) && f.z < B.zFront + 2.4, `${name}: near enough to play, ${f.z - B.zFront}`);
     const seen = outline.map((p) => project(p, f, fov, aspect));
     for (const v of seen) {
       assert.ok(v.ahead && Math.abs(v.x) <= 0.88 + 1e-9 && Math.abs(v.y) <= 0.88 + 1e-9, `${name}: in view, ${v.x.toFixed(2)}, ${v.y.toFixed(2)}`);
@@ -193,28 +301,32 @@ test('clear of the card over the view: beside it on a desktop and a TV, below it
   assert.deepEqual(boardFront(B, { fov: 70, aspect: 16 / 9, over: [] }), boardFront(B, { fov: 70, aspect: 16 / 9 }));
 });
 
-test('in VR one stands at arm\'s length, a stick reaching the far pads', () => {
+test('in VR one stands at arm\'s length, a stick reaching the far pads and every step key', () => {
   const s = boardStand(B);
   assert.ok(!boardBlocks(B, s.x, s.z) && s.yaw === 0 && near(s.x, 0));
   // Shoulders a little below the eye, an arm and a stick of reach.
   const shoulder = [0, EYE - 0.25, s.z];
-  for (const i of PADS.keys()) {
-    const p = padMiddle(i);
-    assert.ok(Math.hypot(p[0] - shoulder[0], p[1] - shoulder[1], p[2] - shoulder[2]) < 0.65 + 0.36, PADS[i].id);
-  }
+  const reach = (p) => Math.hypot(p[0] - shoulder[0], p[1] - shoulder[1], p[2] - shoulder[2]) < 0.65 + 0.36;
+  for (const i of PADS.keys()) assert.ok(reach(padMiddle(i)), PADS[i].id);
+  for (const k of B.steps.keys()) assert.ok(reach(keyMiddle(k)), `step ${k}`);
 });
 
-test('a tip coming down on a pad strikes it, as fast as it was going; across it, up, or between pads, it does not', () => {
+test('a tip coming down on a pad strikes it, as fast as it was going, and on a step key sets it; across, up, or between, it does not', () => {
   const at = (i, h) => {
     const q = B.pads[i];
     return boardPoint(B, (q.a0 + q.a1) / 2, (q.b0 + q.b1) / 2, BOARD.rise + h);
   };
-  const out = { pad: 0, speed: 0 };
+  const out = { pad: 0, step: 0, speed: 0 };
   for (const i of PADS.keys()) {
     const [f, t] = [at(i, 0.03), at(i, -0.01)];
     strikeAt(B, ...f, ...t, 1 / 60, out);
-    assert.equal(out.pad, i, PADS[i].id);
+    assert.deepEqual([out.pad, out.step], [i, -1], PADS[i].id);
     assert.ok(near(out.speed, 0.04 * 60, 1e-6), `${out.speed}`);
+  }
+  for (const s of B.steps.keys()) {
+    const k = B.steps[s], m = (h) => boardPoint(B, (k.a0 + k.a1) / 2, (k.b0 + k.b1) / 2, BOARD.rise + h);
+    strikeAt(B, ...m(0.02), ...m(-0.01), 1 / 60, out);
+    assert.deepEqual([out.pad, out.step], [-1, s], `step ${s}`);
   }
   // Where it crossed the face says which pad, not where it ended (here, past the pad's edge).
   const f = at(0, 0.02);
@@ -222,12 +334,12 @@ test('a tip coming down on a pad strikes it, as fast as it was going; across it,
   strikeAt(B, f[0], f[1], f[2], 2 * cross[0] - f[0], 2 * cross[1] - f[1], 2 * cross[2] - f[2], 1 / 60, out);
   assert.equal(out.pad, 0);
   strikeAt(B, ...at(0, 0.03), ...at(1, 0.01), 1 / 60, out);
-  assert.deepEqual(out, { pad: -1, speed: 0 }, 'across, above');
+  assert.deepEqual(out, { pad: -1, step: -1, speed: 0 }, 'across, above');
   strikeAt(B, ...at(0, -0.01), ...at(0, 0.03), 1 / 60, out);
   assert.equal(out.pad, -1, 'up from below');
   const gap = (h) => boardPoint(B, B.pads[0].a1 + BOARD.gap / 2, B.pads[0].b0 + 0.05, BOARD.rise + h);
   strikeAt(B, ...gap(0.02), ...gap(-0.02), 1 / 60, out);
-  assert.equal(out.pad, -1, 'between pads');
+  assert.deepEqual([out.pad, out.step], [-1, -1], 'between pads');
   // How far out of a pad's face a point is.
   assert.ok(near(heightOver(B, ...at(3, 0.05)), 0.05, 1e-9) && near(heightOver(B, ...at(3, -REARM)), -REARM, 1e-9));
 });

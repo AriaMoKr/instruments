@@ -11,7 +11,11 @@
 // The first instrument is the drum board against the far wall (board.js lays it out, kit.js draws
 // it): analog drums, each made as it is played (drums.js, into sound.js's Web Audio), with their
 // knobs. One walks up to it to play it with the keys, a click or a tap, a gamepad or the remote;
-// in VR with sticks, a forefinger or a ray; from a MIDI device (midi.js); and in the card.
+// in VR with sticks, a forefinger or a ray; from a MIDI device (midi.js); and in the card. Its
+// panel is a little modular: a clock (clock.js) whose pulses, through a cable into the drums' clock
+// in, step a pattern of sixteen steps for each pad (pattern.js), set on the step keys; and a delay
+// (delay.js) any pad's sound can be patched into. The cables (patch.js) are taken from a jack and
+// plugged into another, or chosen in the card.
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -22,7 +26,11 @@ import { Overlay } from './overlay.js';
 import { layoutBoard } from './board.js';
 import { Kit } from './kit.js';
 import { Sound } from './sound.js';
-import { Drums, movePad, padForNote } from './drums.js';
+import { Drums, PADS, movePad, padForNote } from './drums.js';
+import { CLOCK_OUTS, Clock, TEMPO } from './clock.js';
+import { Pattern, stepOf } from './pattern.js';
+import { Patch, padForJack } from './patch.js';
+import { Delay } from './delay.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { setAnisotropy } from './textures.js';
@@ -117,14 +125,31 @@ const overlay = new Overlay(ROOM, way, {
 
 const sound = new Sound({ key: `${ROOM.id}.sound` });
 const drums = new Drums(sound, { key: `${ROOM.id}.drums` });
+const clock = new Clock({ key: `${ROOM.id}.clock` });
+const pattern = new Pattern({ key: `${ROOM.id}.pattern` });
+const patch = new Patch({ key: `${ROOM.id}.patch` });
+const delay = new Delay(sound, { key: `${ROOM.id}.delay` });
+delay.setTempo(clock.tempo);
 /** The drum board in 3D (kit.js), once the scene is made. @type {Kit | null} */
 let kit = null;
 
-/** Pad i is the one the knobs turn: on the board and in the card. */
+/** Pad i is the one the knobs turn and the step keys set: on the board and in the card. */
 function select(i) {
   drums.selected = i;
   kit?.select(i, drums.knobs[i]);
   overlay.setKnobs(i, drums.knobs[i]);
+  showSteps();
+}
+/** The selected pad's steps, on the step keys and in the card. */
+function showSteps() {
+  const i = drums.selected;
+  kit?.setSteps(pattern.steps[i]);
+  overlay.setSteps(i, pattern.steps[i]);
+}
+/** Step s of the selected pad: it plays there now, or no longer. */
+function toggleStep(s) {
+  pattern.toggle(drums.selected, s);
+  showSteps();
 }
 /** Plays pad i, `velocity` 0…1 loud: heard, lit up on the board, and the one the knobs turn. */
 function play(i, velocity) {
@@ -154,7 +179,183 @@ overlay.onMute = (muted) => {
   overlay.setSound(sound);
 };
 overlay.setSound(sound);
+overlay.onStep = toggleStep;
+overlay.onClearSteps = () => {
+  pattern.clear(drums.selected);
+  showSteps();
+};
+overlay.onResetPattern = () => {
+  pattern.reset();
+  showSteps();
+};
 select(drums.selected);
+
+// ── The clock, the pattern, the delay and the cables ─────────────────────────
+// The clock runs only once started (RUN, Space at the board, a remote's play/pause, Start in the
+// card), which wakes the sound. Its pulses are handed out a little ahead by the audio clock
+// (clock.js advance), from the frame loop and a timer (a frame may be slow, or not come at all: no
+// 3D view, a hidden pane), each falling on a step of the drums if their clock in is patched to an
+// output sending it (every pulse, every 2nd, every 4th), whose pads play on that step at its time.
+// What a pulse shows (the step playing, the pads lit, RUN's light on the beat) is queued until it is
+// heard. A pad patched into the delay's in is connected to it once there is sound (sound.onReady).
+
+/** How many of the clock's pulses make a step of the drums (the output their clock in is patched to), else 0. */
+let drumsEvery = 0;
+function patchedClock() {
+  drumsEvery = CLOCK_OUTS.find((o) => o.id === patch.source('drums.clock'))?.every ?? 0;
+}
+patchedClock();
+/** How hard the pattern plays a pad: on the beat, and between. */
+const ON_BEAT = 0.85, OFF_BEAT = 0.7;
+// What each pulse shows once heard, in a ring: when it falls, its number, the drums' step (-1 none)
+// and the pads it plays (a bit each).
+const QUEUED = 64;
+const shownAt = new Float64Array(QUEUED), shownPulse = new Int32Array(QUEUED), shownStep = new Int8Array(QUEUED), shownPads = new Uint16Array(QUEUED);
+let queueHead = 0, queueTail = 0;
+let playhead = -1;
+
+/** Pulse n of the clock, falling at `time` on the audio clock: the drums' step, and queued to be seen. */
+function pulse(n, time) {
+  let step = -1, pads = 0;
+  if (drumsEvery && n % drumsEvery === 0) {
+    step = stepOf(n / drumsEvery);
+    for (let i = 0; i < PADS.length; i++) {
+      if (!pattern.has(i, step)) continue;
+      drums.play(i, step % 4 ? OFF_BEAT : ON_BEAT, time);
+      pads |= 1 << i;
+    }
+  }
+  if ((queueTail + 1) % QUEUED === queueHead) queueHead = (queueHead + 1) % QUEUED; // full: the oldest goes
+  shownAt[queueTail] = time;
+  shownPulse[queueTail] = n;
+  shownStep[queueTail] = step;
+  shownPads[queueTail] = pads;
+  queueTail = (queueTail + 1) % QUEUED;
+}
+/** The pulses due soon handed out (none while the clock is stopped). */
+function schedule() {
+  const ctx = sound.ctx;
+  if (ctx && clock.running) clock.advance(ctx.currentTime, pulse);
+}
+/** What the pulses heard by now show: the step playing, the pads it played lit, RUN's light on the beat. */
+function showPulses() {
+  const ctx = sound.ctx;
+  if (!ctx) return;
+  const heard = ctx.currentTime - (ctx.outputLatency || 0);
+  while (queueHead !== queueTail && shownAt[queueHead] <= heard) {
+    const s = shownStep[queueHead], pads = shownPads[queueHead];
+    if (kit && shownPulse[queueHead] % 4 === 0) kit.beat(reduce);
+    if (s >= 0) {
+      setPlayhead(s);
+      for (let i = 0; i < PADS.length; i++) if (pads & (1 << i)) kit?.flash(i, s % 4 ? OFF_BEAT : ON_BEAT, reduce);
+    }
+    queueHead = (queueHead + 1) % QUEUED;
+  }
+  if (!clock.running && queueHead === queueTail) setPlayhead(-1);
+}
+/** The step playing (-1 none), on the step keys and in the card. */
+function setPlayhead(s) {
+  if (s === playhead) return;
+  playhead = s;
+  if (kit) kit.playhead = s;
+  overlay.setPlayhead(s);
+}
+setInterval(() => {
+  schedule();
+  showPulses();
+}, 25);
+
+/** Starts the clock (waking the sound: this is a press), or stops it. */
+function toggleClock() {
+  if (clock.running) clock.stop();
+  else {
+    const ctx = sound.wake();
+    if (!ctx) {
+      overlay.toast('This browser makes no sound', 4);
+      return;
+    }
+    clock.start(ctx.currentTime);
+    schedule();
+  }
+  kit?.setRunning(clock.running);
+  overlay.setRunning(clock.running);
+}
+/** Where the tempo's knob is turned to, 0…1: a turn smaller than a beat a minute adds up. */
+let tempoTurn = 0;
+/** The tempo, in beats per minute (`turn`: the knob's place, when it was turned). */
+function setTempo(bpm, turn = (bpm - TEMPO.min) / (TEMPO.max - TEMPO.min)) {
+  tempoTurn = Math.min(1, Math.max(0, turn));
+  clock.setTempo(bpm);
+  delay.setTempo(clock.tempo);
+  kit?.setTempo(clock.tempo);
+  overlay.setTempo(clock.tempo);
+}
+setTempo(clock.tempo);
+/** A knob of the delay, set 0…1. */
+function setDelayKnob(name, value) {
+  delay.setKnob(name, value);
+  showDelay();
+}
+function showDelay() {
+  kit?.setDelay(delay.knobs);
+  overlay.setDelay(delay.knobs);
+}
+showDelay();
+overlay.onRun = toggleClock;
+// A remote's (or a keyboard's) play/pause starts and stops it, wherever the focus is.
+addEventListener('keydown', (e) => {
+  if (e.key !== 'MediaPlayPause' && e.code !== 'MediaPlayPause') return;
+  e.preventDefault();
+  if (!e.repeat) toggleClock();
+});
+overlay.onTempo = (bpm) => setTempo(bpm);
+overlay.onDelay = setDelayKnob;
+overlay.onResetDelay = () => {
+  delay.reset();
+  showDelay();
+};
+
+/** Pad i's sound into the delay (`on`), or out of it, once there is sound (else, when there is, onReady). */
+function feedDelay(i, on) {
+  const out = drums.out(i), input = delay.input();
+  if (!out || !input) return;
+  if (on) out.connect(input);
+  else {
+    try {
+      out.disconnect(input);
+    } catch {
+      // it wasn't
+    }
+  }
+}
+sound.onReady = () => feedDelay(padForJack(patch.source('delay.in')), true);
+/** The cables' colours: the clock's amber, and a pad's sound in the pad's colour. */
+const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8';
+const cableColor = (id) => {
+  const i = padForJack(id);
+  return i >= 0 ? PADS[i].color : patch.jack(id)?.kind === 'audio' ? SOUND_CABLE : CLOCK_CABLE;
+};
+/** The cables on the board, and in the card. */
+function showPatch() {
+  if (kit) {
+    const jacks = kit.board.panel.jacks, at = (id) => jacks.findIndex((j) => j.id === id);
+    kit.setCables(patch.cables().map((c) => ({ from: at(c.from), to: at(c.to), color: cableColor(c.from) })));
+  }
+  overlay.setPatch(patch);
+}
+patch.onChange = (to, from, was) => {
+  if (to === 'delay.in') {
+    feedDelay(padForJack(was), false);
+    feedDelay(padForJack(from), true);
+  }
+  if (to === 'drums.clock') patchedClock();
+  showPatch();
+};
+showPatch();
+overlay.onPlug = (input, output) => {
+  if (output) patch.plug(output, input);
+  else patch.unplug(input);
+};
 for (const type of ['pointerup', 'touchend', 'keydown']) {
   addEventListener(type, () => {
     if (sound.ctx) sound.wake();
@@ -210,7 +411,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board of twelve pads against the far wall, ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -239,6 +440,9 @@ const board = layoutBoard(L);
 kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 scene.add(kit.group);
 select(drums.selected);
+kit.setTempo(clock.tempo);
+showDelay();
+showPatch();
 // Through the doorway, the view the Hallway publishes from its door to here (its views.json); until
 // it has loaded, or when there is none (a Hallway without this door yet), its glow and name.
 const views = hallwayViews(way, ROOM.id);
@@ -356,13 +560,13 @@ let remote = null;
 if (tv) {
   controls.aimMiddle = true;
   renderer.domElement.setAttribute('aria-describedby', overlay.hint.id);
-  // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its knobs.
+  // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its steps.
   remote = new Remote({
     root: overlay.root,
     view: renderer.domElement,
     use: () => (controls.playing ? play(drums.selected, 0.85) : controls.useMiddle()),
     step: stepBack,
-    first: () => (controls.playing ? overlay.knobsBox : null),
+    first: () => (controls.playing ? overlay.stepsBox : null),
   });
   remote.onMode = (inCard) => overlay.setHint(inCard ? 'tv-card' : 'tv');
   remote.answerApp(tv);
@@ -370,14 +574,76 @@ if (tv) {
 
 // ── The drum board ───────────────────────────────────────────────────────────
 // A pad played: a press on it, its key, a trigger, A or OK on it, and in VR a stick or a forefinger
-// coming down on it (which the controller feels). A knob turned: a drag, the wheel, a stick. On a
-// TV a pad chosen with the arrows. Walking up to the board to play it, and stepping away.
+// coming down on it (which the controller feels); a step key likewise. A knob turned: a drag, the
+// wheel, a stick. RUN pressed, or Space. On a TV a pad chosen with the arrows. Walking up to the
+// board to play it, and stepping away. A cable: taken from a jack (out of an input, the one plugged
+// in there), carried to where it is pointed, and plugged into another, or put away.
 
 controls.onPad = play;
+controls.onStep = toggleStep;
+controls.onRun = toggleClock;
 controls.onKnob = (k, by) => {
-  const name = board.knobs[k].name;
-  setKnob(name, drums.knobs[drums.selected][name] + by);
+  const knob = board.knobs[k];
+  if (knob.part === 'clock') {
+    const turn = Math.min(1, Math.max(0, tempoTurn + by));
+    setTempo(TEMPO.min + turn * (TEMPO.max - TEMPO.min), turn);
+  } else if (knob.part === 'delay') setDelayKnob(knob.name, delay.knobs[knob.name] + by);
+  else setKnob(knob.name, drums.knobs[drums.selected][knob.name] + by);
 };
+kit.onStep = (s, source) => {
+  toggleStep(s);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.35, 14);
+};
+
+/** The cable being carried: the jack it hangs from (patch.js's id). @type {{ id: string } | null} */
+let carried = null;
+/** The jack ringed (-2: to ring again). */
+let ringed = -2;
+/** Carries a cable from jack `id`, saying so. */
+function pickUp(id, words) {
+  const jack = patch.jack(id);
+  carried = { id };
+  controls.carrying = true;
+  ringed = -2;
+  kit.carry(board.panel.jacks.findIndex((j) => j.id === id), jack?.dir === 'out' ? cableColor(id) : jack?.kind === 'audio' ? SOUND_CABLE : CLOCK_CABLE);
+  overlay.toast(words);
+}
+/** The cable carried put away (`plugged`: in, so nothing more is said). */
+function putDown(plugged = false) {
+  if (!carried) return;
+  carried = null;
+  controls.carrying = false;
+  ringed = -2;
+  kit.carry(-1);
+  if (!plugged) overlay.toast('Cable put away');
+}
+/** Why the cable carried, from jack a, can't go into jack b. */
+function whyNot(a, b) {
+  if (a.dir === b.dir) return a.dir === 'out' ? 'Both are outs: an out goes into an in' : 'Both are ins: an in takes an out';
+  const into = a.dir === 'in' ? a : b;
+  return into.kind === 'clock' ? `${into.name} takes the clock's pulses, not sound` : `${into.name} takes sound, not the clock's pulses`;
+}
+controls.onJack = (k) => {
+  const id = board.panel.jacks[k]?.id, jack = id ? patch.jack(id) : undefined;
+  if (!id || !jack) return;
+  if (!carried) {
+    // Out of an input, the cable in it, still in its output; else a new one, from this jack.
+    const from = jack.dir === 'in' ? patch.source(id) : null;
+    if (from) {
+      patch.unplug(id);
+      pickUp(from, `Pulled out of ${jack.name}: choose where it goes`);
+    } else pickUp(id, `A cable from ${jack.name}: choose where it goes`);
+    return;
+  }
+  const a = patch.jack(carried.id);
+  if (!a || id === carried.id) putDown();
+  else if (patch.canPlug(carried.id, id)) {
+    patch.plug(carried.id, id);
+    putDown(true);
+    overlay.toast(a.dir === 'out' ? `${a.name} into ${jack.name}` : `${jack.name} into ${a.name}`);
+  } else overlay.toast(whyNot(a, jack), 4);
+};
+controls.onDrop = () => putDown();
 controls.onPick = (dc, dr) => select(movePad(drums.selected, dc, dr));
 controls.arrowsPick = tv;
 // Played clear of what the page shows over the view: the card as it is with nothing open in it (a
@@ -394,6 +660,7 @@ controls.over = () => {
 };
 controls.onPlaying = (on) => {
   overlay.setPlaying(on);
+  if (!on) putDown();
   if (on) sound.wake(); // ready for the first pad: the walk here began with a press
   if (on && remote) {
     overlay.openDrums(true);
@@ -441,6 +708,7 @@ controls.onPadActive = (on) => {
 };
 controls.onPadBack = () => {
   if (remote) remote.padBack();
+  else if (carried) putDown();
   else if (controls.playing) controls.leaveBoard();
   else if (fullscreenElement()) toggleFullscreen();
 };
@@ -476,6 +744,7 @@ renderer.xr.addEventListener('sessionend', () => {
   overlay.setVR(false);
   showPanel();
   kit.endXR();
+  putDown();
 });
 // Not on a TV, which has no headset (nor, so far, a WebXR in its WebView): the panel says so.
 if (!tv) navigator.xr?.isSessionSupported?.('immersive-vr').then((ok) => {
@@ -637,10 +906,25 @@ function step(dt) {
   room.update(time, dt, head, controls.hoverDoor);
   together.update(performance.now());
   room.panel.setHover(controls.hoverPanel);
+  // The clock's pulses due soon, and what those heard by now show.
+  schedule();
+  showPulses();
   // The board: in VR its sticks and the forefingers (after the controls, which moved the hands),
-  // the pad pointed at, and the pads' glow.
-  if (renderer.xr.isPresenting) kit.updateXR(controls.hands, fingers, dt);
+  // the pad, the step key and the jack pointed at (ringed grey where the cable carried can't go),
+  // the cable carried, its free end where it is pointed, and the pads' glow. In VR a cable goes
+  // where the hand that took it points, and so does its ring.
+  const xr = renderer.xr.isPresenting;
+  if (xr) kit.updateXR(controls.hands, fingers, dt);
   kit.hover(controls.hoverPad);
+  kit.hoveredStep = controls.hoverStep;
+  const held = carried && xr ? controls.hands[controls.selectHand]?.last ?? null : null;
+  const ring = carried && xr ? (held?.kind === 'jack' ? held.jack : -1) : controls.hoverJack;
+  if (ring !== ringed) {
+    ringed = ring;
+    const id = board.panel.jacks[ring]?.id;
+    kit.hoverJack(ring, !carried || !id || id === carried.id || patch.canPlug(carried.id, id));
+  }
+  if (carried) kit.aimAt(xr ? (held && held.kind !== 'ceiling' ? held : null) : controls.aim.has ? controls.aim : null);
   kit.update(dt);
   // The dot: a gamepad's aim, or on a TV the remote's OK while walking (playing, the arrows choose a pad).
   overlay.setAim((controls.padActive || (remote !== null && !remote.inCard && !controls.playing)) && !renderer.xr.isPresenting, !!controls.hover);
@@ -668,7 +952,11 @@ fade.to(0, blink(0.8));
 // For scripted testing, and tools/preview.mjs. A hidden page gets no animation frames: drive it with tick().
 window.__room = {
   THREE, renderer, scene, camera, rig, room, layout: L, controls, overlay, fade, vignette, xrDevice, go, enterVR, together, remote, tv, way, visit, setAccess,
-  sound, drums, board, kit, play, select, setKnob,
+  sound, drums, board, kit, play, select, setKnob, clock, pattern, patch, delay, toggleClock, setTempo, toggleStep, setDelayKnob, schedule,
+  /** The cable carried (the jack it hangs from), else null. */
+  get carried() {
+    return carried;
+  },
   /** The accessibility settings now, and whether motion is reduced. */
   get access() {
     return { ...access, reduce };

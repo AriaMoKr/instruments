@@ -13,7 +13,7 @@ function note(ctx, out, at, end) {
   const s = ctx.createOscillator();
   s.start(at);
   s.stop(end);
-  return { end, out: g, level: 0.5, sources: [s] };
+  return { start: at, end, out: g, level: 0.5, sources: [s] };
 }
 
 test('without Web Audio there is no sound, and nothing breaks', () => {
@@ -66,6 +66,19 @@ test('the first wake makes one context, for low latency, into the clipper; the n
   assert.equal(sound.channel('drums'), drums);
   assert.deepEqual(drums.outputs, [master]);
   assert.notEqual(sound.channel('keys'), drums);
+});
+
+test('once its graph is made, the first wake says so, and only the first', () => {
+  const sound = new Sound({ Context: /** @type {any} */ (FakeContext), storage: null });
+  let ready = 0;
+  sound.onReady = () => {
+    ready++;
+    assert.ok(sound.channel('drums'), 'a channel can be had by then');
+  };
+  sound.wake();
+  sound.sleep();
+  sound.wake();
+  assert.equal(ready, 1);
 });
 
 test('the volume is heard as its square, halved into the clipper; mute is silence', () => {
@@ -130,6 +143,27 @@ test('a note cut short: its gain down within a few milliseconds from where it wa
   const gone = note(ctx, ctx.destination, 0, 1);
   cut(gone, 2);
   assert.deepEqual([gone.out.gain.events, gone.sources[0].stopped], [[], 1]);
+});
+
+test("the clock's notes, set ahead: of two on one circuit the later cuts the earlier when it starts, whichever came first", () => {
+  const sound = new Sound({ Context: /** @type {any} */ (FakeContext), storage: null });
+  const ctx = /** @type {FakeContext} */ (/** @type {unknown} */ (sound.wake()));
+  const out = sound.channel('drums');
+  ctx.currentTime = 1;
+  // An open hat set for 1.05, then a closed one for 1.15: the open rings until the closed starts.
+  const open = note(ctx, out, 1.05, 2), closed = note(ctx, out, 1.15, 1.25);
+  sound.add(open, 'hat');
+  sound.add(closed, 'hat');
+  assert.equal(open.end, 1.17, 'cut when the closed one starts, not now');
+  assert.deepEqual(open.out.gain.events.slice(-2), [['set', 0.5, 1.15], ['target', 0, 1.15, 0.003]]);
+  // A hat played now, before one already set for later: it rings until that one starts, which stays.
+  ctx.currentTime = 1.3;
+  const later = note(ctx, out, 1.4, 2.4), now = note(ctx, out, 1.3, 2.3);
+  sound.add(later, 'hat');
+  sound.add(now, 'hat');
+  assert.equal(now.end, 1.42, 'cut by the one set after it');
+  assert.equal(later.end, 2.4, 'the one set later rings on');
+  assert.equal(sound.sounding, 2);
 });
 
 test("the notes: a group's last is cut when the next starts, the oldest past MAX_NOTES, the ended let go", () => {

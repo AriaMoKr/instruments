@@ -1,8 +1,9 @@
-// Just enough of Web Audio for sound.js and drums.js in Node: nodes that keep what they are
-// connected to, params that keep their automation and refuse what a browser would (a time, a value
-// or a time constant that isn't finite, an exponential ramp to 0, a negative time constant),
-// sources that keep when they start and stop (and refuse a second start, or a stop before one).
-// A test sets the context's currentTime itself.
+// Just enough of Web Audio for sound.js, drums.js and delay.js in Node: nodes that keep what they
+// are connected to (and let go of one, or all), params that keep their automation and refuse what a
+// browser would (a time, a value or a time constant that isn't finite, an exponential ramp to 0, a
+// negative time constant), sources that keep when they start and stop (and refuse a second start,
+// or a stop before one), and delays that refuse a longest time a browser wouldn't make. A test sets
+// the context's currentTime itself.
 
 class Param {
   constructor(value) {
@@ -62,8 +63,8 @@ class Node {
     return node;
   }
 
-  disconnect() {
-    this.outputs = [];
+  disconnect(node) {
+    this.outputs = node === undefined ? [] : this.outputs.filter((o) => o !== node);
   }
 }
 
@@ -121,6 +122,14 @@ export class FakeContext {
     n.frequency = new Param(350);
     n.Q = new Param(1);
     n.gain = new Param(0);
+    return n;
+  }
+
+  createDelay(max = 1) {
+    if (!(max > 0 && max < 180)) throw new RangeError(`createDelay(${max})`);
+    const n = new Node(this, 'delay');
+    n.maxDelayTime = max;
+    n.delayTime = new Param(0);
     return n;
   }
 

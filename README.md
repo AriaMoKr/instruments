@@ -4,8 +4,9 @@
 
 A room of instruments behind the [Hallway](https://ariamokr.github.io/hallway/)'s door. The first is
 a drum board against the far wall: twelve analog drums, synthesized in the browser as they are
-played, each with its knobs (below, "The drums"). A keyboard, a synth and an electric guitar come
-next. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
+played, each with its knobs, and a little modular panel: a clock that steps a sixteen-step pattern
+for each pad, and a delay, patched with cables (below, "The drums"). A synth, a keyboard and an
+electric guitar come next, all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
 makes: a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the
 doorway back to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay
 walls, and is a little larger than the template, 7 by 8 metres, to leave room for the instruments
@@ -22,10 +23,12 @@ panel.
 ## The drums
 
 Against the far wall, under a sign that says **Drums**, stands a board of twelve pads in three rows,
-and behind them a strip with the name of the pad last played and its three knobs. Choose the board
-or its sign (click or tap it, point at it in VR and pull the trigger, or put the dot on it and press
-A or OK) and you walk up to it to play. On a screen the view comes down over the board, clear of the
-card, and the hint says how to play it.
+with a row of sixteen step keys in front of them, behind them a strip with the name of the pad last
+played and its three knobs, and at the back a panel leaning towards you, with the clock, the drums'
+jacks and the delay (below, "The clock, the pattern and the cables"). Choose the board or its sign
+(click or tap it, point at it in VR and pull the trigger, or put the dot on it and press A or OK)
+and you walk up to it to play. On a screen the view comes down over the board, clear of the card,
+and the hint says how to play it.
 
 | | Play a pad | Turn a knob | Step away |
 |---|---|---|---|
@@ -36,9 +39,21 @@ card, and the hint says how to play it.
 | TV remote | the arrows choose a pad, OK plays it | in the card: Menu goes to them | Back |
 | MIDI drum pad | General MIDI's drum notes: a pad controller's first bank, 36–51, plays all but the cowbell, 56 | | |
 
-The card's **Drums** has the same twelve pads as buttons, each with its key, the knobs of the pad
-last played as sliders (**As it comes** sets them back), and **Sound**: the volume and **Mute**, over
-every instrument. On a TV it opens when you walk up to play, and the board stands beside it. Where
+| | Set a step | Start or stop the clock | Patch a cable |
+|---|---|---|---|
+| Desktop | click its key | click RUN, or Space | click a jack, then another; Esc puts the cable away |
+| Phone | tap its key | tap RUN | tap a jack, then another |
+| Headset | hit its key with a stick or a forefinger, or point at it and pull the trigger | point at RUN and pull the trigger | point at a jack and pull the trigger, then at another; the trigger anywhere else puts the cable away |
+| Gamepad | the dot on it and A | the dot on RUN and A | the dot on a jack and A, then on another; B puts the cable away |
+| TV remote | in the card: Menu goes to the steps | play/pause | in the card |
+
+A keyboard's play/pause key starts and stops the clock too, anywhere on the page. Choosing anything
+but a control on the board while carrying a cable puts it away.
+
+The card's **Drums** has the same twelve pads as buttons, each with its key, the clock, the steps
+and the knobs of the pad last played (**As it comes** sets the knobs back), the delay, the cables
+(below), and **Sound**: the volume and **Mute**, over every instrument. On a TV it opens when you
+walk up to play, and the board stands beside it. Where
 the browser has Web MIDI (Chrome, Edge and Firefox on a computer or an Android phone; not Safari, nor
 the Quest's browser), **Play from a MIDI device** asks for the devices plugged in; once you have said
 yes, the room listens to them on every visit, on any channel, and to any plugged in later. The knobs
@@ -54,7 +69,8 @@ A drum played again cuts its last note short, as a machine's one circuit for eac
 two hi-hats share one, so the closed one stops the open one ringing.
 
 A pad sounds in the event that plays it (the key, the press, the stick, the MIDI note), at the audio
-clock's current time, with no scheduler in between: what you wait for is the device's own output
+clock's current time, with no scheduler in between (the pattern's steps are set ahead instead:
+below): what you wait for is the device's own output
 latency (`latencyHint: 'interactive'`), measured on a desktop at 10 ms in the browser and 32 ms on to
 the speakers. Many hits at once bend in a soft clipper rather than crackle (a WaveShaper: no
 look-ahead to wait on), and at most 32 notes sound at once. Browsers play sound only after a click,
@@ -62,6 +78,45 @@ a tap or a key on the page, so the first one starts it; a MIDI note before then 
 iPhone the page plays as a media player does (`navigator.audioSession.type = 'playback'`), which the
 silent switch doesn't mute. With less motion, the walk up to the board is a jump and the pads light
 up more softly.
+
+### The clock, the pattern and the cables
+
+The panel at the back of the board has a module in each of its three sections, as a modular synth
+has, with jacks to patch them together:
+
+- **Clock**: **RUN** starts and stops it (it never runs by itself, nor when you come back), **TEMPO**
+  sets its pace from 60 to 180 beats a minute, shown on its display, and its outputs send a pulse
+  every step (**×1**), every 2nd (**÷2**) or every 4th (**÷4**). A step is a 16th note, so sixteen
+  are a bar. RUN's light beats with it.
+- **Drums**: **CLOCK**, the input that steps the pattern on each pulse that comes in, and an output
+  for each pad's sound, laid out as the pads are.
+- **Delay**: **IN**, and its knobs: **TIME**, from 1 to 8 steps of the clock (so its echoes fall on
+  the beat and follow the tempo), **FEEDBACK**, how long they go on, and **LEVEL**. A pad patched
+  into it is still heard as it was, with its echoes after it.
+
+The pattern is sixteen steps for each pad. The step keys show the steps of the pad last played, in
+its colour, with the step playing lit, and pressing one sets it or clears it. The room comes with
+the clock's ×1 patched into the drums and a beat to start from: the kick on every beat, the snare on
+two and four, and the closed hat on every 8th.
+
+A cable goes from an output to an input of its kind: the clock's pulses (in amber) or a pad's sound
+(in the pad's colour). Take one from a jack, and it follows where you point until you plug it into
+another; the jack you point at is ringed in gold, or in grey where it can't go, and a message says
+why. An input takes one cable: taking it from the input pulls it out, still in its output, to plug
+in elsewhere or put away, and plugging a new one into an input pulls the old one out. An output
+feeds any number.
+
+In the card, **Drums** has the same: **Clock** (Start or Stop, and the tempo), **Steps** (the
+sixteen of the pad last played as toggles, the step playing marked, **Clear**, and **Beat as it
+comes** for every pad), **Delay** (its three knobs, and **Delay as it comes**) and **Cables** (for
+each input, the output plugged into it, or nothing). The tempo, the pattern, the delay's knobs and
+the cables are kept for the next visit (`instruments.clock`, `instruments.pattern`,
+`instruments.delay` and `instruments.patch`).
+
+The clock keeps time by the audio clock, not by a timer: each step's notes are set up to 120 ms
+ahead to start exactly on it, from the frame loop and from a timer every 25 ms (a slow frame, or no
+3D view, moves no note), and what a step shows (the step lit, the pads, RUN's light) waits until it
+is heard. A step that fell too far behind while the page stalled is skipped rather than played late.
 
 ## Moving about
 
@@ -213,7 +268,8 @@ through its `tv.js`:
 - Stepping onto your name keeps the TV's keyboard down, so the arrows go on past it. OK brings the
   keyboard up to type, and Enter keeps the name.
 - At the drums, the card opens on them and the board stands to the right of it: the arrows choose a
-  pad, OK plays it, Menu goes to its knobs in the card, and Back steps away from the board.
+  pad, OK plays it, Menu goes to its steps in the card (its knobs, the delay and the cables follow),
+  play/pause starts and stops the clock, and Back steps away from the board.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -249,7 +305,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the board, MIDI, the card), and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board, MIDI, the card), and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -265,7 +321,8 @@ IPv4 (`npm start -- --host 127.0.0.1`).
 Nothing is built: the page is served as it is, and the import map stays. What TypeScript's DOM
 library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `tsconfig.strict.json` checks only the files that pass it (so far `config.js`, `presence.js`,
-`room.js`, `controls.js`, `sound.js`, `drums.js`, `board.js` and `midi.js`), and `npm test` runs it
+`room.js`, `controls.js`, `sound.js`, `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`,
+`board.js` and `midi.js`), and `npm test` runs it
 too. A file joins its `include` when a change
 makes it pass. `tools/` and `test/` come later.
 
@@ -299,9 +356,9 @@ is [`public/js/config.js`](public/js/config.js) (the id `instruments`, its title
 Band Room and address, its size and colours, the window in the left wall and the sky's yaw, the port
 8100, the teal glow), with `package.json`, `index.html`, `.claude/launch.json`, the pictures and
 these notes to match; `npm test` checks the page and the package say what the config says. The rest
-of `public/js/` is the template's with the instruments added: `sound.js`, `drums.js`, `board.js`,
-`kit.js` and `midi.js` are this room's own, and `controls.js`, `overlay.js`, `main.js` and
-`style.css` take the drums in.
+of `public/js/` is the template's with the instruments added: `sound.js`, `drums.js`, `clock.js`,
+`pattern.js`, `patch.js`, `delay.js`, `board.js`, `kit.js` and `midi.js` are this room's own, and
+`controls.js`, `overlay.js`, `main.js` and `style.css` take the drums in.
 
 The template's fixes come here by merging it: this room's history starts at the template's first
 commit, so with the template as a remote named `template`
