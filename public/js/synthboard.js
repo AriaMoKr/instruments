@@ -8,8 +8,9 @@
 // can't hide them; and on the panel a display (what is playing, the octave, the arpeggiator, the knob
 // turned last), the presets' buttons in two rows of four (the poly sounds over the mono ones), Mono's
 // and the octave's; over those its patch bay (patch.js's synth jacks: its sound, the LFO and the filter
-// envelope out on a plate at the left, nearest the board, the pitch, the cutoff and the amp in) and
-// the arpeggiator (its clock in, a button for each way it plays, HOLD and RANGE). Pure functions with
+// envelope out on a plate at the left, nearest the board, the pitch, the cutoff and the amp in, and
+// the notes in, for the rack's sequencer) and the arpeggiator (its clock in, a button for each way it
+// plays, HOLD and RANGE). Pure functions with
 // no three.js, as board.js's, so the tests run them in Node: where it stands and what is on it
 // (layoutSynth), what a ray meets on it (hitSynth: a black key over the white ones), the key at a
 // place on it, and the key a stick's tip or a finger is down in (keyUnder), and how hard it went in
@@ -164,25 +165,26 @@ export function layoutSynth(L, B) {
     { id: 'octave.up', label: '+', a0: right - 0.045, a1: right, b0: 0.08, b1: 0.125 },
   );
   // Over them, along a row: the patch bay at the left, its outs on a plate and then the
-  // modulations' ins; the arpeggiator at the right, its clock in, a button for each way it plays,
-  // HOLD and RANGE.
-  const J = panel.row, pitch = panel.pitch, arp = 0.495;
+  // modulations' ins and the notes in; the arpeggiator at the right, its clock in, a button for each
+  // way it plays, HOLD and RANGE.
+  const J = panel.row, pitch = panel.pitch, arp = 0.555, way = 0.058;
   /** @type {import('./board.js').BoardJack[]} */
   const jacks = [
     { id: 'synth.out', a: 0.05, b: J, out: true, color: null },
-    { id: 'synth.clock', a: 0.45, b: J, out: false, color: null },
+    { id: 'synth.clock', a: 0.51, b: J, out: false, color: null },
     { id: 'synth.lfo', a: 0.05 + pitch, b: J, out: true, color: null },
     { id: 'synth.env', a: 0.05 + 2 * pitch, b: J, out: true, color: null },
     { id: 'synth.pitch', a: 0.06 + 3 * pitch, b: J, out: false, color: null },
     { id: 'synth.cutoff', a: 0.06 + 4 * pitch, b: J, out: false, color: null },
     { id: 'synth.amp', a: 0.06 + 5 * pitch, b: J, out: false, color: null },
+    { id: 'synth.notes', a: 0.06 + 6 * pitch, b: J, out: false, color: null },
   ];
   buttons.push(
-    ...ARP_MODES.map((m, i) => ({ id: `arp.${m.id}`, label: m.label, a0: arp + i * 0.07, a1: arp + i * 0.07 + 0.062, b0: J - 0.0225, b1: J + 0.0225 })),
+    ...ARP_MODES.map((m, i) => ({ id: `arp.${m.id}`, label: m.label, a0: arp + i * way, a1: arp + i * way + way - 0.006, b0: J - 0.0225, b1: J + 0.0225 })),
     { id: 'arp.hold', label: 'HOLD', a0: right - 0.15, a1: right - 0.08, b0: J - 0.0225, b1: J + 0.0225 },
     { id: 'arp.range', label: 'RANGE', a0: right - 0.07, a1: right, b0: J - 0.0225, b1: J + 0.0225 },
   );
-  const over = panel.height - 0.022, bay = { a0: 0.024, a1: 0.06 + 5 * pitch + 0.026 };
+  const over = panel.height - 0.022, bay = { a0: 0.024, a1: 0.06 + 6 * pitch + 0.026 };
   return {
     x0, x1: x0 + width, zBack, zFront, width, length, tilt, front, top,
     /** @type {[number, number, number]} */
@@ -219,7 +221,7 @@ export function layoutSynth(L, B) {
         { text: 'MONO', a: right - 0.165, b: 0.148 },
         { text: 'OCTAVE', a: right - 0.05, b: 0.148 },
         { text: 'PATCH', a: (bay.a0 + bay.a1) / 2, b: over, ...bay },
-        { text: 'ARPEGGIATOR', a: (0.424 + right) / 2, b: over, a0: 0.424, a1: right },
+        { text: 'ARPEGGIATOR', a: (0.484 + right) / 2, b: over, a0: 0.484, a1: right },
       ],
     },
     sign: { x0, x1: x0 + width, y0: SYNTH.sign.bottom, y1: SYNTH.sign.top, z: L.z1 + SYNTH.sign.out },
@@ -349,7 +351,7 @@ export function hitSynth(S, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
   else if (jack >= 0) kind = 'jack';
   else if (button >= 0) kind = 'button';
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
-  out.pad = out.step = out.knob = -1;
+  out.pad = out.step = out.knob = out.seq = out.rack = -1;
   out.jack = jack;
   out.key = key;
   out.dial = dial;

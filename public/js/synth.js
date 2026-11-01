@@ -25,6 +25,8 @@
 // the way). Its arpeggiator (arp.js) takes the keys while it is on: they make the chord it plays,
 // a step at a time (arpStep, on the room's clock, or arpRun, on its own), each note set ahead on the
 // audio clock and let go ARP_GATE of the step later, started afresh in mono too, whatever the pedal.
+// Its NOTES in takes the rack's sequencer (seq.js): a step at a time (seqStep), each note set ahead
+// and let go when its step says, or held on into the next step and glided to its note (a slide).
 import { ARP_GATE, Arp, isArpMode } from './arp.js';
 import { pageStorage } from './sound.js';
 
@@ -313,6 +315,8 @@ export const MOD_CENTS = Object.freeze({ pitch: 1200, cutoff: 3600 });
 export const AMP_MOD = 0.5;
 /** How long a knob takes to get where it is turned (a time constant, in seconds): no zipper, no lag. */
 const EASE = 0.012;
+/** How long the sequencer's slide glides at the least, in seconds (GLIDE turned up, longer). */
+export const SLIDE = 0.06;
 
 /**
  * A WaveShaper's curve: tanh(k·x) over x from -1 to 1, its ends at ±1.
@@ -535,6 +539,8 @@ export class Synth {
     this._onArpStep = (/** @type {number} */ t, /** @type {number} */ step) => {
       this.arpStep(t, step);
     };
+    /** @private the sequencer's note held on into its next step (a slide): its voice (in poly) and note, else null @type {{ voice: Voice | null, note: number } | null} */
+    this._tie = null;
     /** @private the pitch bend, -1…1, and the mod wheel, 0…1 */
     this._bend = 0;
     /** @private */
@@ -695,6 +701,7 @@ export class Synth {
     this.down.clear();
     this.arp.clear();
     this._held = [];
+    this._tie = null;
     if (had) this.onNotes();
     const t = this.sound.ctx?.currentTime ?? 0;
     for (const voice of this._voices) {
@@ -817,6 +824,80 @@ export class Synth {
    */
   arpRun(now, until, step) {
     return this.arp.run(now, until, step, this._onArpStep);
+  }
+
+  /**
+   * A step of the rack's sequencer, through the NOTES in (main.js, seq.js), at time t on the audio
+   * clock (or now, if that has gone): a note (MIDI) as hard as `velocity`, started afresh; or, the
+   * step before held on into this one (a slide), glided to from that note, its envelopes not started
+   * again (legato), over GLIDE (SLIDE at the least). Let go at `until`, whatever the pedal, or held on
+   * into the next step (Infinity). A rest (note -1) lets go a note held on into it. In poly it takes
+   * the voice let go longest ago, as the arpeggiator's notes do. Whether a note played (not without
+   * sound).
+   * @param {number} note
+   * @param {number} velocity 0…1
+   * @param {number} t
+   * @param {number} until
+   */
+  seqStep(note, velocity, t, until) {
+    const ctx = this.sound.ctx;
+    if (!ctx || !Number.isFinite(t) || !this._build()) return false;
+    const at = Math.max(t, ctx.currentTime), tie = this._tie;
+    this._tie = null;
+    if (!Number.isFinite(note) || note < 0) {
+      if (tie) this._letTie(tie, at);
+      return false;
+    }
+    const v = clamp(velocity, 0, 1), glide = Math.max(glideSeconds(this.knobs.glide), SLIDE), held = !(until < Infinity);
+    if (this.mono) {
+      // Slid into: the voices still on the note held on, none taken by a key since.
+      const legato = !!tie && this._voices.every((x) => x.note === tie.note && !x.gate && !x.held);
+      const stack = this.knobs.detune > 0 ? VOICES : 1;
+      this._voices.forEach((voice, i) => {
+        const going = legato && !voice.ampEnv.released(at);
+        voice.note = note;
+        voice.gate = false;
+        voice.held = false;
+        this._pitch(voice, at, note, this._spread(i), going ? glide : 0);
+        if (i >= stack) return;
+        if (!going) this._start(voice, at, v, stack > 1 ? MONO_GAIN : 1);
+        if (!held) this._stop(voice, Math.max(until, at));
+      });
+      if (held) this._tie = { voice: null, note };
+      return true;
+    }
+    const was = tie?.voice ?? null;
+    const legato = !!was && was.note === tie?.note && !was.gate && !was.held && !was.ampEnv.released(at);
+    const voice = legato && was ? was : this._free() ?? this._voices.reduce((a, b) => (b.started < a.started ? b : a));
+    // Its drift kept, slid into; else a drift of its own, as a key's.
+    const cents = legato ? voice.pitch.to - (voice.note - 69) * 100 : ((this._random() * 2 - 1) * detuneCents(this.knobs.detune)) / 3;
+    voice.note = note;
+    voice.gate = false;
+    voice.held = false;
+    this._pitch(voice, at, note, cents, legato ? glide : 0);
+    if (!legato) this._start(voice, at, v, 1);
+    if (held) this._tie = { voice, note };
+    else this._stop(voice, Math.max(until, at));
+    return true;
+  }
+
+  /** The sequencer's note held on into a step that won't come (its clock stopped, a cable pulled): let go now. */
+  seqEnd() {
+    const tie = this._tie, ctx = this.sound.ctx;
+    this._tie = null;
+    if (tie && ctx) this._letTie(tie, ctx.currentTime);
+  }
+
+  /**
+   * The sequencer's note held on let go at t: its voice (in mono, the voices), if still on it.
+   * @private
+   * @param {{ voice: Voice | null, note: number }} tie
+   * @param {number} t
+   */
+  _letTie(tie, t) {
+    for (const voice of tie.voice ? [tie.voice] : this._voices) {
+      if (voice.note === tie.note && !voice.gate && !voice.held) this._stop(voice, t);
+    }
   }
 
   /**

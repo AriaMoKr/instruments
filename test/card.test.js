@@ -3,9 +3,11 @@
 // steps of the pad last played as toggles, the one playing marked; its knobs and the delay's as
 // sliders with their settings in words; the cables as a choice for each input. The synth: its keys,
 // each sounding while pressed, one stop among them; its sounds (the presets, Mono, the octave), its
-// arpeggiator, its knobs, a section each, and its cables. Sound: the volume, Mute, and MIDI where
-// there is Web MIDI. Playing at the board or the synth and stepping away, with its hint; and all
-// three kept, open, where there is no 3D view.
+// arpeggiator, its knobs, a section each, and its cables. The rack: its clock (the room's again),
+// its sequencer's steps a row each (whether it plays, its note, its accent, its slide), its octave,
+// and its cables. Sound: the volume, Mute, and MIDI where there is Web MIDI. Playing at the board,
+// the synth or the rack and stepping away, with its hint; and all four kept, open, where there is
+// no 3D view.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
@@ -16,6 +18,7 @@ import { DELAY_KNOBS, MAX_STEPS, delayText } from '../public/js/delay.js';
 import { JACKS, Patch } from '../public/js/patch.js';
 import { DEFAULT_SYNTH, KEYS, LOWEST, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack, noteName, spokenNote, synthText } from '../public/js/synth.js';
 import { ARP_MODES, ARP_RANGES } from '../public/js/arp.js';
+import { DEFAULT_LINE, SEQ_LOWEST, SEQ_OCTAVES, SEQ_RANGE, Seq } from '../public/js/seq.js';
 import { installDom } from './helpers/dom.js';
 
 const way = { url: 'https://ariamokr.github.io/hallway/?from=instruments', label: '← Hallway', title: 'Back to the Hallway' };
@@ -26,7 +29,8 @@ async function card(options = {}) {
   const o = new Overlay({ ...ROOM, pieces: [] }, way, options);
   const calls = [];
   for (const name of ['onPad', 'onPlay', 'onKnob', 'onResetKnobs', 'onVolume', 'onMute', 'onMidi', 'onRun', 'onTempo', 'onStep', 'onClearSteps', 'onResetPattern', 'onDelay', 'onResetDelay', 'onPlug',
-    'onPlaySynth', 'onKeyDown', 'onKeyUp', 'onKeyTap', 'onPreset', 'onMono', 'onOctave', 'onSynthKnob', 'onResetSynth', 'onArp', 'onHold', 'onRange']) o[name] = (...args) => calls.push([name, ...args]);
+    'onPlaySynth', 'onKeyDown', 'onKeyUp', 'onKeyTap', 'onPreset', 'onMono', 'onOctave', 'onSynthKnob', 'onResetSynth', 'onArp', 'onHold', 'onRange',
+    'onPlayRack', 'onSeqKey', 'onSeqNote', 'onSeqOctave', 'onClearSeq', 'onResetSeq']) o[name] = (...args) => calls.push([name, ...args]);
   return { o, calls };
 }
 
@@ -196,45 +200,52 @@ test('the delay: its time a slider in steps, its feedback and level in percent, 
   }
 });
 
-test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is; the board\'s with the drums, the synth\'s with it', async () => {
+test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is; the board\'s with the drums, the synth\'s with it, the rack\'s with it', async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
     const ins = JACKS.filter((j) => j.dir === 'in');
     assert.deepEqual([...o.plugs.keys()], ins.map((j) => j.id));
+    const boxes = [o.cablesBox, o.synthCablesBox, o.rackCablesBox];
     for (const j of ins) {
       const select = o.plugs.get(j.id);
       assert.equal(select.parentNode.children[0].textContent, j.name, 'its label');
       const options = select.children.map((c) => [c.getAttribute('value'), c.textContent]);
       assert.deepEqual(options, [['', 'Nothing'], ...JACKS.filter((x) => x.dir === 'out' && x.kind === j.kind).map((x) => [x.id, x.name])]);
-      const [here, there] = j.module === 'synth' ? [o.synthCablesBox, o.cablesBox] : [o.cablesBox, o.synthCablesBox];
-      assert.deepEqual([here.findAll((c) => c === select).length, there.findAll((c) => c === select).length], [1, 0], j.id);
+      const here = j.module === 'synth' ? o.synthCablesBox : j.module === 'seq' ? o.rackCablesBox : o.cablesBox;
+      assert.deepEqual(boxes.map((box) => box.findAll((c) => c === select).length), boxes.map((box) => (box === here ? 1 : 0)), j.id);
     }
+    assert.deepEqual(o.rackCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), ['seq.clock'], "the sequencer's clock in, the rack's");
     assert.ok(o.plugs.get('delay.in').children.some((c) => c.getAttribute('value') === 'synth.out'), 'the synth\'s sound into the delay too');
     assert.deepEqual(o.plugs.get('synth.pitch').children.map((c) => c.textContent), ['Nothing', 'LFO out', 'Filter envelope out']);
+    assert.deepEqual(o.plugs.get('synth.notes').children.map((c) => c.textContent), ['Nothing', 'Sequencer notes out']);
+    assert.deepEqual(o.plugs.get('seq.clock').children.map((c) => c.getAttribute('value')), ['', 'clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d2', 'rack.d4'], "the board's clock or the rack's");
     const patch = new Patch({ storage: null });
     patch.plug('pad.snare', 'delay.in');
     patch.plug('synth.lfo', 'synth.cutoff');
     o.setPatch(patch);
-    assert.deepEqual(['drums.clock', 'delay.in', 'synth.clock', 'synth.pitch', 'synth.cutoff'].map((id) => o.plugs.get(id).value), ['clock.x1', 'pad.snare', 'clock.x1', '', 'synth.lfo']);
+    assert.deepEqual(['drums.clock', 'delay.in', 'synth.clock', 'synth.pitch', 'synth.cutoff', 'synth.notes', 'seq.clock'].map((id) => o.plugs.get(id).value),
+      ['clock.x1', 'pad.snare', 'clock.x1', '', 'synth.lfo', 'seq.notes', 'rack.x1']);
     o.plugs.get('drums.clock').value = 'clock.d4';
     o.plugs.get('drums.clock').fire('change');
     o.plugs.get('delay.in').value = '';
     o.plugs.get('delay.in').fire('change');
     o.plugs.get('synth.amp').value = 'synth.env';
     o.plugs.get('synth.amp').fire('change');
-    assert.deepEqual(calls, [['onPlug', 'drums.clock', 'clock.d4'], ['onPlug', 'delay.in', null], ['onPlug', 'synth.amp', 'synth.env']]);
+    o.plugs.get('seq.clock').value = 'clock.d2';
+    o.plugs.get('seq.clock').fire('change');
+    assert.deepEqual(calls, [['onPlug', 'drums.clock', 'clock.d4'], ['onPlug', 'delay.in', null], ['onPlug', 'synth.amp', 'synth.env'], ['onPlug', 'seq.clock', 'clock.d2']]);
   } finally {
     remove();
   }
 });
 
-test('Synth and Sound open and close in the card, beside Drums', async () => {
+test('Synth, Rack and Sound open and close in the card, beside Drums', async () => {
   const remove = installDom();
   try {
     const { o } = await card();
-    assert.deepEqual(o.drumsToggle.parentNode.children.map((c) => c.textContent), ['Start shared session', 'Drums', 'Synth', 'Sound', 'Settings']);
-    for (const [toggle, part, id, open] of [[o.synthToggle, o.synth, 'synth', 'openSynth'], [o.soundToggle, o.sound, 'sound', 'openSound']]) {
+    assert.deepEqual(o.drumsToggle.parentNode.children.map((c) => c.textContent), ['Start shared session', 'Drums', 'Synth', 'Rack', 'Sound', 'Settings']);
+    for (const [toggle, part, id, open] of [[o.synthToggle, o.synth, 'synth', 'openSynth'], [o.rackToggle, o.rack, 'rack', 'openRack'], [o.soundToggle, o.sound, 'sound', 'openSound']]) {
       assert.deepEqual([toggle.getAttribute('aria-controls'), part.getAttribute('id'), part.hidden], [id, id, true]);
       toggle.fire('click');
       assert.deepEqual([part.hidden, toggle.getAttribute('aria-expanded')], [false, 'true']);
@@ -519,13 +530,13 @@ test('playing at the board: the button steps away, and the hint says how to play
   }
 });
 
-test('with no 3D view, the drums, the synth and the sound stay in the card, open, each under its name, with nothing to go to', async () => {
+test('with no 3D view, the drums, the synth, the rack and the sound stay in the card, open, each under its name, with nothing to go to', async () => {
   const remove = installDom();
   try {
     const { o } = await card();
-    o.noWebGL('This browser cannot show the room in 3D, but its drums and its synth play here in the card.');
+    o.noWebGL('This browser cannot show the room in 3D, but its drums, its synth and its sequencer play here in the card.');
     assert.equal(o.inRoom.parentNode, null, 'the session and the settings are gone');
-    for (const [name, part] of [['Drums', o.drums], ['Synth', o.synth], ['Sound', o.sound]]) {
+    for (const [name, part] of [['Drums', o.drums], ['Synth', o.synth], ['Rack', o.rack], ['Sound', o.sound]]) {
       assert.equal(part.hidden, false, name);
       assert.equal(o.card.findAll((c) => c === part).length, 1, name);
       const title = part.parentNode.children[0];
@@ -533,9 +544,136 @@ test('with no 3D view, the drums, the synth and the sound stay in the card, open
     }
     assert.equal(o.drums.findAll((c) => c === o.play).length, 0);
     assert.equal(o.synth.findAll((c) => c === o.playSynth).length, 0);
+    assert.equal(o.rack.findAll((c) => c === o.playRack).length, 0);
     assert.equal(o.drums.findAll((c) => c.className === 'pad').length, PADS.length);
     for (const box of [o.clockBox, o.stepsBox, o.knobsBox, o.delayBox, o.cablesBox]) assert.equal(o.drums.findAll((c) => c === box).length, 1, 'the clock, the steps, the knobs, the delay and the cables too');
     for (const box of [o.keyboard, o.presetsBox, o.arpBox, ...o.sectionBoxes, o.synthCablesBox]) assert.equal(o.synth.findAll((c) => c === box).length, 1, 'the keys, the sounds, the arpeggiator, the knobs and the cables');
+    for (const box of [o.rackClockBox, o.seqBox, o.rackCablesBox]) assert.equal(o.rack.findAll((c) => c === box).length, 1, 'its clock, the sequencer and the cables');
+  } finally {
+    remove();
+  }
+});
+
+test('the rack\'s clock: the room\'s again, its Start and tempo as the board\'s are', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.equal(o.rack.children.indexOf(o.rackClockBox), 1, 'after going to play at it');
+    assert.equal(o.rackClockBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Clock');
+    o.setRunning(true);
+    o.setTempo(132);
+    assert.deepEqual([o.run.textContent, o.rackRun.textContent], ['Stop', 'Stop']);
+    assert.deepEqual([o.rackTempo.value, o.rackTempoOut.textContent, o.rackTempo.getAttribute('aria-valuetext')], ['132', '132 BPM', '132 beats a minute']);
+    assert.deepEqual([o.rackTempo.getAttribute('min'), o.rackTempo.getAttribute('max')], [String(TEMPO.min), String(TEMPO.max)]);
+    o.setRunning(false);
+    assert.deepEqual([o.run.textContent, o.rackRun.textContent], ['Start', 'Start']);
+    o.rackRun.fire('click');
+    o.rackTempo.value = '100';
+    o.rackTempo.fire('input');
+    assert.deepEqual(calls, [['onRun'], ['onTempo', 100]]);
+  } finally {
+    remove();
+  }
+});
+
+test('the sequencer: a row for each step, its number pressed where it plays, its note a choice, its accent and its slide toggles, each named by its words', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.deepEqual([o.seqBox.tagName, o.seqBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent], ['FIELDSET', 'Sequencer']);
+    assert.equal(o.seqSteps.length, STEPS);
+    const seq = new Seq({ storage: null });
+    o.setSeq(seq.steps, seq.lowest, seq.octave);
+    for (const [s, { row, on, note, accent, slide }] of o.seqSteps.entries()) {
+      const n = s + 1;
+      assert.deepEqual(row.children, [on, note, accent, slide], 'a row: the step, its note, its accent, its slide');
+      assert.equal(row.classList.contains('beat'), s % 4 === 0, "a beat's first step");
+      // Each named by its words, the step's out of sight (WCAG's label in name).
+      for (const [b, name, hidden] of [[on, `Step ${n}`, 'Step '], [accent, `Accent, step ${n}`, `, step ${n}`], [slide, `Slide, step ${n}`, `, step ${n}`]]) {
+        assert.deepEqual([b.tagName, b.getAttribute('type'), b.getAttribute('aria-label'), b.textContent], ['BUTTON', 'button', null, name]);
+        assert.deepEqual(b.findAll((c) => c.className === 'sr-only').map((c) => c.textContent), [hidden], 'the step out of sight, the rest its words');
+      }
+      assert.deepEqual([note.tagName, note.getAttribute('aria-label')], ['SELECT', `Note, step ${n}`]);
+      assert.deepEqual(note.children.map((c) => [c.getAttribute('value'), c.textContent]), Array.from({ length: SEQ_RANGE + 1 }, (_, i) => [String(i), noteName(SEQ_LOWEST + i)]));
+      // As the line is.
+      assert.deepEqual([on, accent, slide].map((b) => b.getAttribute('aria-pressed')), [DEFAULT_LINE.on[s], DEFAULT_LINE.accent[s], DEFAULT_LINE.slide[s]].map((c) => String(c === 'x')));
+      assert.equal(note.value, String(DEFAULT_LINE.notes[s]));
+    }
+    // Pressed: a step's number, its accent, its slide; a note chosen; Clear and the line as it comes.
+    o.seqSteps[4].on.fire('click');
+    o.seqSteps[0].accent.fire('click');
+    o.seqSteps[15].slide.fire('click');
+    o.seqSteps[2].note.value = '19';
+    o.seqSteps[2].note.fire('change');
+    o.clearSeq.fire('click');
+    o.resetSeq.fire('click');
+    assert.deepEqual(calls, [['onSeqKey', 'seq', 4], ['onSeqKey', 'accent', 0], ['onSeqKey', 'slide', 15], ['onSeqNote', 2, 19], ['onClearSeq'], ['onResetSeq']]);
+    // Changed: as it is now.
+    seq.toggle(4);
+    seq.toggleSlide(15);
+    seq.setNote(2, 19);
+    o.setSeq(seq.steps, seq.lowest, seq.octave);
+    assert.deepEqual([o.seqSteps[4].on.getAttribute('aria-pressed'), o.seqSteps[15].slide.getAttribute('aria-pressed'), o.seqSteps[2].note.value], ['true', 'true', '19']);
+    // The step playing marked, on its row; seen, not said.
+    o.setSeqPlayhead(3);
+    o.setSeqPlayhead(6);
+    assert.deepEqual(marked(o.seqSteps.map((r) => r.row), 'now'), [6]);
+    o.setSeqPlayhead(-1);
+    assert.deepEqual(marked(o.seqSteps.map((r) => r.row), 'now'), []);
+  } finally {
+    remove();
+  }
+});
+
+test('the sequencer\'s octave: a slider, the notes it reaches in words, the choices named from them', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    const seq = new Seq({ storage: null });
+    o.setSeq(seq.steps, seq.lowest, seq.octave);
+    assert.deepEqual([o.seqOctave.getAttribute('min'), o.seqOctave.getAttribute('max'), o.seqOctave.value], [String(SEQ_OCTAVES.min), String(SEQ_OCTAVES.max), '0']);
+    assert.deepEqual([o.seqOctaveOut.textContent, o.seqOctave.getAttribute('aria-valuetext')], ['C2–C4', 'Notes C 2 to C 4']);
+    seq.setOctave(1);
+    o.setSeq(seq.steps, seq.lowest, seq.octave);
+    assert.deepEqual([o.seqOctave.value, o.seqOctaveOut.textContent, o.seqOctave.getAttribute('aria-valuetext')], ['1', 'C3–C5', 'Notes C 3 to C 5']);
+    assert.deepEqual(o.seqSteps[0].note.children.slice(0, 2).map((c) => c.textContent), ['C3', noteName(49)], 'the choices an octave up');
+    o.seqOctave.value = '-1';
+    o.seqOctave.fire('input');
+    assert.deepEqual(calls, [['onSeqOctave', -1]]);
+    assert.equal(o.seqBox.children.indexOf(o.seqOctave.parentNode), 2, 'under the steps');
+  } finally {
+    remove();
+  }
+});
+
+test('playing at the rack: its button steps away, the others go there, and the hint says how to play its sequencer', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    o.playRack.fire('click');
+    assert.deepEqual(calls, [['onPlayRack']]);
+    assert.equal(o.playRack.textContent, 'Play at the rack');
+    o.setHint('mouse', 0);
+    for (const how of ['mouse', 'touch', 'gamepad', 'tv']) {
+      o.setHint(how, 0);
+      assert.match(o.hint.textContent, /the rack/, `${how}: walking, the rack named`);
+    }
+    o.setHint('mouse', 0);
+    o.hideHint();
+    o.setPlaying('rack');
+    assert.deepEqual([o.playRack.textContent, o.playSynth.textContent, o.play.textContent], ['Step away from the rack', 'Play at the synth', 'Play at the board']);
+    assert.match(o.hint.textContent, /^Click the keys, or press 1–8 and Q–I \(Shift: its accent\) · .* Z, X: an octave down, up · Space: the clock · Esc steps away$/);
+    assert.ok(!o.hint.classList.contains('gone'), 'shown again');
+    for (const [how, words] of [['touch', /^Tap a step's key, its accent's or its slide's · drag a step's knob: its note/], ['gamepad', /A sets the key in the middle, presses a button, takes or plugs in a cable/],
+      ['tv', /^Left, right: choose a step · up, down: its note · OK: it plays, or rests · Play\/pause: the clock · Back: step away · Menu: its steps/]]) {
+      o.setHint(how, 0);
+      assert.match(o.hint.textContent, words, how);
+    }
+    o.setPlaying('synth');
+    assert.deepEqual([o.playRack.textContent, o.playSynth.textContent], ['Play at the rack', 'Step away from the synth']);
+    o.setPlaying(null);
+    assert.equal(o.playRack.textContent, 'Play at the rack');
+    assert.match(o.hint.textContent, /^Arrows: walk and turn · OK: the drums, the synth, the rack/);
   } finally {
     remove();
   }

@@ -7,8 +7,10 @@ a drum board against the far wall: twelve analog drums, synthesized in the brows
 played, each with its knobs, and a little modular panel: a clock that steps a sixteen-step pattern
 for each pad, and a delay, patched with cables (below, "The drums"). Beside it stands a synth: six
 analog voices, poly or mono, with thirty-seven keys, twenty-five knobs, eight sounds to start from,
-an arpeggiator, and a patch bay of its own, cabled to the board's (below, "The synth"). A keyboard
-and an electric guitar come next, all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
+an arpeggiator, and a patch bay of its own, cabled to the board's (below, "The synth"). Beside that
+stands its rack, a case of modules: a clock, and a sixteen-step sequencer that plays the synth in
+time with the drums (below, "The rack"). More modules, a keyboard and an electric guitar come next,
+all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
 makes: a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the
 doorway back to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay
 walls, and is a little larger than the template, 7 by 8 metres, to leave room for the instruments
@@ -50,8 +52,9 @@ and the hint says how to play it.
 | TV remote | in the card: Menu goes to the steps | play/pause | in the card |
 
 A keyboard's play/pause key starts and stops the clock too, anywhere on the page. While you carry a
-cable, the controls of the instrument you play still play, a jack on the synth takes it as one on
-the board does, choosing the synth walks you over with it, and choosing anything else puts it away.
+cable, the controls of the instrument you play still play, a jack on the synth or the rack takes it
+as one on the board does, choosing the synth or the rack walks you over with it, and choosing
+anything else puts it away.
 
 The card's **Drums** has the same twelve pads as buttons, each with its key, the clock, the steps
 and the knobs of the pad last played (**As it comes** sets the knobs back), the delay and the cables
@@ -103,12 +106,13 @@ the clock's ×1 patched into the drums and a beat to start from: the kick on eve
 two and four, and the closed hat on every 8th.
 
 A cable goes from an output to an input of its kind: the clock's pulses (in amber), a pad's sound
-(in the pad's colour), the synth's (in blue), or the synth's LFO or envelope (in pink: below, "Its
-patch bay"). Take one from a jack, on the board or on the synth, and it follows where you point
-until you plug it into another, on either; the jack you point at is ringed in gold, or in grey where
-it can't go, and a message says why. An input takes one cable: taking it from the input pulls it
-out, still in its output, to plug in elsewhere or put away, and plugging a new one into an input
-pulls the old one out. An output feeds any number.
+(in the pad's colour), the synth's (in blue), the synth's LFO or envelope (in pink: below, "Its
+patch bay"), or the sequencer's notes (in green: below, "The rack"). Take one from a jack, on the
+board, the synth or the rack, and it follows where you point until you plug it into another, on any
+of them; the jack you point at is ringed in gold, or in grey where it can't go, and a message says
+why. An input takes one cable: taking it from the input pulls it out, still in its output, to plug
+in elsewhere or put away, and plugging a new one into an input pulls the old one out. An output
+feeds any number.
 
 In the card, **Drums** has the same: **Clock** (Start or Stop, and the tempo), **Steps** (the
 sixteen of the pad last played as toggles, the step playing marked, **Clear**, and **Beat as it
@@ -194,6 +198,49 @@ cabled as the board's are (above, "The clock, the pattern and the cables"):
   **RANGE** plays the chord over one, two or three octaves. While the clock isn't running, or
   nothing is patched into CLOCK, it keeps its own time, 16ths at the clock's tempo, the first note
   at once. The display says what it plays, and its way and HOLD are lit.
+- **NOTES**: the input a sequencer plays it through (below, "The rack"), the rack's as it comes.
+
+## The rack
+
+To the right of the synth, under a sign that says **Rack**, stands a case of modules, as deep as the
+synth and in line with it. On its top is the sequencer's line, sixteen steps in fours as the drum
+board's step keys are, each with its number, its key (lit where the step plays its note, dark where
+it rests), its **ACCENT** key (played harder: louder, its filter opened more), its **SLIDE** key
+(held on into the next step, gliding to its note without starting again), its note's name, and the
+knob that sets the note, over two octaves from the line's lowest. On the panel are its modules, side
+by side as in a case:
+
+- **Clock**: the room's clock again, nearer the synth: **RUN**, **TEMPO** and its display, and its
+  outputs **×1**, **÷2** and **÷4**, sending the same pulses as the board's.
+- **Sequencer**: its display (its octave, and what was set last), the octave's **−** and **+**, its
+  **CLOCK** input, which moves it on a step for each pulse that comes in, and its **NOTES** output,
+  into the synth's **NOTES** input.
+- Two blank plates, where more modules will go.
+
+The room comes with the rack's ×1 patched into the sequencer and the sequencer's notes into the
+synth, and a bass line in C minor to start from, so RUN plays the drums and the line together. The
+synth plays it in the sound it has; **Acid** and **Fat Bass**, both mono, suit a line like it.
+
+| | Set a step | Its accent, its slide | Its note | Start or stop the clock |
+|---|---|---|---|---|
+| Desktop | click its key, or its key on the keyboard: 1–8 and Q–I | click its key; Shift with a step's key, its accent | drag its knob up or down, or scroll over it; Z and X: the octave down and up | click RUN, or Space |
+| Phone | tap its key | tap its key | drag its knob up or down | tap RUN |
+| Headset | hit its key with a stick or a forefinger, or point at it and pull the trigger | the same | point at its knob and push the stick up or down | point at RUN and pull the trigger |
+| Gamepad | the dot on it and A | the dot on it and A | in the card | the dot on RUN and A |
+| TV remote | the arrows choose a step (left and right), OK sets it or rests it | in the card: Menu goes to the steps | up and down, a semitone at a time | play/pause |
+
+A note set while the clock is stopped sounds on the synth a moment (while the sequencer is patched
+into it), to find it by ear. While the clock runs, the step playing is lit on the rack and marked in
+the card, and the synth's keys show the note it plays. Its notes are set ahead on the audio clock as
+the drums' are, each sounding for half its step, or held on into the next when it slides; stopping
+the clock, or pulling out either cable, lets a note held on go.
+
+The card's **Rack** has the same: **Clock** (Start or Stop, and the tempo), **Sequencer** (a row for
+each step: its number, pressed where it plays; its note, a choice of the knob's twenty-five; **Accent**
+and **Slide**; then **Octave**, **Clear** and **Line as it comes**), and **Cables** (the sequencer's
+clock in; its notes out is a choice for the synth's **Notes in**, under **Synth**). The line and its
+octave are kept for the next visit (`instruments.seq`), and the rack's cables with the rest
+(`instruments.patch`).
 
 ## Moving about
 
@@ -332,12 +379,12 @@ site full screen in a WebView whose user agent ends ` HallwayTV/<version>`), or 
 `?tv=emulate`, the room is walked with the TV's remote, as common's README has it ("The TV app"),
 through its `tv.js`:
 
-- The arrows walk and turn. OK uses what the dot in the middle of the view is on: the drums or the
-  synth (it, or the sign over it, which is at the dot's height: it walks up to play), the doorway,
-  a picture on the walls, a button on the panel, or the floor (it walks there). With the dot on a
-  picture, the hint says what OK does there: `OK: The studio` for one that leads somewhere,
-  `OK: walk up to …` for the rest. It comes back for that if it had faded, and fades again when the
-  dot leaves.
+- The arrows walk and turn. OK uses what the dot in the middle of the view is on: the drums, the
+  synth or the rack (it, or the sign over it, which is at the dot's height: it walks up to play),
+  the doorway, a picture on the walls, a button on the panel, or the floor (it walks there). With
+  the dot on a picture, the hint says what OK does there: `OK: The studio` for one that leads
+  somewhere, `OK: walk up to …` for the rest. It comes back for that if it had faded, and fades
+  again when the dot leaves.
 - **Menu** (or holding Back) moves the focus into the card, starting at **← Hallway**. There, up
   and down go from control to control, left and right go through a choice, and OK chooses. The card
   holds Start or Leave shared session; in a session, Wave, your name, and the invite link as text
@@ -352,6 +399,11 @@ through its `tv.js`:
   down an octave), OK plays it a moment (with the arpeggiator's HOLD, brings it into the chord or
   takes it out), Menu goes to its sounds in the card (its arpeggiator, its knobs and its cables
   follow), and Back steps away. The card's keys aren't there on a TV: they would be thirty-seven more stops.
+- At the rack likewise, the card open on it: the arrows choose a step (left and right; the one
+  chosen lit) and turn its note (up and down, heard on the synth while the clock is stopped), OK
+  sets it or rests it, Menu goes to the sequencer's steps in the card (each with its note, its
+  accent and its slide; the octave and the cables follow), play/pause starts and stops the clock,
+  and Back steps away.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -387,7 +439,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -404,8 +456,9 @@ Nothing is built: the page is served as it is, and the import map stays. What Ty
 library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `tsconfig.strict.json` checks only the files that pass it (so far `config.js`, `presence.js`,
 `room.js`, `controls.js`, `sound.js`, `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`,
-`board.js`, `midi.js`, `synth.js`, `synthboard.js` and `arp.js`), and `npm test` runs it too. A file
-joins its `include` when a change makes it pass. `tools/` and `test/` come later.
+`board.js`, `midi.js`, `synth.js`, `synthboard.js`, `arp.js`, `seq.js` and `rackboard.js`), and
+`npm test` runs it too. A file joins its `include` when a change makes it pass. `tools/` and
+`test/` come later.
 
 To try the way in and out locally, serve the Hallway's checkout as well (on 8088) and open the room
 as its door would:
@@ -439,8 +492,8 @@ Band Room and address, its size and colours, the window in the left wall and the
 these notes to match; `npm test` checks the page and the package say what the config says. The rest
 of `public/js/` is the template's with the instruments added: `sound.js`, `drums.js`, `clock.js`,
 `pattern.js`, `patch.js`, `delay.js`, `board.js`, `kit.js`, `synth.js`, `arp.js`, `synthboard.js`,
-`synthkit.js` and `midi.js` are this room's own, and `controls.js`, `overlay.js`, `main.js` and
-`style.css` take the instruments in.
+`synthkit.js`, `seq.js`, `rackboard.js`, `rackkit.js` and `midi.js` are this room's own, and
+`controls.js`, `overlay.js`, `main.js` and `style.css` take the instruments in.
 
 The template's fixes come here by merging it: this room's history starts at the template's first
 commit, so with the template as a remote named `template`

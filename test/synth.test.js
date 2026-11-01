@@ -5,12 +5,13 @@
 // voice, the one held longest taken for a seventh), the sustain pedal, mono (one note, stacked and
 // spread, legato and gliding), the knobs heard at once, the presets, a note played for a moment,
 // the patch bay (its sound out, the LFO and the filter envelope into the pitch, the cutoff and the
-// amp), the arpeggiator played through it, and the settings kept for the next visit.
+// amp), the arpeggiator played through it, the rack's sequencer through its NOTES in, and the
+// settings kept for the next visit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AMP_MOD, DEFAULT_SYNTH, Envelope, Glide, KEYS, LOWEST, MOD_CENTS, MOD_INPUTS, NOTE_KEYS, OCTAVES, OCTAVE_KEYS, PRESETS, SECTIONS,
-  SYNTH_KNOBS, Synth, VOICES, attackSeconds, cutoffHz, decaySeconds, detuneCents, glideSeconds, isBlack, knobName, levelOf, lfoHz,
+  SLIDE, SYNTH_KNOBS, Synth, VOICES, attackSeconds, cutoffHz, decaySeconds, detuneCents, glideSeconds, isBlack, knobName, levelOf, lfoHz,
   noteForKey, noteHz, noteName, pulseDuty, resonanceDb, spokenNote, synthText, tanhCurve,
 } from '../public/js/synth.js';
 import { ARP_GATE } from '../public/js/arp.js';
@@ -531,6 +532,78 @@ test('the arpeggiator: HOLD keeps the chord and taps come into it or leave; anot
   synth.setRange(3);
   synth.setRange();
   assert.equal(synth.arp.range, 1);
+});
+
+test("the sequencer through its NOTES in: a step's note set ahead and let go when its step says; a slide held on into the next step and glided there, legato; a rest, or the sequencer stopping, lets it go", () => {
+  const { sound, synth } = make();
+  assert.equal(synth.seqStep(36, 0.62, 0, 0.1), false, 'no sound yet: nothing');
+  const ctx = sound.wake();
+  ctx.currentTime = 1;
+  // A voice a step, started at its time and let go when its step says; no key holds it.
+  assert.equal(synth.seqStep(36, 0.62, 1.05, 1.11), true);
+  const first = synth._voices.find((v) => v.note === 36);
+  assert.deepEqual([first.ampEnv.t0, first.ampEnv.t1, first.gate], [1.05, 1.11, false]);
+  assert.equal(synth.down.size, 0);
+  // An accent: harder.
+  synth.seqStep(36, 1, 1.2, 1.26);
+  const accented = synth._voices.find((v) => v.ampEnv.t0 === 1.2);
+  assert.ok(accented !== first && accented.ampEnv.peak > first.ampEnv.peak);
+  // A slide: held on, then the next step glides its voice to its note, not started again.
+  synth.seqStep(36, 0.62, 1.4, Infinity);
+  const slid = synth._voices.find((v) => v.ampEnv.t0 === 1.4);
+  assert.ok(!slid.ampEnv.released(9), 'held on');
+  synth.seqStep(48, 0.62, 1.55, 1.61);
+  assert.deepEqual([slid.note, slid.ampEnv.t0, slid.ampEnv.t1], [48, 1.4, 1.61], 'the same voice, legato, let go when the next step says');
+  assert.deepEqual(last(slid.saw.detune).slice(0, 3), ['target', (48 - 69) * 100, 1.55], 'glided to C3 from its step, its drift (none here) kept');
+  assert.ok(near(slid.pitch.tau, Math.max(glideSeconds(synth.knobs.glide), SLIDE) / 3), 'over SLIDE at the least');
+  assert.ok(synth._voices.filter((v) => v.ampEnv.t0 === 1.55).length === 0, 'no voice started for it');
+  // GLIDE longer than SLIDE: its time.
+  synth.setKnob('glide', 0.6);
+  synth.seqStep(36, 0.62, 1.7, Infinity);
+  synth.seqStep(43, 0.62, 1.85, 1.9);
+  const glided = synth._voices.find((v) => v.note === 43);
+  assert.ok(glideSeconds(0.6) > SLIDE && near(glided.pitch.tau, glideSeconds(0.6) / 3));
+  // A rest after a slide lets the note held on go at the rest's time.
+  synth.seqStep(41, 0.62, 2, Infinity);
+  const held = synth._voices.find((v) => v.ampEnv.t0 === 2);
+  assert.equal(synth.seqStep(-1, 0, 2.15, 2.2), false);
+  assert.ok(held.ampEnv.released(2.15) && !held.ampEnv.released(2.149));
+  // The sequencer stopped, or its cable pulled: a note held on let go now.
+  synth.seqStep(43, 0.62, 3, Infinity);
+  const ending = synth._voices.find((v) => v.ampEnv.t0 === 3);
+  ctx.currentTime = 3.05;
+  synth.seqEnd();
+  assert.ok(ending.ampEnv.released(3.05) && !ending.ampEnv.released(3.04));
+  synth.seqStep(45, 0.62, 3.2, 3.26);
+  assert.equal(synth._voices.find((v) => v.note === 45).ampEnv.t0, 3.2, 'after it, started afresh');
+  // A step whose time has gone: now; and the pedal doesn't hold its notes.
+  ctx.currentTime = 4;
+  synth.seqStep(38, 0.62, 3.9, 4.05);
+  assert.ok(synth._voices.some((v) => v.note === 38 && v.ampEnv.t0 === 4));
+  synth.setSustain(true);
+  synth.seqStep(40, 0.62, 4.2, 4.26);
+  assert.ok(synth._voices.find((v) => v.ampEnv.t0 === 4.2).ampEnv.released(4.26));
+  synth.setSustain(false);
+  // Mono: the voices on the note together; a slide glides them all, legato; a key pressed between
+  // takes them, so the next step starts afresh.
+  synth.setMono(true);
+  ctx.currentTime = 5;
+  synth.seqStep(36, 0.62, 5, Infinity);
+  const voices = synth._voices, stack = synth.knobs.detune > 0 ? VOICES : 1;
+  assert.equal(voices.filter((v) => v.note === 36 && v.ampEnv.t0 === 5).length, stack);
+  synth.seqStep(43, 0.62, 5.1, 5.16);
+  assert.ok(voices.every((v) => v.note === 43));
+  assert.ok(voices.slice(0, stack).every((v) => v.ampEnv.t0 === 5 && v.ampEnv.t1 === 5.16), 'legato, let go when the step says');
+  synth.seqStep(36, 0.62, 5.3, Infinity);
+  synth.noteOn(60);
+  synth.noteOff(60);
+  synth.seqStep(38, 0.62, 5.45, 5.5);
+  assert.ok(voices.slice(0, stack).every((v) => v.note === 38 && v.ampEnv.t0 === 5.45), 'a key between: afresh');
+  // Every note let go (the page put away): nothing held on.
+  synth.seqStep(36, 0.62, 6, Infinity);
+  synth.allOff();
+  synth.seqStep(41, 0.62, 6.2, 6.3);
+  assert.ok(voices.slice(0, stack).every((v) => v.ampEnv.t0 === 6.2));
 });
 
 test('the knobs, Mono, the preset, the octave and the arpeggiator are kept for the next visit, and what is kept is read with care', () => {

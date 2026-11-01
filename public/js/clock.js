@@ -7,7 +7,7 @@
 // A pulse that fell too far behind to be heard in time (the page stalled, or was put away) is
 // skipped rather than played late, but counted, so that what follows the count stays in step. Its
 // outputs are jacks for the patch's cables (patch.js): one sends every pulse, one every 2nd and one
-// every 4th.
+// every 4th, on the drum board and again in the rack beside the synth.
 import { pageStorage } from './sound.js';
 
 /** @typedef {import('./sound.js').Store} Store */
@@ -42,15 +42,29 @@ export const START_LEAD = 0.05;
  * @typedef {{ id: string, every: number }} ClockOut
  */
 
-/** The clock's outputs (jacks in patch.js): every pulse, every 2nd, every 4th. @type {readonly ClockOut[]} */
+/** The clock's outputs on the drum board (jacks in patch.js): every pulse, every 2nd, every 4th. @type {readonly ClockOut[]} */
 export const CLOCK_OUTS = Object.freeze([
   { id: 'clock.x1', every: 1 },
   { id: 'clock.d2', every: 2 },
   { id: 'clock.d4', every: 4 },
 ]);
 
+/** Its outputs again in the rack, beside the synth (rackboard.js), likewise. @type {readonly ClockOut[]} */
+export const RACK_CLOCK_OUTS = Object.freeze([
+  { id: 'rack.x1', every: 1 },
+  { id: 'rack.d2', every: 2 },
+  { id: 'rack.d4', every: 4 },
+]);
+
 /** Seconds between pulses at a tempo (beats per minute). @param {number} tempo */
 export const stepSeconds = (tempo) => 60 / tempo / STEPS_PER_BEAT;
+
+/**
+ * Every how many pulses the clock's output `id` sends one (on the board or in the rack), else 0: an
+ * id that isn't one of them, or null (nothing plugged in).
+ * @param {string | null} id
+ */
+export const clockEvery = (id) => (CLOCK_OUTS.find((o) => o.id === id) ?? RACK_CLOCK_OUTS.find((o) => o.id === id))?.every ?? 0;
 
 /**
  * Whether the clock's output `id` sends pulse n (every one, every 2nd or every 4th, counting from
@@ -59,8 +73,8 @@ export const stepSeconds = (tempo) => 60 / tempo / STEPS_PER_BEAT;
  * @param {number} n
  */
 export function clockSends(id, n) {
-  const out = CLOCK_OUTS.find((o) => o.id === id);
-  return !!out && n % out.every === 0;
+  const every = clockEvery(id);
+  return every > 0 && n % every === 0;
 }
 
 /** @type {(v: number, lo: number, hi: number) => number} */

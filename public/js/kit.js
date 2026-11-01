@@ -8,8 +8,8 @@
 // tempo and the delay's settings (canvases, each redrawn when they change, at most ten times a
 // second), over its face (one canvas, drawn once: its sections, its jacks and what they are); the RUN
 // button, its light lit while the clock runs and brighter on each beat; the cables between the
-// jacks, its own and the synth's (addJacks), each in its colour with a plug at either end, kept off
-// both desks (made again when the patch changes), and the one being carried, from its jack to
+// jacks, its own, the synth's and the rack's (addJacks), each in its colour with a plug at either end,
+// kept off every desk (made again when the patch changes), and the one being carried, from its jack to
 // wherever it is pointed (moved each frame, in place), and a ring round the jack pointed at; and its
 // sign on the wall over it. In VR a stick in each hand that holds a controller, near the board, whose
 // tip comes down on a pad to play it (board.js strikeAt), as hard as it was going, or on a step key
@@ -53,14 +53,17 @@ export const STICK = Object.freeze({ back: 0.04, tip: 0.36 });
 const CELL = 256;
 /** How far the RUN button stands out of the panel. */
 const BUTTON = 0.008;
-/** What a hand's reticle shows on near the board (or the synth: its dials and buttons), where its laser is a stick. */
-const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button']);
+/**
+ * What a hand's reticle shows on near the board (or the synth: its dials and buttons; or the rack: its
+ * keys, knobs and buttons), where its laser is a stick.
+ */
+const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton']);
 /**
  * A cable: its radius, its plug's length out of the panel and radius, how far it hangs (`sag`, and
  * `sagPer` metre between its ends, to `sagMax`), and how far the one carried reaches from its jack
- * (from one end of the board to the far end of the synth); and how finely it is drawn.
+ * (from one end of the board to the far end of the rack); and how finely it is drawn.
  */
-const CABLE = { r: 0.0042, plug: 0.032, plugR: 0.0068, sag: 0.03, sagPer: 0.2, sagMax: 0.12, reach: 2 };
+const CABLE = { r: 0.0042, plug: 0.032, plugR: 0.0068, sag: 0.03, sagPer: 0.2, sagMax: 0.12, reach: 3.4 };
 const SEGMENTS = 20, SIDES = 8;
 const COS = Float32Array.from({ length: SIDES }, (_, k) => Math.cos((k / SIDES) * 2 * Math.PI));
 const SIN = Float32Array.from({ length: SIDES }, (_, k) => Math.sin((k / SIDES) * 2 * Math.PI));
@@ -827,9 +830,9 @@ export class Kit {
   }
 
   /**
-   * Another desk's jacks (the synth's, synthboard.js), after those there are: cables go into them
-   * too, kept off its top (what stands on it, `rise` high) and in front of its panel. Where its first
-   * is in the room's list of jacks.
+   * Another desk's jacks (the synth's, synthboard.js; the rack's, rackboard.js), after those there
+   * are: cables go into them too, kept off its top (what stands on it, `rise` high) and in front of its
+   * panel. Where its first is in the room's list of jacks.
    * @param {import('./board.js').Desk & { panel: { jacks: readonly { a: number, b: number }[] } }} D
    * @param {number} rise
    */
@@ -1193,9 +1196,9 @@ export class Kit {
   /**
    * In VR, per frame, after the controls' update (the rig's matrices are this frame's): each stick
    * shows while its hand holds a controller near the board, or where `nearAlso` says (the synth's
-   * keys), and that hand's laser hides, its reticle too but on a knob, a jack, RUN, a step key, a
-   * dial or a button; and each stick's tip, or forefinger of a hand without one, plays a pad, or sets
-   * a step, it comes down on.
+   * keys, the rack's), and that hand's laser hides, its reticle too but on a knob, a jack, RUN, a
+   * step key, a dial, a button or the rack's keys, knobs and buttons; and each stick's tip, or
+   * forefinger of a hand without one, plays a pad, or sets a step, it comes down on.
    * @param {Hand[]} hands
    * @param {THREE.XRHandSpace[]} fingers the hands' joints (renderer.xr.getHand)
    * @param {number} dt

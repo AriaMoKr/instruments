@@ -13,9 +13,11 @@ with its clock, a 16-step pattern per pad and the first jacks and cables (the cl
 pattern, any pad into the delay). Beside it the synth: six analog voices, poly with a mono switch,
 twenty-five knobs and eight presets, played live on every device, and its patch bay, cabled to the
 board's (its sound into the delay, the clock into its arpeggiator, the LFO and the filter envelope
-into pitch, cutoff and amp). The plan the user agreed to ("patch the whole band"): the synth
-semi-modular (a rack later), then a keyboard and an electric guitar, all patchable. Add an
-instrument only once the user has agreed to it. What makes it this room is
+into pitch, cutoff and amp). Beside that its rack, a case of modules: the clock again, and a
+16-step sequencer (a note, an accent and a slide a step) cabled into the synth's NOTES in. The plan
+the user agreed to ("patch the whole band"): the synth semi-modular, its rack (more modules to
+come), then a keyboard and an electric guitar, all patchable. Add an instrument, or a module, only
+once the user has agreed to it. What makes it this room is
 `config.js` (id `instruments`, sign Band Room, 7 × 8 × 3.2 m, a dark wooden floor and clay walls,
 the window in the left wall, port 8100, glow `#5cc8a8`), and `index.html`, `package.json`,
 `.claude/launch.json` and the pictures to match. Like the template it follows the Hallway
@@ -91,24 +93,31 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   the view, and of the other desk (`free`), looking down, or a little up on a phone, then `at`
   'board' and `playing`; in VR a teleport to `boardStand`), `stepAway`, `onPad(i, velocity)`,
   `onStep(s)`, `onKnob(k, by)` (the strip's and the panel's), `onJack(j)` (the room's list of jacks,
-  the board's then the synth's: either desk's at once while playing at one, or in VR), `onRun()`,
-  `onDrop()` (while `carrying`: Escape, or choosing anything but a control of the desk played at
-  or the other desk, which `_walkTo`s there with it, `goingTo` set till it arrives; a walk taken
-  over drops it), `deskOf(hit)`, `onPick(dc, dr)` (a TV's arrows, `arrowsPick`), `onPlaying(at)`
-  ('board', 'synth' or null),
+  the board's, the synth's, then the rack's: any desk's at once while playing at one, or in VR),
+  `onRun()`, `onDrop()` (while `carrying`: Escape, or choosing anything but a control of the desk
+  played at or another desk, which `_walkTo`s there with it, `goingTo` set till it arrives; a walk
+  taken over drops it), `deskOf(hit)`, `onPick(dc, dr)` (a TV's arrows, `arrowsPick`),
+  `onPlaying(at)` ('board', 'synth', 'rack' or null),
   `hoverPad`/`hoverStep`/`hoverKnob`/`hoverJack`, `aim` (the pointer's hit, for a cable carried)
   and `selectHand` (in VR, the hand that last chose: `_xrSelect`). The synth likewise: `castRay`
   adds synthboard.js `hitSynth` (`key`, `dial`, `button`, `jack`; kinds key, dial, button, jack and
-  synth, the nearer of the two desks), `clampWalk` round it too, `walkToSynth` (`at` 'synth'; in VR
+  synth, the nearest desk's), `clampWalk` round it too, `walkToSynth` (`at` 'synth'; in VR
   `boardStand(synth, 0.3)`), `onNoteOn(note, velocity)` and `onNoteOff(note)` (a key held: a
   press, each pointer its own (`_fingers`, sliding from key to key), a computer key by `code`
   (`_keysDown`), the notes as they were when it went down), `onNoteTap(note, velocity)` (a click,
   A, OK, a trigger), `onDial(d, by)`, `onButton(i)`, `onOctave(by)` (Z, X), `onKeyPick(by)` (a
   TV's arrows), `lowest()` (main.js's, the keys' lowest note), `hoverKey`/`hoverDial`/
-  `hoverButton`. Common's hooks: `takeKey` (playing: the pads' keys or the synth's, Space for RUN,
-  Escape a cable carried, else away), `takeWheel` and `takeHand` (a knob or a dial, eased, the
-  tempo more slowly), and presses on pads, step keys, jacks, RUN, keys, dials and buttons as they
-  go down (`_bindBoard`); keys held let go on keyup, blur, VR and stepping away (`_letGo`).
+  `hoverButton`. The rack likewise: `castRay` adds rackboard.js `hitRack` (`seq`, `rack`; kinds
+  seq, accent and slide (`SEQ_ROWS`, a step's keys), rackknob, rackbutton, jack and rack),
+  `clampWalk` round it too, `walkToRack` (`at` 'rack'; in VR `boardStand(rack, 0.3)`),
+  `onSeqKey(row, s)`, `onRackKnob(k, by)` (a step's note, the tempo), `onRackButton(i)` (RUN, the
+  octave), `onSeqOctave(by)` (Z, X), `onSeqPick(steps, semitones)` (a TV's arrows),
+  `hoverSeqKey`/`hoverRackKnob`/`hoverRackButton`. Common's hooks: `takeKey` (playing: the pads'
+  keys, the synth's, or the steps' (1–8, Q–I; Shift an accent), Space for RUN, Escape a cable
+  carried, else away), `takeWheel` and `takeHand` (a knob, a dial or the rack's knob, eased, the
+  tempo more slowly), and presses on pads, step keys, jacks, RUN, keys, dials, buttons and the
+  rack's keys, knobs and buttons as they go down (`_bindBoard`); keys held let go on keyup, blur,
+  VR and stepping away (`_letGo`).
 - The drums: `sound.js` (one AudioContext, `latencyHint: 'interactive'`, made or woken only in a
   press's event, `onReady` once its graph is; a channel per instrument, volume and mute, a
   WaveShaper soft clipper; a note set for a time (`start`), `add(note, group)` cuts a group's last
@@ -119,26 +128,29 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   into the drums' channel, `out(i)`, its jack, `hit(i, v)` now and `play(i, v, when)` set for a
   time), `clock.js` (`Clock`: the tempo, `instruments.clock`, never running on load; `advance(now,
   onPulse)` hands out pulses `LOOKAHEAD` ahead by the audio clock, counting but skipping those
-  `LATE` behind; `CLOCK_OUTS` ×1, ÷2, ÷4), `pattern.js` (`Pattern`: 16 steps per pad, `steps[i]`
-  arrays that stay the same, `DEFAULT_PATTERN`, `stepOf`, kept as x/. text, `instruments.pattern`),
-  `patch.js` (`JACKS`, the board's then the synth's: id, module, name, label, dir, kind clock, audio
-  or mod; `Patch`: an input takes one cable, `plug`, `unplug`, `canPlug`, `source`, `cables()`,
+  `LATE` behind; `CLOCK_OUTS` ×1, ÷2, ÷4, the rack's `RACK_CLOCK_OUTS` likewise, `clockEvery(id)`),
+  `pattern.js` (`Pattern`: 16 steps per pad, `steps[i]` arrays that stay the same,
+  `DEFAULT_PATTERN`, `stepOf`, kept as x/. text, `instruments.pattern`), `patch.js` (`JACKS`, the
+  board's, the synth's, then the rack's: id, module, name, label, dir, kind clock, audio, mod or
+  notes; `Patch`: an input takes one cable, `plug`, `unplug`, `canPlug`, `source`, `cables()`,
   `onChange(to, from, was)`, `instruments.patch`; `DEFAULT_PATCH` the clock's ×1 into the drums and
-  into the synth's arpeggiator), `delay.js` (`Delay`: a
+  into the synth's arpeggiator, the rack's ×1 into the sequencer, and its notes into the synth),
+  `delay.js` (`Delay`: a
   tape-style loop in steps of the clock into the 'delay' channel, `input()` once there is sound,
   `setTempo`, knobs time/feedback/level, `instruments.delay`), `board.js` (pure: `layoutBoard`, its
   step keys, pads, knobs (`part` drum, clock or delay; `on` the top or the panel), strip, the panel
   leaning back from the top's back edge (CLOCK, DRUMS and DELAY; its jacks, RUN, the display) and
-  sign at eye height; `panelPoint`, `jackAt`, `hitBoard`, `boardBlocks`, `clampBoard`,
+  sign at eye height; `panelPoint`, `jackAt`, `areaAt`, `hitBoard`, `boardBlocks`, `clampBoard`,
   `boardOutline`, `boardFront` and `inView`, `boardStand`, `strikeAt` (a pad or a step key) and
   `strikeVelocity`), `kit.js` (the board in 3D, lit as the room is: the pads' glow and the step keys
   in vertex colours (`setSteps`, `playhead`, `hoveredStep`), the strip's canvas, the panel's face
-  (`drawJack`, `drawPlate`, the synth's too) and values, RUN's light (`setRunning`, `beat`), the
-  knobs instanced, the cables between both desks' jacks (`addJacks(desk, rise)` the synth's after
-  the board's; `hang` keeps them off each desk's top and in front of its panel; `setCables`, and the
-  one carried, `CABLE.reach` at most: `carry`, `aimAt`, `hoverJack`, its ring on either panel), the
-  sign, the sticks and fingertips in VR (`onStrike`, `onStep`; `updateXR`'s `nearAlso`, the synth's
-  keys, shows the sticks there too); it imports builder.js and textures.js, so it is not in strict).
+  (`drawJack`, `drawPlate`, the synth's and the rack's too) and values, RUN's light (`setRunning`,
+  `beat`), the knobs instanced, the cables between the desks' jacks (`addJacks(desk, rise)`, the
+  synth's then the rack's after the board's; `hang` keeps them off each desk's top and in front of
+  its panel; `setCables`, and the one carried, `CABLE.reach` at most: `carry`, `aimAt`,
+  `hoverJack`, its ring on any panel), the sign, the sticks and fingertips in VR (`onStrike`,
+  `onStep`; `updateXR`'s `nearAlso`, the synth's keys or the rack's, shows the sticks there too);
+  it imports builder.js and textures.js, so it is not in strict).
 - The synth: `synth.js` (`SECTIONS`; `SYNTH_KNOBS`, 25 knobs 0…1, `DEFAULT_SYNTH`, and their
   curves (`cutoffHz`, `glideSeconds`, …), `synthText` in words, `knobName`; `PRESETS`, four poly
   then four mono; `KEYS` 37 from `LOWEST` 48, `OCTAVES`, `noteName`, `spokenNote`, `isBlack`,
@@ -157,7 +169,10 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   at `AMP_MOD` with a cable in AMP (each voice's `env`, a ConstantSource its twin Envelope `envOut`
   drives as the filter's); and its arpeggiator, `arp` (arp.js): `setArp(mode | null)`, `setHold`,
   `setRange(n?)`, `arpStep(t, length)` (a step of the room's clock) and `arpRun(now, until, step)`
-  (its own), `onArp` (a chord begun: main.js's `schedule`); kept in `instruments.synth`), `arp.js`
+  (its own), `onArp` (a chord begun: main.js's `schedule`); its notes in, `seqStep(note, velocity,
+  t, until)` (a step of the sequencer's set for its time, a rest -1; `until` Infinity slides on into
+  the next, `_tie`, gliding at least `SLIDE`; in poly the voice let go longest ago) and
+  `seqEnd()`; kept in `instruments.synth`), `arp.js`
   (pure, strict: `ARP_MODES` up, down, updown, random, `ARP_RANGES`, `ARP_GATE`, `ARP_LATE`;
   `Arp`: `mode`, `hold`, `range`, `press`/`release` (keys), `toggle` (a tap under HOLD), `next`,
   `run` (its own clock), `played` (its own clock's next after a step on any clock); `arpWords`),
@@ -175,6 +190,24 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   stick's tip or a forefinger down into a key plays it as hard as it went, held till `LIFT` over
   its top, sliding on at `GLISS`; `endXR`; `onKeyDown(k, velocity, source)`, `onKeyUp(k)`; its
   cables are kit.js's; not in strict).
+- The rack: `seq.js` (pure, strict: `SEQ_RANGE` 24 semitones up from the line's lowest,
+  `SEQ_LOWEST` 36 moved by `SEQ_OCTAVES` −1…2, `SEQ_GATE`, `SEQ_VELOCITY` normal and accent,
+  `DEFAULT_LINE` in C minor; `Seq`: `steps` (each `on`, `note`, `accent`, `slide`; objects that stay
+  the same), `toggle`, `toggleAccent`, `toggleSlide`, `setNote`, `setOctave`, `octave`, `lowest`,
+  `play(s)` (note, velocity, slide; null a rest), `noteOf`, `clear`, `reset`, kept as x/. text and
+  notes, `instruments.seq`), `rackboard.js` (pure, strict: `RACK`'s measures, `layoutRack(L,
+  synth)` right of the synth and as deep, a Desk as board.js's functions take: its `keys`
+  (`SEQ_ROWS` seq, accent, slide; row r's key for step s is r × 16 + s), `numbers`, `names`,
+  `labels`, `knobs` (`part` note, a step's on the top, or tempo on the panel), the panel's
+  `modules` (clock, seq and two blank), `displays`, `buttons` (run, octave.down, octave.up), jacks
+  (`jackBase`) and `titles`, sign; `rackKeyAt`, `rackKnobAt`, `rackButtonAt`, `hitRack` and
+  `rackStrike` (the key a tip comes down on, slanting from one to the next)), and `rackkit.js` (the
+  rack in 3D: the stand, the keys instanced (lit where set, the step playing, hovered), the knobs,
+  one canvas drawn once for what is written on it and another, redrawn at most ten times a second,
+  for the notes' names and the two displays; RUN's light, the sign; `setLine`, `setLast`,
+  `setTempo`, `setRunning`, `beat`, `playhead`, `hovered`, `update`; in VR `updateXR(hands,
+  fingers, sticks)`, a tip coming down on a key presses it, `endXR`; `onKey(row, s, source)`; its
+  cables are kit.js's; not in strict).
 - `midi.js` (Web MIDI: `readMidi`, a message from its bytes (on, off, sustain, mod, bend, alloff,
   with its channel), `listenMidi`, asked for only from the card's button, at once when `granted`).
 - `panel.js`: the control panel on the wall (outside's), redrawn only on a change. `overlay.js`: the
@@ -189,10 +222,13 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   hidden on a TV), the presets as a choice (chosen again, `onPreset` anyway), Mono, As it comes,
   the octave, Arpeggiator (`arpInputs`, Off and its ways, `onArp`; Hold, `onHold`; Range,
   `onRange`), its knobs as sliders in a fieldset per section, and its Cables (`synthCablesBox`)
-  (`setSynth`, `setSynthKnobs`, `setNotes`); and Sound: the volume and Mute, and Play from a MIDI
-  device), the hint (`#hint`, kept clear of
-  the buttons, `_placeHint`; at the board `BOARD_HINTS`, at the synth `SYNTH_HINTS`,
-  `setPlaying(at)`), Wave,
+  (`setSynth`, `setSynthKnobs`, `setNotes`); Rack (`openRack`): Play at the rack, its Clock (the
+  room's again), Sequencer (a row a step: its number an `aria-pressed` toggle, its note a
+  `<select>`, Accent and Slide; the step playing marked, `setSeqPlayhead`; Octave, Clear, Line as it
+  comes; `setSeq`; `onSeqKey(row, s)`, `onSeqNote`, `onSeqOctave`, `onClearSeq`, `onResetSeq`) and
+  its Cables (`rackCablesBox`); and Sound: the volume and Mute, and Play from a MIDI device), the
+  hint (`#hint`, kept clear of the buttons, `_placeHint`; at the board `BOARD_HINTS`, at the synth
+  `SYNTH_HINTS`, at the rack `RACK_HINTS`, `setPlaying(at)`), Wave,
   Copy invite link, Fullscreen, Enter VR, the aiming dot, and toasts (`role="status"`, polite). With
   `tv`, Wave is in the card and the invite is text there (`inviteText`), and the hints are the
   remote's (`tv`, `tv-card`). With pieces, the hints name the pictures (`PIECE_HINTS`, else an
@@ -211,18 +247,25 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `access.js`: `applyAccess`, `setAccess`, re-read on `storage` and `pageshow`; the `reduce-motion`
   class on `<html>`), the TV (common's `tv.js`: `tvMode()`, the `tv` class on `<html>`, a `Remote`
   over the card and the canvas with `use` = `controls.useMiddle()`, or the selected pad, or the
-  chosen key (`chosenKey`, from the arrows) while playing, `step` = `stepBack`, the room's own step
-  back for Back (away from an instrument), and `first`, the steps or the synth's sounds while
-  playing; the card's play buttons leave the card before walking, so arriving (at once with less
+  chosen key (`chosenKey`, from the arrows), or the chosen step (`chosenStep`) while playing, `step`
+  = `stepBack`, the room's own step back for Back (away from an instrument), and `first`, the steps,
+  the synth's sounds or the sequencer's steps while playing; the card's play buttons leave the card
+  before walking, so arriving (at once with less
   motion) forgets it; `answerApp`; no fullscreen or XR), the drums (`play(i,
   velocity)`, `select(i)`, `setKnob`, the overlay's and the controls' callbacks, the kit's strikes
   with a haptic pulse, MIDI, the sound woken by presses and put to sleep on `pagehide` or when
   hidden), the clock (`toggleClock`, also a play/pause key anywhere; `setTempo`; `schedule` from the
   frame loop and a 25 ms timer: `clock.advance` by the audio clock, a pulse a step of the drums when
-  the output in their clock in sends it (`drumsEvery`), and of the arpeggiator likewise
-  (`synthEvery`, `synth.arpStep`), `drums.play` set for its time, and a ring of what each pulse
-  shows once heard, `showPulses`; the arpeggiator on its own clock, `synth.arpRun`, while the room's
-  is stopped or not patched into it), the pattern (`toggleStep`), the delay (`setDelayKnob`;
+  the output in their clock in sends it (`drumsEvery`), of the arpeggiator likewise
+  (`synthEvery`, `synth.arpStep`), and of the sequencer (`seqEvery`; its step's note
+  `synth.seqStep` for its time while its notes go into the synth, `seqPlays`; `synth.seqEnd()` when
+  the clock stops or either cable comes out), `drums.play` set for its time, and a ring of what each
+  pulse shows once heard (the sequencer's note on the synth's keys too), `showPulses`; the
+  arpeggiator on its own clock, `synth.arpRun`, while the room's is stopped or not patched into
+  it), the pattern (`toggleStep`), the sequencer (`seq`; `toggleSeqKey(row, s)`, `setSeqNote(s,
+  n)`, heard a moment while the clock is stopped, `setSeqOctave`, `clearSeq`, `resetSeq`, shown on
+  the rack (`setLast` on its display) and in the card; the controls', the card's and the rack
+  kit's callbacks), the delay (`setDelayKnob`;
   `feedDelay(id, on)`: the output patched into it, a pad's or the synth's, connected to
   `delay.input()` on `patch.onChange`, `sound.onReady` and `synth.onBuilt`), the cables
   (`showPatch`, `cableColor`; `jackIndex(id)` and `jackId(k)` between patch.js's ids and the room's
@@ -236,7 +279,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   others the synth's, or the drums' while `playingAt` the board; sustain, mod, bend and all off the
   synth's), and the frame loop.
 - `style.css`: the page over the view (a cable's choice under its input's name where the longest
-  wouldn't fit beside it), and the 10-foot view under `html.tv` (the hallway's: 960 × 540 at a pixel
+  wouldn't fit beside it; the sequencer's rows, `.seq-step`), and the 10-foot view under `html.tv`
+  (the hallway's: 960 × 540 at a pixel
   ratio of 2, 18 px text, 4 px focus rings, the TV's safe margins, the hint and toasts beside the
   card).
 
@@ -253,7 +297,7 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   served. `strict` comes a file at a time: `tsconfig.strict.json` (it, with `strict` on) includes
   only the files that pass it, `config.js`, `presence.js`, `room.js`, `controls.js`, `sound.js`,
   `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`, `board.js`, `midi.js`, `synth.js`,
-  `synthboard.js` and `arp.js` so far, and
+  `synthboard.js`, `arp.js`, `seq.js` and `rackboard.js` so far, and
   `test/types.test.js` runs it too. A file joins its `include` when a change makes it pass; what an
   included file imports is checked strictly with it. The rest has a few hundred errors with it,
   mostly untyped parameters and values that may be null (a canvas's 2D context). `tools/` and
@@ -265,7 +309,9 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   value)`, `schedule()`, synth, synthDesk, synthKit, `noteOn(note, v)`, `noteOff(note)`,
   `tapNote(note, v)`, `keyDown(k, v)`, `keyUp(k)`, `chooseSound(id)`, `resetSynth()`,
   `setSynthKnob(id, value)`, `setMono(on)`, `setOctave(o)`, `setArp(mode)`, `setHold(on)`,
-  `setRange(n)`, `chosenKey`, `carried`, access, `preview()`, `social()`, `tick(dt, n)`, `ready`,
+  `setRange(n)`, seq, rackDesk, rackKit, `toggleSeqKey(row, s)`, `setSeqNote(s, n)`,
+  `setSeqOctave(o)`, `clearSeq()`, `resetSeq()`, `chosenKey`, `chosenStep`, `carried`, access,
+  `preview()`, `social()`, `tick(dt, n)`, `ready`,
   true once the pieces' pictures have loaded or failed). Tests fake Web Audio with
   `test/helpers/audio.js` (`FakeContext`, whose params refuse what a browser's would) and the page
   with `test/helpers/dom.js`. A hidden browser pane gets no animation frames: drive it with

@@ -97,7 +97,7 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 .settings label, .choices label { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; font-size: 13px; cursor: pointer; }
 .settings input, .choices input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
-/* The instruments, each a part of the card (Drums, Synth) and the room's Sound: each fieldset a
+/* The instruments, each a part of the card (Drums, Synth, Rack) and the room's Sound: each fieldset a
    legend over its rows, each knob a slider with what it is set to above it. */
 .part { display: grid; gap: 10px; margin-top: 8px; }
 /* Without WebGL: each part under its name. */
@@ -164,6 +164,29 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 .key:focus-visible { position: relative; z-index: 2; outline-offset: -3px; }
 .choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
 .part .section { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+
+/* Rack: going to play at the rack (or stepping away), its clock, its sequencer's steps a row each,
+   as they go along its top: the step's number, filled where it plays; its note; its accent and its
+   slide, filled in their colours on the rack where they are on; the first of each beat edged
+   brighter, the one playing ringed. Then its octave and its cables. */
+.seq-steps { display: grid; gap: 4px; }
+.seq-step { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; align-items: center; gap: 4px; }
+.seq-on, .seq-accent, .seq-slide {
+  min-height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid rgba(224, 187, 114, 0.3);
+  background: #2c2a27; color: var(--muted); font-size: 12px; touch-action: manipulation;
+}
+.seq-on { padding: 0; font-variant-numeric: tabular-nums; }
+.seq-step.beat .seq-on { border-color: var(--line); }
+.seq-on:hover, .seq-accent:hover, .seq-slide:hover { border-color: var(--accent); }
+.seq-on[aria-pressed="true"] { background: #5cc8a8; color: #1a1208; font-weight: 700; }
+.seq-accent[aria-pressed="true"] { background: #e8703c; color: #1a1208; font-weight: 700; }
+.seq-slide[aria-pressed="true"] { background: #f2b648; color: #1a1208; font-weight: 700; }
+.seq-step.now .seq-on { box-shadow: inset 0 0 0 2px var(--text); }
+.seq-step.now .seq-on[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #1a1208; }
+.seq-note {
+  min-width: 0; min-height: 28px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--line);
+  background: #2c2a27; color: var(--text); font: inherit; font-size: 13px;
+}
 
 /* How to move. */
 .hint {
@@ -259,6 +282,10 @@ html.tv .part .section { gap: 8px 16px; }
 html.tv .steps { gap: 8px; }
 html.tv .step { min-height: 40px; font-size: 16px; }
 html.tv .plug select { min-height: 40px; padding: 4px 8px; font-size: 17px; }
+html.tv .seq-steps { gap: 8px; }
+html.tv .seq-step { grid-template-columns: 46px minmax(0, 1fr) auto auto; gap: 8px; }
+html.tv .seq-on, html.tv .seq-accent, html.tv .seq-slide { min-height: 40px; font-size: 16px; }
+html.tv .seq-note { min-height: 40px; padding: 4px 8px; font-size: 17px; }
 html.tv .check input { width: 20px; height: 20px; }
 html.tv .check:has(input:focus-visible) { outline: 4px solid #ffd98a; outline-offset: 4px; border-radius: 4px; }
 html.tv .check input:focus-visible { outline-width: 2px; outline-offset: 1px; box-shadow: none; }
@@ -272,13 +299,16 @@ html.tv .toast { font-size: 17px; }
 html.tv .aim { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-width: 3px; }
 
 @media (forced-colors: active) {
-  .card, .hint, .toast, .chip, .pill, .way-back, .piece, .my-name, .pad, .step, .plug select, .key { border: 1px solid CanvasText; }
+  .card, .hint, .toast, .chip, .pill, .way-back, .piece, .my-name, .pad, .step, .plug select, .key,
+  .seq-on, .seq-accent, .seq-slide, .seq-note { border: 1px solid CanvasText; }
   .pad { border-bottom-width: 3px; }
   .key.black { forced-color-adjust: none; background: CanvasText; }
   .key.down, .key.black.down { forced-color-adjust: none; background: Highlight; color: HighlightText; }
   .pad kbd { color: CanvasText; }
-  .step[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
-  .step.now { forced-color-adjust: none; border: 3px double CanvasText; box-shadow: none; }
+  .step[aria-pressed="true"], .seq-on[aria-pressed="true"], .seq-accent[aria-pressed="true"], .seq-slide[aria-pressed="true"] {
+    forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight;
+  }
+  .step.now, .seq-step.now .seq-on { forced-color-adjust: none; border: 3px double CanvasText; box-shadow: none; }
   .pill.on, .chip[aria-expanded="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
   .aim { forced-color-adjust: none; border-color: CanvasText; box-shadow: none; }
   .aim.hover { background: Highlight; }

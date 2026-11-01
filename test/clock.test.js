@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CLOCK_OUTS, Clock, LATE, LOOKAHEAD, START_LEAD, STEPS_PER_BEAT, TEMPO, clockSends, stepSeconds,
+  CLOCK_OUTS, Clock, LATE, LOOKAHEAD, RACK_CLOCK_OUTS, START_LEAD, STEPS_PER_BEAT, TEMPO, clockEvery, clockSends, stepSeconds,
 } from '../public/js/clock.js';
 import { memoryStorage } from './helpers/audio.js';
 
@@ -44,6 +44,11 @@ test('a pulse is a 16th note at the tempo, from 60 to 180 beats a minute; the ou
   assert.deepEqual(sent('pad.kick'), [], 'not an output of the clock');
   assert.deepEqual(sent(null), [], 'nothing plugged in');
   assert.ok(Object.isFrozen(TEMPO) && Object.isFrozen(CLOCK_OUTS));
+  // The rack's outs: the same clock's, sent alike.
+  assert.deepEqual(RACK_CLOCK_OUTS.map((o) => [o.id, o.every]), [['rack.x1', 1], ['rack.d2', 2], ['rack.d4', 4]]);
+  assert.deepEqual([sent('rack.x1'), sent('rack.d2'), sent('rack.d4')], [sent('clock.x1'), sent('clock.d2'), sent('clock.d4')]);
+  assert.deepEqual(['clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d2', 'rack.d4', 'seq.notes', 'nope', null].map((id) => clockEvery(id)), [1, 2, 4, 1, 2, 4, 0, 0, 0], 'how often each sends; 0 for none');
+  assert.ok(Object.isFrozen(RACK_CLOCK_OUTS));
 });
 
 test('pulses come in order at the tempo, each handed out once, before it falls but never further ahead than the lookahead, however the frames come', () => {

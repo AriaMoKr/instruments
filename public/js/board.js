@@ -219,12 +219,13 @@ export function panelPoint(B, a, b, h = 0, out = [0, 0, 0]) {
 }
 
 /**
- * Which of `areas` (a0…a1, b0…b1) (a, b) is in, else -1.
- * @param {Area[]} areas
+ * Which of `areas` (a0…a1, b0…b1) (a, b) is in, else -1: the board's pads and step keys, the rack's
+ * keys (rackboard.js).
+ * @param {readonly Area[]} areas
  * @param {number} a
  * @param {number} b
  */
-function areaAt(areas, a, b) {
+export function areaAt(areas, a, b) {
   for (let i = 0; i < areas.length; i++) {
     const p = areas[i];
     if (a >= p.a0 && a <= p.a1 && b >= p.b0 && b <= p.b1) return i;
@@ -282,9 +283,10 @@ export function jackAt(B, a, b) {
 
 /**
  * What room.js castRay writes, with the board's: which pad, step key, knob (B.knobs) and jack (the
- * room's: B.panel.jacks, then the synth's); and the synth's (synthboard.js): which key, dial and
- * button; each else -1.
- * @typedef {import('./room.js').RoomHit & { pad: number, step: number, knob: number, jack: number, key: number, dial: number, button: number }} BandHit
+ * room's: B.panel.jacks, then the synth's, then the rack's); the synth's (synthboard.js): which key,
+ * dial and button; and the rack's (rackboard.js): which of the sequencer's steps (`seq`: its key, its
+ * accent's or its slide's) and which of its knobs or panel's buttons (`rack`); each else -1.
+ * @typedef {import('./room.js').RoomHit & { pad: number, step: number, knob: number, jack: number, key: number, dial: number, button: number, seq: number, rack: number }} BandHit
  */
 
 /**
@@ -432,7 +434,7 @@ export function hitBoard(B, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
   out.step = step;
   out.knob = knob;
   out.jack = jack;
-  out.key = out.dial = out.button = -1;
+  out.key = out.dial = out.button = out.seq = out.rack = -1;
   return true;
 }
 

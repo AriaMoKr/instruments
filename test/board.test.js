@@ -96,9 +96,9 @@ test('the step keys along the front edge, four over each column of pads; behind 
   assert.ok(near(B.pads[PADS.findIndex((p) => p.row === ROWS - 1)].b1 + 0.04, B.strip.b0));
 });
 
-test('on the panel: every jack of the patch but the synth\'s (on its own panel) once, in its module\'s section, apart; the pads\' outs as the pads lie; the knobs and RUN clear of them', () => {
+test('on the panel: every jack of the patch but the synth\'s and the rack\'s (on their own panels) once, in its module\'s section, apart; the pads\' outs as the pads lie; the knobs and RUN clear of them', () => {
   const P = B.panel, r = BOARD.panel.jack, jack = (id) => P.jacks.find((j) => j.id === id);
-  assert.deepEqual(P.jacks.map((j) => j.id).sort(), JACKS.filter((j) => j.module !== 'synth').map((j) => j.id).sort());
+  assert.deepEqual(P.jacks.map((j) => j.id).sort(), JACKS.filter((j) => ['clock', 'drums', 'delay'].includes(j.module)).map((j) => j.id).sort());
   for (const j of P.jacks) {
     const J = JACKS.find((x) => x.id === j.id);
     assert.equal(j.out, J.dir === 'out', `${j.id}: an output on a plate`);

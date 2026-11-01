@@ -23,6 +23,10 @@
 // its arpeggiator (arp.js: the keys held played in turn, a step of the clock each; with no clock
 // patched in, or the room's stopped, on its own at the room's tempo), and its LFO and filter
 // envelope into its pitch, its cutoff and its amp.
+// Beside the synth the rack (rackboard.js lays it out, rackkit.js draws it), a case of modules: the
+// room's clock again, with its own outs, and a sequencer of sixteen steps (seq.js), each a note set
+// by its knob, or a rest, with an accent and a slide, stepped by the clock through a cable into its
+// clock in, its notes out into the synth's notes in (synth.js seqStep).
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -34,14 +38,17 @@ import { layoutBoard } from './board.js';
 import { Kit } from './kit.js';
 import { Sound } from './sound.js';
 import { Drums, PADS, movePad, padForNote } from './drums.js';
-import { CLOCK_OUTS, Clock, LOOKAHEAD, TEMPO, stepSeconds } from './clock.js';
-import { Pattern, stepOf } from './pattern.js';
+import { Clock, LOOKAHEAD, TEMPO, clockEvery, stepSeconds } from './clock.js';
+import { STEPS, Pattern, stepOf } from './pattern.js';
 import { Patch, padForJack } from './patch.js';
 import { Delay } from './delay.js';
 import { KEYS, MOD_INPUTS, Synth, noteName, synthText } from './synth.js';
 import { arpWords } from './arp.js';
 import { SYNTH, layoutSynth } from './synthboard.js';
 import { SynthKit } from './synthkit.js';
+import { SEQ_GATE, SEQ_RANGE, SEQ_VELOCITY, Seq } from './seq.js';
+import { RACK, layoutRack } from './rackboard.js';
+import { RackKit } from './rackkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { setAnisotropy } from './textures.js';
@@ -142,8 +149,11 @@ const patch = new Patch({ key: `${ROOM.id}.patch` });
 const delay = new Delay(sound, { key: `${ROOM.id}.delay` });
 delay.setTempo(clock.tempo);
 const synth = new Synth(sound, { key: `${ROOM.id}.synth` });
+const seq = new Seq({ key: `${ROOM.id}.seq` });
 /** The drum board in 3D (kit.js), once the scene is made. @type {Kit | null} */
 let kit = null;
+/** The rack in 3D (rackkit.js), once the scene is made. @type {RackKit | null} */
+let rackKit = null;
 
 /** Pad i is the one the knobs turn and the step keys set: on the board and in the card. */
 function select(i) {
@@ -209,29 +219,41 @@ select(drums.selected);
 // 3D view, a hidden pane), each falling on a step of the drums if their clock in is patched to an
 // output sending it (every pulse, every 2nd, every 4th), whose pads play on that step at its time,
 // and likewise on a step of the synth's arpeggiator. While the clock is stopped, or not patched into
-// it, the arpeggiator keeps its own, at the clock's tempo. What a pulse shows (the step playing, the
-// pads lit, RUN's light on the beat) is queued until it is heard. A pad patched into the delay's in,
-// or the synth, is connected to it once there is sound (sound.onReady; the synth's onBuilt).
+// it, the arpeggiator keeps its own, at the clock's tempo. Likewise on a step of the rack's
+// sequencer, whose note, with its notes out patched into the synth's notes in, the synth plays at
+// that step's time (synth.js seqStep). What a pulse shows (the steps playing, the pads lit, RUN's
+// lights on the beat, the sequencer's note on the synth's keys) is queued until it is heard. A pad
+// patched into the delay's in, or the synth, is connected to it once there is sound (sound.onReady;
+// the synth's onBuilt).
 
-/** How many of the clock's pulses make a step of the drums, and of the arpeggiator (the output each one's clock in is patched to), else 0. */
-let drumsEvery = 0, synthEvery = 0;
+/**
+ * How many of the clock's pulses make a step of the drums, of the arpeggiator and of the sequencer
+ * (the output each one's clock in is patched to), else 0; and whether the sequencer's notes go into
+ * the synth.
+ */
+let drumsEvery = 0, synthEvery = 0, seqEvery = 0, seqPlays = false;
 function patchedClock() {
-  drumsEvery = CLOCK_OUTS.find((o) => o.id === patch.source('drums.clock'))?.every ?? 0;
-  synthEvery = CLOCK_OUTS.find((o) => o.id === patch.source('synth.clock'))?.every ?? 0;
+  drumsEvery = clockEvery(patch.source('drums.clock'));
+  synthEvery = clockEvery(patch.source('synth.clock'));
+  seqEvery = clockEvery(patch.source('seq.clock'));
+  seqPlays = patch.source('synth.notes') === 'seq.notes';
 }
 patchedClock();
 /** How hard the pattern plays a pad: on the beat, and between. */
 const ON_BEAT = 0.85, OFF_BEAT = 0.7;
 // What each pulse shows once heard, in a ring: when it falls, its number, the drums' step (-1 none)
-// and the pads it plays (a bit each).
+// and the pads it plays (a bit each), the sequencer's step (-1 none) and the note it plays (-1 none).
 const QUEUED = 64;
 const shownAt = new Float64Array(QUEUED), shownPulse = new Int32Array(QUEUED), shownStep = new Int8Array(QUEUED), shownPads = new Uint16Array(QUEUED);
+const shownSeq = new Int8Array(QUEUED), shownNote = new Int16Array(QUEUED);
 let queueHead = 0, queueTail = 0;
-let playhead = -1;
+let playhead = -1, seqPlayhead = -1;
+/** The note the sequencer plays on the synth as heard now, else -1: shown on its keys. */
+let seqSounding = -1;
 
-/** Pulse n of the clock, falling at `time` on the audio clock: the drums' step, and queued to be seen. */
+/** Pulse n of the clock, falling at `time` on the audio clock: the drums' step, the arpeggiator's, the sequencer's, and queued to be seen. */
 function pulse(n, time) {
-  let step = -1, pads = 0;
+  let step = -1, pads = 0, seqStep = -1, note = -1;
   if (drumsEvery && n % drumsEvery === 0) {
     step = stepOf(n / drumsEvery);
     for (let i = 0; i < PADS.length; i++) {
@@ -241,11 +263,21 @@ function pulse(n, time) {
     }
   }
   if (synthEvery && n % synthEvery === 0) synth.arpStep(time, synthEvery * stepSeconds(clock.tempo));
+  if (seqEvery && n % seqEvery === 0) {
+    seqStep = stepOf(n / seqEvery);
+    if (seqPlays) {
+      // Its note as long as the gate, or (a slide) on into the next step, where it glides.
+      const p = seq.play(seqStep), length = seqEvery * stepSeconds(clock.tempo);
+      if (synth.seqStep(p ? p.note : -1, p?.velocity ?? 0, time, p?.slide ? Infinity : time + SEQ_GATE * length) && p) note = p.note;
+    }
+  }
   if ((queueTail + 1) % QUEUED === queueHead) queueHead = (queueHead + 1) % QUEUED; // full: the oldest goes
   shownAt[queueTail] = time;
   shownPulse[queueTail] = n;
   shownStep[queueTail] = step;
   shownPads[queueTail] = pads;
+  shownSeq[queueTail] = seqStep;
+  shownNote[queueTail] = note;
   queueTail = (queueTail + 1) % QUEUED;
 }
 /**
@@ -260,21 +292,34 @@ function schedule() {
 }
 // A chord just started on the arpeggiator: its first note now, on its own clock.
 synth.onArp = schedule;
-/** What the pulses heard by now show: the step playing, the pads it played lit, RUN's light on the beat. */
+/** What the pulses heard by now show: the steps playing, the pads played lit, RUN's lights on the beat, the sequencer's note. */
 function showPulses() {
   const ctx = sound.ctx;
   if (!ctx) return;
   const heard = ctx.currentTime - (ctx.outputLatency || 0);
   while (queueHead !== queueTail && shownAt[queueHead] <= heard) {
-    const s = shownStep[queueHead], pads = shownPads[queueHead];
-    if (kit && shownPulse[queueHead] % 4 === 0) kit.beat(reduce);
+    const s = shownStep[queueHead], pads = shownPads[queueHead], q = shownSeq[queueHead];
+    if (shownPulse[queueHead] % 4 === 0) {
+      kit?.beat(reduce);
+      rackKit?.beat(reduce);
+    }
     if (s >= 0) {
       setPlayhead(s);
       for (let i = 0; i < PADS.length; i++) if (pads & (1 << i)) kit?.flash(i, s % 4 ? OFF_BEAT : ON_BEAT, reduce);
     }
+    if (q >= 0) {
+      setSeqPlayhead(q);
+      setSeqSounding(shownNote[queueHead]);
+    }
     queueHead = (queueHead + 1) % QUEUED;
   }
-  if (!clock.running && queueHead === queueTail) setPlayhead(-1);
+  if (queueHead === queueTail) {
+    if (!clock.running) setPlayhead(-1);
+    if (!clock.running || !seqEvery) {
+      setSeqPlayhead(-1);
+      setSeqSounding(-1);
+    }
+  }
 }
 /** The step playing (-1 none), on the step keys and in the card. */
 function setPlayhead(s) {
@@ -283,15 +328,30 @@ function setPlayhead(s) {
   if (kit) kit.playhead = s;
   overlay.setPlayhead(s);
 }
+/** The sequencer's step playing (-1 none), on its keys and in the card. */
+function setSeqPlayhead(s) {
+  if (s === seqPlayhead) return;
+  seqPlayhead = s;
+  if (rackKit) rackKit.playhead = s;
+  overlay.setSeqPlayhead(s);
+}
+/** The note the sequencer plays as heard (-1 none), on the synth's keys. */
+function setSeqSounding(note) {
+  if (note === seqSounding) return;
+  seqSounding = note;
+  showNotes();
+}
 setInterval(() => {
   schedule();
   showPulses();
 }, 25);
 
-/** Starts the clock (waking the sound: this is a press), or stops it. */
+/** Starts the clock (waking the sound: this is a press), or stops it (the sequencer's note slid on let go). */
 function toggleClock() {
-  if (clock.running) clock.stop();
-  else {
+  if (clock.running) {
+    clock.stop();
+    synth.seqEnd();
+  } else {
     const ctx = sound.wake();
     if (!ctx) {
       overlay.toast('This browser makes no sound', 4);
@@ -301,17 +361,24 @@ function toggleClock() {
     schedule();
   }
   kit?.setRunning(clock.running);
+  rackKit?.setRunning(clock.running);
   overlay.setRunning(clock.running);
 }
 /** Where the tempo's knob is turned to, 0…1: a turn smaller than a beat a minute adds up. */
 let tempoTurn = 0;
-/** The tempo, in beats per minute (`turn`: the knob's place, when it was turned). */
+/** The tempo, in beats per minute (`turn`: the knob's place, when it was turned): on the board's knob and the rack's. */
 function setTempo(bpm, turn = (bpm - TEMPO.min) / (TEMPO.max - TEMPO.min)) {
   tempoTurn = Math.min(1, Math.max(0, turn));
   clock.setTempo(bpm);
   delay.setTempo(clock.tempo);
   kit?.setTempo(clock.tempo);
+  rackKit?.setTempo(clock.tempo);
   overlay.setTempo(clock.tempo);
+}
+/** The tempo's knob, the board's or the rack's, turned by this much of its whole turn. */
+function turnTempo(by) {
+  const turn = Math.min(1, Math.max(0, tempoTurn + by));
+  setTempo(TEMPO.min + turn * (TEMPO.max - TEMPO.min), turn);
 }
 setTempo(clock.tempo);
 /** A knob of the delay, set 0…1. */
@@ -358,27 +425,31 @@ sound.onReady = () => feedDelay(patch.source('delay.in'), true);
 synth.onBuilt = () => {
   if (patch.source('delay.in') === 'synth.out') feedDelay('synth.out', true);
 };
-/** The cables' colours: the clock's amber, a pad's sound in the pad's colour, the synth's blue, a modulation's pink. */
-const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8', SYNTH_CABLE = '#5aa2f0', MOD_CABLE = '#e8609a';
+/** The cables' colours: the clock's amber, a pad's sound in the pad's colour, the synth's blue, a modulation's pink, notes green. */
+const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8', SYNTH_CABLE = '#5aa2f0', MOD_CABLE = '#e8609a', NOTES_CABLE = '#62c87a';
 const cableColor = (id) => {
   const i = padForJack(id), kind = patch.jack(id)?.kind;
   if (i >= 0) return PADS[i].color;
   if (id === 'synth.out') return SYNTH_CABLE;
-  return kind === 'audio' ? SOUND_CABLE : kind === 'mod' ? MOD_CABLE : CLOCK_CABLE;
+  return kind === 'audio' ? SOUND_CABLE : kind === 'mod' ? MOD_CABLE : kind === 'notes' ? NOTES_CABLE : CLOCK_CABLE;
 };
-/** Jack `id`'s place in the room's list of them (the board's, then the synth's: kit.js), else -1. */
+/** Jack `id`'s place in the room's list of them (the board's, then the synth's, then the rack's: kit.js), else -1. */
 function jackIndex(id) {
   const k = board.panel.jacks.findIndex((j) => j.id === id);
   if (k >= 0) return k;
-  const s = synthDesk.panel.jacks.findIndex((j) => j.id === id);
-  return s >= 0 ? synthDesk.panel.jackBase + s : -1;
+  for (const D of [synthDesk, rackDesk]) {
+    const s = D.panel.jacks.findIndex((j) => j.id === id);
+    if (s >= 0) return D.panel.jackBase + s;
+  }
+  return -1;
 }
 /** The id (patch.js) of the jack at place k in that list, else undefined. */
 function jackId(k) {
-  const n = board.panel.jacks.length;
-  return k < n ? board.panel.jacks[k]?.id : synthDesk.panel.jacks[k - n]?.id;
+  if (k < synthDesk.panel.jackBase) return board.panel.jacks[k]?.id;
+  if (k < rackDesk.panel.jackBase) return synthDesk.panel.jacks[k - synthDesk.panel.jackBase]?.id;
+  return rackDesk.panel.jacks[k - rackDesk.panel.jackBase]?.id;
 }
-/** The cables on the board and the synth, and in the card. */
+/** The cables on the board, the synth and the rack, and in the card. */
 function showPatch() {
   if (kit) kit.setCables(patch.cables().map((c) => ({ from: jackIndex(c.from), to: jackIndex(c.to), color: cableColor(c.from) })));
   overlay.setPatch(patch);
@@ -390,7 +461,9 @@ patch.onChange = (to, from, was) => {
     feedDelay(was, false);
     feedDelay(from, true);
   }
-  if (to === 'drums.clock' || to === 'synth.clock') patchedClock();
+  if (to === 'drums.clock' || to === 'synth.clock' || to === 'seq.clock' || to === 'synth.notes') patchedClock();
+  // The sequencer's clock or its notes unplugged: a note it slid on, let go.
+  if ((to === 'seq.clock' || to === 'synth.notes') && !(seqEvery && seqPlays)) synth.seqEnd();
   const input = MOD_INPUTS.find((m) => to === `synth.${m}`);
   if (input) synth.setInput(input, modSource(from));
   showPatch();
@@ -453,10 +526,10 @@ function showSynthKnobs() {
   synthKit?.setKnobs(synth.knobs);
   overlay.setSynthKnobs(synth.knobs);
 }
-/** The keys down (and the arpeggiator's chord), on the synth and in the card. */
+/** The keys down (and the arpeggiator's chord), on the synth and in the card; on the synth, the sequencer's note too. */
 function showNotes() {
   const held = synth.held;
-  synthKit?.setDown(held, synth.lowest);
+  synthKit?.setDown(seqSounding >= 0 ? new Set(held).add(seqSounding) : held, synth.lowest);
   overlay.setNotes(held, synth.lowest);
 }
 synth.onNotes = showNotes;
@@ -524,6 +597,79 @@ overlay.onRange = setRange;
 showSynth();
 showSynthKnobs();
 
+// ── The rack's sequencer ─────────────────────────────────────────────────────
+// Its sixteen steps and its octave, kept for the next visit (seq.js). A step's key pressed (on the
+// rack, in the card, its key at the rack: 1–8, then Q–I), its accent's (Shift) or its slide's; its
+// note set by its knob (a drag, the wheel, a stick; in the card a choice of notes), a semitone at a
+// time, heard on the synth while the clock is stopped; the octave (its buttons, Z and X at the rack).
+// What is set shows on the rack (its keys, its knobs, the notes' names, its display) and in the card.
+
+/** Where each step's knob is turned to, 0…1: a turn smaller than a semitone adds up. */
+const noteTurn = new Float32Array(STEPS);
+/** A whole turn of a step's knob is two octaves: dragged (the wheel, a stick), half as quick as the other knobs. */
+const NOTE_TURN = 0.5;
+/** Each step's knob where its note is (as the line comes, or cleared). */
+function syncNoteTurns() {
+  for (let s = 0; s < STEPS; s++) noteTurn[s] = seq.steps[s].note / SEQ_RANGE;
+}
+syncNoteTurns();
+/** The line, on the rack and in the card. */
+function showSeq() {
+  rackKit?.setLine(seq.steps, seq.lowest, seq.octave);
+  overlay.setSeq(seq.steps, seq.lowest, seq.octave);
+}
+/** Step s's key in a row (rackboard.js SEQ_ROWS) pressed: it plays or rests, its accent, its slide; said on the display. */
+function toggleSeqKey(row, s) {
+  if (!(s >= 0 && s < STEPS)) return;
+  const on = row === 'accent' ? seq.toggleAccent(s) : row === 'slide' ? seq.toggleSlide(s) : seq.toggle(s);
+  rackKit?.setLast(`STEP ${s + 1}  ${row === 'seq' ? (on ? noteName(seq.noteOf(s)) : 'REST') : `${row.toUpperCase()} ${on ? 'ON' : 'OFF'}`}`);
+  showSeq();
+}
+/**
+ * Step s's note, semitones up from the line's lowest (`turn`: its knob's place, when it was turned):
+ * heard a moment on the synth while the clock is stopped and the sequencer's notes go into it.
+ */
+function setSeqNote(s, n, turn = n / SEQ_RANGE) {
+  if (!(s >= 0 && s < STEPS)) return;
+  noteTurn[s] = Math.min(1, Math.max(0, turn));
+  if (!seq.setNote(s, n)) return;
+  rackKit?.setLast(`STEP ${s + 1}  ${noteName(seq.noteOf(s))}`);
+  showSeq();
+  const ctx = !clock.running && seqPlays ? sound.wake() : null;
+  if (ctx) synth.seqStep(seq.noteOf(s), SEQ_VELOCITY.normal, ctx.currentTime, ctx.currentTime + 0.18);
+}
+/** Step s's knob turned by this much of its whole turn. */
+function turnSeqNote(s, by) {
+  const turn = Math.min(1, Math.max(0, noteTurn[s] + by * NOTE_TURN));
+  setSeqNote(s, Math.round(turn * SEQ_RANGE), turn);
+}
+/** The octave the line plays in (seq.js SEQ_OCTAVES). */
+function setSeqOctave(octave) {
+  seq.setOctave(octave);
+  showSeq();
+}
+/** The sequencer's octave, in words (for a toast). */
+const seqText = () => `Sequencer octave ${seq.octave > 0 ? '+' : ''}${seq.octave}: notes ${noteName(seq.lowest)} to ${noteName(seq.lowest + SEQ_RANGE)}`;
+/** Every step a rest; or the line as it comes. */
+function clearSeq() {
+  seq.clear();
+  syncNoteTurns();
+  rackKit?.setLast('CLEARED');
+  showSeq();
+}
+function resetSeq() {
+  seq.reset();
+  syncNoteTurns();
+  rackKit?.setLast('LINE AS IT COMES');
+  showSeq();
+}
+overlay.onSeqKey = toggleSeqKey;
+overlay.onSeqNote = (s, n) => setSeqNote(s, n);
+overlay.onSeqOctave = setSeqOctave;
+overlay.onClearSeq = clearSeq;
+overlay.onResetSeq = resetSeq;
+showSeq();
+
 for (const type of ['pointerup', 'touchend', 'keydown']) {
   addEventListener(type, () => {
     if (sound.ctx) sound.wake();
@@ -547,7 +693,7 @@ document.addEventListener('visibilitychange', () => {
 // had one, the browser keeps it quiet, and says so.
 let midi = null;
 let toldQuiet = false;
-/** Where the visitor plays (controls.js at): at the board a MIDI keyboard's notes are the drums'. @type {'board' | 'synth' | null} */
+/** Where the visitor plays (controls.js at): at the board a MIDI keyboard's notes are the drums'. @type {'board' | 'synth' | 'rack' | null} */
 let playingAt = null;
 async function listen() {
   if (midi) return;
@@ -586,7 +732,7 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ antialias: true });
 } catch (err) {
-  overlay.noWebGL('This browser cannot show the room in 3D, but its drums and its synth play here in the card. The way back to the Hallway is above.');
+  overlay.noWebGL('This browser cannot show the room in 3D, but its drums, its synth and its sequencer play here in the card. The way back to the Hallway is above.');
   throw err;
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -596,7 +742,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a synth beside it (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a synth beside it (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), a rack beside that (a clock, and a sequencer of sixteen steps with a knob for each note), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -620,22 +766,29 @@ scene.add(rig);
 const L = layoutRoom(ROOM, { doorWidth, doorHeight });
 const room = buildRoom(L, { colors: ROOM.colors, skyYaw: ROOM.skyYaw, glow, name: leadsTo, anisotropy });
 scene.add(room.group);
-// The drum board against the far wall, in the room's light, and the synth beside it, likewise; the
-// cables between their jacks, the board's kit's (its own, then the synth's).
+// The drum board against the far wall, in the room's light, and the synth beside it, likewise, and
+// the rack beside that; the cables between their jacks, the board's kit's (its own, then the synth's,
+// then the rack's).
 const board = layoutBoard(L);
 const synthDesk = layoutSynth(L, board);
+const rackDesk = layoutRack(L, synthDesk);
 kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 kit.addJacks(synthDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise));
+kit.addJacks(rackDesk, RACK.knob.h);
 scene.add(kit.group);
 select(drums.selected);
 kit.setTempo(clock.tempo);
 showDelay();
 synthKit = new SynthKit(synthDesk, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 scene.add(synthKit.group);
+rackKit = new RackKit(rackDesk, { lit: room.lit, lightColor: room.lightColor, anisotropy });
+rackKit.setTempo(clock.tempo);
+scene.add(rackKit.group);
 showPatch();
 showSynth();
 showSynthKnobs();
 showNotes();
+showSeq();
 // Through the doorway, the view the Hallway publishes from its door to here (its views.json); until
 // it has loaded, or when there is none (a Hallway without this door yet), its glow and name.
 const views = hallwayViews(way, ROOM.id);
@@ -646,15 +799,16 @@ room.loadPictures().then(() => {
   pictured = true;
 });
 
-const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board, synth: synthDesk });
+const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board, synth: synthDesk, rack: rackDesk });
 controls.lowest = () => synth.lowest;
 // In VR: a stick in each hand that holds a controller, and the hands' joints, for a forefinger to
-// play with (kit.js, and the synth's keys: synthkit.js), moving with the rig as the controllers do.
+// play with (kit.js, and the synth's keys: synthkit.js, and the rack's: rackkit.js), moving with the
+// rig as the controllers do.
 kit.holdSticks(controls.hands);
 const fingers = [renderer.xr.getHand(0), renderer.xr.getHand(1)];
 rig.add(...fingers);
-/** In VR, whether a hand at (x, y, z) is near the synth's keys, for its stick to show there too. */
-const nearSynth = (x, y, z) => x > synthDesk.x0 - 0.5 && x < synthDesk.x1 + 0.5 && z > synthDesk.zBack - 0.2 && z < synthDesk.zFront + 0.9 && y > 0.3;
+/** In VR, whether a hand at (x, y, z) is near the synth's keys or the rack's, for its stick to show there too. */
+const nearKeys = (x, y, z) => x > synthDesk.x0 - 0.5 && x < rackDesk.x1 + 0.5 && z > synthDesk.zBack - 0.2 && z < synthDesk.zFront + 0.9 && y > 0.3;
 const nav = loadNav();
 controls.setNav(nav);
 // The accessibility settings every site on the origin shares (common/access.js, hallway.access):
@@ -754,18 +908,26 @@ function stepBack() {
 
 /** On a TV at the synth, the key the arrows chose (from the lowest), which OK plays: middle C to start with. */
 let chosenKey = 12;
+/** On a TV at the rack, the step the arrows chose, which OK plays or rests (and up and down turn its note). */
+let chosenStep = 0;
 let remote = null;
 if (tv) {
   controls.aimMiddle = true;
   renderer.domElement.setAttribute('aria-describedby', overlay.hint.id);
   // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its steps; at the
-  // synth, the key they chose, and Menu goes to its sounds.
+  // synth, the key they chose, and Menu goes to its sounds; at the rack, OK plays or rests the step
+  // they chose, and Menu goes to the sequencer's steps.
   remote = new Remote({
     root: overlay.root,
     view: renderer.domElement,
-    use: () => (controls.at === 'board' ? play(drums.selected, 0.85) : controls.at === 'synth' ? tapNote(synth.lowest + chosenKey) : controls.useMiddle()),
+    use: () => {
+      if (controls.at === 'board') play(drums.selected, 0.85);
+      else if (controls.at === 'synth') tapNote(synth.lowest + chosenKey);
+      else if (controls.at === 'rack') toggleSeqKey('seq', chosenStep);
+      else controls.useMiddle();
+    },
     step: stepBack,
-    first: () => (controls.at === 'board' ? overlay.stepsBox : controls.at === 'synth' ? overlay.presetsBox : null),
+    first: () => (controls.at === 'board' ? overlay.stepsBox : controls.at === 'synth' ? overlay.presetsBox : controls.at === 'rack' ? overlay.seqBox : null),
   });
   remote.onMode = (inCard) => overlay.setHint(inCard ? 'tv-card' : 'tv');
   remote.answerApp(tv);
@@ -784,10 +946,8 @@ controls.onStep = toggleStep;
 controls.onRun = toggleClock;
 controls.onKnob = (k, by) => {
   const knob = board.knobs[k];
-  if (knob.part === 'clock') {
-    const turn = Math.min(1, Math.max(0, tempoTurn + by));
-    setTempo(TEMPO.min + turn * (TEMPO.max - TEMPO.min), turn);
-  } else if (knob.part === 'delay') setDelayKnob(knob.name, delay.knobs[knob.name] + by);
+  if (knob.part === 'clock') turnTempo(by);
+  else if (knob.part === 'delay') setDelayKnob(knob.name, delay.knobs[knob.name] + by);
   else setKnob(knob.name, drums.knobs[drums.selected][knob.name] + by);
 };
 kit.onStep = (s, source) => {
@@ -805,7 +965,7 @@ function pickUp(id, words) {
   carried = { id };
   controls.carrying = true;
   ringed = -2;
-  const loose = jack?.kind === 'audio' ? SOUND_CABLE : jack?.kind === 'mod' ? MOD_CABLE : CLOCK_CABLE;
+  const loose = jack?.kind === 'audio' ? SOUND_CABLE : jack?.kind === 'mod' ? MOD_CABLE : jack?.kind === 'notes' ? NOTES_CABLE : CLOCK_CABLE;
   kit.carry(jackIndex(id), jack?.dir === 'out' ? cableColor(id) : loose);
   overlay.toast(words);
 }
@@ -819,7 +979,7 @@ function putDown(plugged = false) {
   if (!plugged) overlay.toast('Cable put away');
 }
 /** What each kind of jack carries, in words. */
-const CARRIES = { clock: "the clock's pulses", audio: 'sound', mod: 'the LFO or the envelope' };
+const CARRIES = { clock: "the clock's pulses", audio: 'sound', mod: 'the LFO or the envelope', notes: "the sequencer's notes" };
 /** Why the cable carried, from jack a, can't go into jack b. */
 function whyNot(a, b) {
   if (a.dir === b.dir) return a.dir === 'out' ? 'Both are outs: an out goes into an in' : 'Both are ins: an in takes an out';
@@ -864,11 +1024,12 @@ controls.over = () => {
 controls.onPlaying = (at) => {
   playingAt = at;
   overlay.setPlaying(at);
-  if (!at && !controls.goingTo) putDown(); // stepped away; walking to the other desk, it comes too
+  if (!at && !controls.goingTo) putDown(); // stepped away; walking to another desk, it comes too
   if (at) sound.wake(); // ready for the first pad or key: the walk here began with a press
   if (at && remote) {
     if (at === 'board') overlay.openDrums(true);
-    else overlay.openSynth(true);
+    else if (at === 'synth') overlay.openSynth(true);
+    else overlay.openRack(true);
     remote.forget(); // Menu goes to its steps, or its sounds, now
   }
 };
@@ -939,6 +1100,48 @@ synthKit.onKeyDown = (k, velocity, source) => {
 };
 synthKit.onKeyUp = keyUp;
 
+// ── The rack's keys, knobs and buttons ───────────────────────────────────────
+// A step's key, its accent's or its slide's pressed: a press on it, a trigger, A or OK, in VR a stick
+// or a forefinger coming down on it (which the controller feels); at the rack the keys 1–8 and Q–I
+// (Shift: the accent's). A knob turned (a step's note, the tempo): a drag, the wheel, a stick. Its
+// panel's buttons: RUN, the octave (Z and X too), said. Its jacks are the board's (controls.onJack,
+// above). Walking up to it to play it, and stepping away; on a TV the arrows choose a step (left and
+// right) and turn its note (up and down), and OK plays or rests it.
+
+controls.onSeqKey = toggleSeqKey;
+controls.onRackKnob = (k, by) => {
+  const knob = rackDesk.knobs[k];
+  if (knob?.part === 'tempo') turnTempo(by);
+  else if (knob) turnSeqNote(knob.step, by);
+};
+controls.onRackButton = (i) => {
+  const id = rackDesk.panel.buttons[i]?.id;
+  if (id === 'run') toggleClock();
+  else if (id === 'octave.down' || id === 'octave.up') {
+    setSeqOctave(seq.octave + (id === 'octave.up' ? 1 : -1));
+    overlay.toast(seqText(), 2);
+  }
+};
+controls.onSeqOctave = (by) => {
+  setSeqOctave(seq.octave + by);
+  overlay.toast(seqText(), 2);
+};
+controls.onSeqPick = (steps, semitones) => {
+  if (steps) chosenStep = (chosenStep + steps + STEPS) % STEPS;
+  else setSeqNote(chosenStep, seq.steps[chosenStep].note + semitones);
+};
+overlay.onPlayRack = () => {
+  if (controls.at === 'rack') controls.stepAway();
+  else {
+    remote?.walk(); // as the board's: the arrows choose a step there, OK plays it, Menu goes to its steps
+    controls.walkToRack();
+  }
+};
+rackKit.onKey = (row, s, source) => {
+  toggleSeqKey(row, s);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.35, 14);
+};
+
 // ── Fullscreen, and the gamepad ──────────────────────────────────────────────
 
 const root = document.documentElement;
@@ -1005,6 +1208,7 @@ renderer.xr.addEventListener('sessionend', () => {
   showPanel();
   kit.endXR();
   synthKit.endXR();
+  rackKit.endXR();
   putDown();
 });
 // Not on a TV, which has no headset (nor, so far, a WebXR in its WebView): the panel says so.
@@ -1176,8 +1380,9 @@ function step(dt) {
   // where the hand that took it points, and so does its ring.
   const xr = renderer.xr.isPresenting;
   if (xr) {
-    kit.updateXR(controls.hands, fingers, dt, nearSynth);
+    kit.updateXR(controls.hands, fingers, dt, nearKeys);
     synthKit.updateXR(controls.hands, fingers, kit.sticks, dt);
+    rackKit.updateXR(controls.hands, fingers, kit.sticks);
   }
   kit.hover(controls.hoverPad);
   kit.hoveredStep = controls.hoverStep;
@@ -1193,6 +1398,9 @@ function step(dt) {
   // The synth: its keys down and the one pointed at (on a TV at it, the one the arrows chose).
   synthKit.hovered = remote && controls.at === 'synth' && !remote.inCard ? chosenKey : controls.hoverKey;
   synthKit.update(dt);
+  // The rack: its keys, the one pointed at (on a TV at it, the step the arrows chose).
+  rackKit.hovered = remote && controls.at === 'rack' && !remote.inCard ? chosenStep : controls.hoverSeqKey;
+  rackKit.update(dt);
   // The dot: a gamepad's aim, or on a TV the remote's OK while walking (playing, the arrows choose a pad).
   overlay.setAim((controls.padActive || (remote !== null && !remote.inCard && !controls.playing)) && !renderer.xr.isPresenting, !!controls.hover);
   // On a TV, walking, the hint says what OK does with the dot on something on the walls.
@@ -1221,9 +1429,14 @@ window.__room = {
   THREE, renderer, scene, camera, rig, room, layout: L, controls, overlay, fade, vignette, xrDevice, go, enterVR, together, remote, tv, way, visit, setAccess,
   sound, drums, board, kit, play, select, setKnob, clock, pattern, patch, delay, toggleClock, setTempo, toggleStep, setDelayKnob, schedule,
   synth, synthDesk, synthKit, noteOn, noteOff, tapNote, keyDown, keyUp, chooseSound, resetSynth, setSynthKnob, setMono, setOctave, setArp, setHold, setRange,
+  seq, rackDesk, rackKit, toggleSeqKey, setSeqNote, setSeqOctave, clearSeq, resetSeq,
   /** On a TV at the synth, the key the arrows chose. */
   get chosenKey() {
     return chosenKey;
+  },
+  /** On a TV at the rack, the step the arrows chose. */
+  get chosenStep() {
+    return chosenStep;
   },
   /** The cable carried (the jack it hangs from), else null. */
   get carried() {

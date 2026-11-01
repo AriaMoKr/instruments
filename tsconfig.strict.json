@@ -10,7 +10,8 @@
     "public/js/config.js", "public/js/presence.js", "public/js/room.js", "public/js/controls.js",
     "public/js/sound.js", "public/js/drums.js", "public/js/board.js", "public/js/midi.js",
     "public/js/clock.js", "public/js/pattern.js", "public/js/patch.js", "public/js/delay.js",
-    "public/js/synth.js", "public/js/synthboard.js", "public/js/arp.js",
+    "public/js/synth.js", "public/js/synthboard.js", "public/js/arp.js", "public/js/seq.js",
+    "public/js/rackboard.js",
     "types/*.d.ts"
   ]
 }
