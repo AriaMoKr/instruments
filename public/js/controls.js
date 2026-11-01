@@ -18,10 +18,10 @@
 //     (onDial(d, by), as the board's knobs), its panel's buttons (onButton(i)), its jacks (onJack, as
 //     the board's: the room's list of them, the board's first) and the rest of it.
 //   the rack (rackboard.js) beside the synth: one walks round it too, and a ray meets its keys, each
-//     step's, its accent's and its slide's (onSeqKey(row, s)), its knobs, each step's note and the
-//     clock's tempo (onRackKnob(k, by), as the board's knobs), its panel's buttons (onRackButton(i):
-//     RUN, the octave), its jacks (onJack, as the board's: the room's list of them, the board's,
-//     then the synth's, first) and the rest of it.
+//     step's, its accent's and its slide's (onSeqKey(row, s)), its knobs, each step's note, the
+//     clock's tempo, the delay's and the LFO's (onRackKnob(k, by), as the board's knobs), its panel's
+//     buttons (onRackButton(i): RUN, the octave), its jacks (onJack, as the board's: the room's list
+//     of them, the board's, then the synth's, first) and the rest of it.
 //     Choosing any of them walks up to it to play it (walkToBoard, walkToSynth, walkToRack): on a
 //     screen the visitor is then `at` it (onPlaying), so a press on a pad, a key, a step key, a jack,
 //     RUN or a button works as it goes down (fingers at once on a phone); a jack works so on another
@@ -160,7 +160,7 @@ export class Controls extends Walking {
     this.onKeyPick = () => {};
     /** (row, s) when step s's key in that row of the rack's (rackboard.js SEQ_ROWS: its own, its accent's, its slide's) is pressed. @type {(row: SeqRow, s: number) => void} */
     this.onSeqKey = () => {};
-    /** (k, by) when knob k of the rack's (rackboard.js layoutRack's knobs: the steps' notes, the tempo) is turned, by this much of its whole turn. @type {(k: number, by: number) => void} */
+    /** (k, by) when knob k of the rack's (rackboard.js layoutRack's knobs: the steps' notes, the tempo, the delay's, the LFO's) is turned, by this much of its whole turn. @type {(k: number, by: number) => void} */
     this.onRackKnob = () => {};
     /** (i) when button i of the rack's panel (layoutRack's panel.buttons) is pressed. @type {(i: number) => void} */
     this.onRackButton = () => {};

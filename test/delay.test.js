@@ -1,7 +1,8 @@
 // The delay (delay.js): its time in steps of the clock, and in words; the loop it makes once the
 // sound has woken (in, round the delay and its darkening filter, turned down each time, and out
-// through its level into the mixer's 'delay' channel), eased to its knobs and to the clock's tempo;
-// and the knobs kept for the next visit. On test/helpers/audio.js's fake Web Audio.
+// through its level into the mixer's 'delay' channel, the rack's into its own), eased to its knobs
+// and to the clock's tempo; and the knobs kept for the next visit. On test/helpers/audio.js's fake
+// Web Audio.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -57,6 +58,21 @@ test('no loop until the sound has woken; then one, made once: in, round and dark
   assert.equal(none.input(), null);
   none.setTempo(90);
   none.reset();
+});
+
+test("the rack's delay another, its own loop and knobs, out into its own channel", () => {
+  const sound = new Sound({ Context: /** @type {any} */ (FakeContext), storage: null });
+  const board = new Delay(sound, { storage: null });
+  const rack = new Delay(sound, { storage: null, key: 'rackdelay', channel: 'rackdelay' });
+  assert.deepEqual([board.channel, rack.channel], ['delay', 'rackdelay']);
+  sound.wake();
+  const a = board.input(), b = rack.input();
+  assert.ok(a && b && a !== b, 'a loop each');
+  const [, level] = b.outputs[0].outputs[0].outputs;
+  assert.deepEqual(level.outputs, [sound.channel('rackdelay')]);
+  assert.notEqual(sound.channel('rackdelay'), sound.channel('delay'));
+  rack.setKnob('time', 1);
+  assert.equal(board.knobs.time, DEFAULT_DELAY.time, 'its own knobs');
 });
 
 test('the knobs eased in, the time following the tempo; nonsense ignored; reset as it comes', () => {

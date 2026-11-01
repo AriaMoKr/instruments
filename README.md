@@ -8,9 +8,9 @@ played, each with its knobs, and a little modular panel: a clock that steps a si
 for each pad, and a delay, patched with cables (below, "The drums"). Beside it stands a synth: six
 analog voices, poly or mono, with thirty-seven keys, twenty-five knobs, eight sounds to start from,
 an arpeggiator, and a patch bay of its own, cabled to the board's (below, "The synth"). Beside that
-stands its rack, a case of modules: a clock, and a sixteen-step sequencer that plays the synth in
-time with the drums (below, "The rack"). More modules, a keyboard and an electric guitar come next,
-all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
+stands its rack, a case of modules: a clock, a sixteen-step sequencer that plays the synth in time
+with the drums, a delay of its own, and an LFO in time with the clock to patch into the synth (below,
+"The rack"). More modules, a keyboard and an electric guitar come next, all patchable. The room is the one [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty)
 makes: a floor, four walls, a ceiling with its lamps, a window onto the afternoon sky, and the
 doorway back to the Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay
 walls, and is a little larger than the template, 7 by 8 metres, to leave room for the instruments
@@ -106,8 +106,8 @@ the clock's ×1 patched into the drums and a beat to start from: the kick on eve
 two and four, and the closed hat on every 8th.
 
 A cable goes from an output to an input of its kind: the clock's pulses (in amber), a pad's sound
-(in the pad's colour), the synth's (in blue), the synth's LFO or envelope (in pink: below, "Its
-patch bay"), or the sequencer's notes (in green: below, "The rack"). Take one from a jack, on the
+(in the pad's colour), the synth's (in blue), an LFO or the synth's envelope (in pink: below, "Its
+patch bay" and "The rack"), or the sequencer's notes (in green: below, "The rack"). Take one from a jack, on the
 board, the synth or the rack, and it follows where you point until you plug it into another, on any
 of them; the jack you point at is ringed in gold, or in grey where it can't go, and a message says
 why. An input takes one cable: taking it from the input pulls it out, still in its output, to plug
@@ -185,9 +185,9 @@ cabled as the board's are (above, "The clock, the pattern and the cables"):
 - **Patch**: its outputs, **OUT** (its sound: into the delay's **IN** on the board, it is still
   heard as it was, with its echoes after it), **LFO** (the triangle its **RATE** sets) and **ENV**
   (the filter envelope, each voice its own, as its knobs shape it), and its inputs, which either of
-  those moves: **PITCH** (by up to an octave), **CUTOFF** (up to three octaves) and **AMP** (with a
-  cable in it the voices sit at half and swing from there: the LFO a tremolo, the envelope a second
-  shape). Nothing is patched into them as it comes.
+  those moves, or the rack's LFO (below, "The rack"): **PITCH** (by up to an octave), **CUTOFF** (up
+  to three octaves) and **AMP** (with a cable in it the voices sit at half and swing from there: an
+  LFO a tremolo, the envelope a second shape). Nothing is patched into them as it comes.
 - **Arpeggiator**: its **CLOCK** input, the room's clock's ×1 as it comes (a note a step; ÷2 and ÷4
   slower), and its buttons. **UP**, **DOWN**, **UP+DN** (the top and the bottom once each way) and
   **RAND** play the keys held one at a time in that order, as the poly synths of the early 1980s
@@ -215,11 +215,21 @@ by side as in a case:
 - **Sequencer**: its display (its octave, and what was set last), the octave's **−** and **+**, its
   **CLOCK** input, which moves it on a step for each pulse that comes in, and its **NOTES** output,
   into the synth's **NOTES** input.
-- Two blank plates, where more modules will go.
+- **Delay**: the rack's own, a second loop as the board's is (above, "The clock, the pattern and the
+  cables"): **TIME** in steps of the clock, **FEEDBACK** and **LEVEL**, each knob's setting written
+  under it, and its **IN**, for a pad's sound or the synth's.
+- **LFO**: a slow wave in time with the clock, for the synth's **PITCH**, **CUTOFF** or **AMP**.
+  **RATE** is a note value, from four bars to a 16th, so that its cycles fall on the beat at any
+  tempo and start again with the clock; **SHAPE** a sine, a triangle, a saw (falling), a square or
+  random (a new value each cycle, held); **DEPTH** how far it moves what it is patched into. Its
+  light, by its name, shows the wave, and its output is **OUT**. While the clock is stopped it goes
+  on at the tempo by itself.
 
 The room comes with the rack's ×1 patched into the sequencer and the sequencer's notes into the
 synth, and a bass line in C minor to start from, so RUN plays the drums and the line together. The
 synth plays it in the sound it has; **Acid** and **Fat Bass**, both mono, suit a line like it.
+Nothing is patched into the delay or out of the LFO as it comes: the LFO's **OUT** into the synth's
+**CUTOFF**, at a quarter note, makes the line wah on the beat.
 
 | | Set a step | Its accent, its slide | Its note | Start or stop the clock |
 |---|---|---|---|---|
@@ -229,18 +239,22 @@ synth plays it in the sound it has; **Acid** and **Fat Bass**, both mono, suit a
 | Gamepad | the dot on it and A | the dot on it and A | in the card | the dot on RUN and A |
 | TV remote | the arrows choose a step (left and right), OK sets it or rests it | in the card: Menu goes to the steps | up and down, a semitone at a time | play/pause |
 
-A note set while the clock is stopped sounds on the synth a moment (while the sequencer is patched
-into it), to find it by ear. While the clock runs, the step playing is lit on the rack and marked in
+The delay's knobs and the LFO's turn as a step's note's knob does (with a gamepad or a remote, in
+the card). A note set while the clock is stopped sounds on the synth a moment (while the sequencer
+is patched into it), to find it by ear. While the clock runs, the step playing is lit on the rack and marked in
 the card, and the synth's keys show the note it plays. Its notes are set ahead on the audio clock as
 the drums' are, each sounding for half its step, or held on into the next when it slides; stopping
 the clock, or pulling out either cable, lets a note held on go.
 
 The card's **Rack** has the same: **Clock** (Start or Stop, and the tempo), **Sequencer** (a row for
 each step: its number, pressed where it plays; its note, a choice of the knob's twenty-five; **Accent**
-and **Slide**; then **Octave**, **Clear** and **Line as it comes**), and **Cables** (the sequencer's
-clock in; its notes out is a choice for the synth's **Notes in**, under **Synth**). The line and its
-octave are kept for the next visit (`instruments.seq`), and the rack's cables with the rest
-(`instruments.patch`).
+and **Slide**; then **Octave**, **Clear** and **Line as it comes**), **Delay** (its three knobs,
+and **Delay as it comes**), **LFO** (its rate and its shape, each a slider along its knob's places,
+its depth, and **LFO as it comes**) and **Cables** (the sequencer's clock in and the delay's in; the
+sequencer's notes out is a choice for the synth's **Notes in**, and the LFO's out for its **Pitch
+in**, **Cutoff in** and **Amp in**, under **Synth**). The line and its octave are kept for the next
+visit (`instruments.seq`), the delay's knobs and the LFO's too (`instruments.rackdelay` and
+`instruments.lfo`), and the rack's cables with the rest (`instruments.patch`).
 
 ## Moving about
 
@@ -402,8 +416,8 @@ through its `tv.js`:
 - At the rack likewise, the card open on it: the arrows choose a step (left and right; the one
   chosen lit) and turn its note (up and down, heard on the synth while the clock is stopped), OK
   sets it or rests it, Menu goes to the sequencer's steps in the card (each with its note, its
-  accent and its slide; the octave and the cables follow), play/pause starts and stops the clock,
-  and Back steps away.
+  accent and its slide; the octave, the delay, the LFO and the cables follow), play/pause starts and
+  stops the clock, and Back steps away.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -439,7 +453,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, its LFO, where it stands and its keys), MIDI, the card, and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -456,7 +470,8 @@ Nothing is built: the page is served as it is, and the import map stays. What Ty
 library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `tsconfig.strict.json` checks only the files that pass it (so far `config.js`, `presence.js`,
 `room.js`, `controls.js`, `sound.js`, `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`,
-`board.js`, `midi.js`, `synth.js`, `synthboard.js`, `arp.js`, `seq.js` and `rackboard.js`), and
+`board.js`, `midi.js`, `synth.js`, `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js` and
+`lfo.js`), and
 `npm test` runs it too. A file joins its `include` when a change makes it pass. `tools/` and
 `test/` come later.
 
@@ -492,7 +507,7 @@ Band Room and address, its size and colours, the window in the left wall and the
 these notes to match; `npm test` checks the page and the package say what the config says. The rest
 of `public/js/` is the template's with the instruments added: `sound.js`, `drums.js`, `clock.js`,
 `pattern.js`, `patch.js`, `delay.js`, `board.js`, `kit.js`, `synth.js`, `arp.js`, `synthboard.js`,
-`synthkit.js`, `seq.js`, `rackboard.js`, `rackkit.js` and `midi.js` are this room's own, and
+`synthkit.js`, `seq.js`, `lfo.js`, `rackboard.js`, `rackkit.js` and `midi.js` are this room's own, and
 `controls.js`, `overlay.js`, `main.js` and `style.css` take the instruments in.
 
 The template's fixes come here by merging it: this room's history starts at the template's first

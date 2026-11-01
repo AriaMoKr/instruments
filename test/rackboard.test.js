@@ -1,18 +1,20 @@
 // The rack (rackboard.js): where it stands beside the synth and what is on it (on its top the
 // sequencer's sixteen steps, in fours: a key each, an accent's and a slide's, its note's knob; on its
-// panel the clock's module, the sequencer's and blank plates, with their displays, buttons and
-// jacks), what a ray meets on it, one walking round it and playing it (all of it in view on a
-// screen; its keys in reach in VR), and a tip coming down on a key.
+// panel the clock's module, the sequencer's, the delay's and the LFO's, with their displays, buttons,
+// knobs and jacks), what a ray meets on it, one walking round it and playing it (all of it in view on
+// a screen; its keys in reach in VR), and a tip coming down on a key.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
 import { EYE, MARGIN, layoutRoom } from '../public/js/room.js';
 import { BOARD, boardBlocks, boardFront, boardPoint, boardStand, clampBoard, jackAt, layoutBoard, panelPoint } from '../public/js/board.js';
 import { layoutSynth } from '../public/js/synthboard.js';
-import { RACK, SEQ_ROWS, hitRack, layoutRack, rackButtonAt, rackKeyAt, rackKnobAt, rackStrike } from '../public/js/rackboard.js';
+import { RACK, SEQ_ROWS, hitRack, knobRadius, layoutRack, rackButtonAt, rackKeyAt, rackKnobAt, rackStrike } from '../public/js/rackboard.js';
 import { STEPS } from '../public/js/pattern.js';
 import { JACKS } from '../public/js/patch.js';
 import { RACK_CLOCK_OUTS } from '../public/js/clock.js';
+import { DELAY_KNOBS } from '../public/js/delay.js';
+import { LFO_KNOBS } from '../public/js/lfo.js';
 
 const L = layoutRoom(ROOM);
 const B = layoutBoard(L);
@@ -89,25 +91,28 @@ test('on its top: the sixteen steps in fours, each a key, an accent\'s and a sli
   assert.ok(near(R.labels[3].b, R.knobs[0].b));
 });
 
-test('on its panel: the clock\'s module (RUN, its tempo\'s knob and display, its outs), the sequencer\'s (its display, its octave\'s buttons, its clock in and notes out), blank plates; apart', () => {
+test('on its panel: the clock\'s module (RUN, its tempo\'s knob and display, its outs), the sequencer\'s (its display, its octave\'s buttons, its clock in and notes out), the delay\'s and the LFO\'s; apart', () => {
   const P = R.panel;
-  assert.deepEqual(P.modules.map((m) => m.id), ['clock', 'seq', 'blank', 'blank']);
+  assert.deepEqual(P.modules.map((m) => [m.id, m.name]), [['clock', 'CLOCK'], ['seq', 'SEQUENCER'], ['delay', 'DELAY'], ['lfo', 'LFO']]);
   for (const [i, m] of P.modules.entries()) {
     assert.ok(m.a0 > 0 && m.a1 < R.width && m.a1 > m.a0, m.id);
     if (i) assert.ok(m.a0 > P.modules[i - 1].a1, `${m.id} right of ${P.modules[i - 1].id}`);
   }
   const module = (id) => P.modules.find((m) => m.id === id);
   const within = (m, a, r = 0) => a - r > m.a0 && a + r < m.a1;
+  /** The module a jack is on, by its id (patch.js's module, as the rack names it). */
+  const home = (id) => ({ rack: 'clock', seq: 'seq', rackdelay: 'delay', lfo: 'lfo' })[id.split('.')[0]];
   // Its jacks: the rack's in patch.js, once, in its order, after the board's and the synth's in the
-  // room's list; the clock's outs in its module, the sequencer's jacks in its.
-  assert.deepEqual(P.jacks.map((j) => j.id), JACKS.filter((j) => j.module === 'rackclock' || j.module === 'seq').map((j) => j.id));
+  // room's list; each in its module.
+  assert.deepEqual(P.jacks.map((j) => j.id), JACKS.filter((j) => ['rackclock', 'seq', 'rackdelay', 'lfo'].includes(j.module)).map((j) => j.id));
   assert.deepEqual(P.jacks.slice(0, 3).map((j) => j.id), RACK_CLOCK_OUTS.map((o) => o.id));
+  assert.deepEqual(P.jacks.slice(5).map((j) => j.id), ['rackdelay.in', 'lfo.out']);
   assert.equal(P.jackBase, S.panel.jackBase + S.panel.jacks.length);
   assert.equal(P.jackBase, B.panel.jacks.length + S.panel.jacks.length);
   const ring = BOARD.panel.jack * 1.8;
   for (const [n, j] of P.jacks.entries()) {
     assert.equal(j.out, JACKS.find((J) => J.id === j.id).dir === 'out', j.id);
-    assert.ok(within(module(j.id.startsWith('seq.') ? 'seq' : 'clock'), j.a, ring), `${j.id} in its module`);
+    assert.ok(within(module(home(j.id)), j.a, ring), `${j.id} in its module`);
     assert.ok(j.b - 0.036 > 0, `${j.id} on the panel, its plate too`);
     assert.equal(jackAt(R, j.a, j.b), n);
     for (const o of P.jacks) if (o !== j) assert.ok(Math.hypot(o.a - j.a, o.b - j.b) >= BOARD.panel.pitch - 1e-9, `${j.id} apart from ${o.id}`);
@@ -126,7 +131,7 @@ test('on its panel: the clock\'s module (RUN, its tempo\'s knob and display, its
   }
   // The tempo's knob: the clock's, clear of the rest; pointed at on the panel only.
   const tempo = R.knobs[STEPS];
-  assert.deepEqual([tempo.part, tempo.on, R.knobs.length], ['tempo', 'panel', STEPS + 1]);
+  assert.deepEqual([tempo.part, tempo.on, R.knobs.length], ['tempo', 'panel', STEPS + 1 + DELAY_KNOBS.length + LFO_KNOBS.length]);
   assert.ok(within(module('clock'), tempo.a, RACK.knob.tempo));
   assert.equal(rackKnobAt(R, tempo.a, tempo.b, 'panel'), STEPS);
   assert.equal(rackKnobAt(R, tempo.a + RACK.knob.tempo * 1.2, tempo.b, 'panel'), STEPS, 'a little larger to point at');
@@ -143,6 +148,43 @@ test('on its panel: the clock\'s module (RUN, its tempo\'s knob and display, its
   }
   assert.ok(title('TEMPO').b < tempo.b - RACK.knob.tempo, 'its name under the knob');
   assert.ok(title('OCTAVE').b > P.buttons[1].b1 && near(title('OCTAVE').a, (P.buttons[1].a0 + P.buttons[2].a1) / 2), 'over its buttons');
+});
+
+test("on the panel the delay's knobs and the LFO's, each in its module, the first over the other two; each pointed at, apart from the rest, its setting under it", () => {
+  const P = R.panel, mod = R.knobs.slice(STEPS + 1);
+  assert.deepEqual(mod.map((n) => [n.part, n.name, n.on]), [...DELAY_KNOBS.map((name) => ['delay', name, 'panel']), ...LFO_KNOBS.map((name) => ['lfo', name, 'panel'])]);
+  const r = RACK.knob.module, grip = r * 1.25, ring = BOARD.panel.jack * 1.8;
+  assert.ok(r >= 0.014, 'as large as a step\'s note\'s, to point at');
+  for (const [i, n] of mod.entries()) {
+    const k = STEPS + 1 + i, m = P.modules.find((x) => x.id === n.part), first = mod[i - (i % 3)];
+    assert.ok(n.a - grip > m.a0 && n.a + grip < m.a1, `${n.name}: in its module, as far as it is pointed at`);
+    assert.ok(i % 3 ? n.b < first.b - 2 * grip : near(n.a, (m.a0 + m.a1) / 2), `${n.name}: under the first, or it in the middle`);
+    assert.equal(knobRadius(n), r);
+    assert.equal(rackKnobAt(R, n.a, n.b, 'panel'), k, n.name);
+    assert.equal(rackKnobAt(R, n.a + r * 1.2, n.b, 'panel'), k, `${n.name}: a little larger to point at`);
+    assert.equal(rackKnobAt(R, n.a, n.b), -1, `${n.name}: on the panel, not the top`);
+    for (const [j, o] of R.knobs.entries()) if (o.on === 'panel' && j !== k) assert.ok(Math.hypot(o.a - n.a, o.b - n.b) > grip + knobRadius(o) * 1.25, `${n.name} apart from knob ${j}`);
+    for (const j of P.jacks) assert.ok(Math.hypot(j.a - n.a, j.b - n.b) > grip + ring, `${n.name} clear of ${j.id}`);
+    for (const b of P.buttons) assert.ok(n.a + grip < b.a0 || n.a - grip > b.a1 || n.b - grip > b.b1 || n.b + grip < b.b0, `${n.name} clear of ${b.id}`);
+    // Room over it for its name (rackkit.js writes it 0.0125 over its edge, 0.0095 high), under the
+    // module's (0.0125 high).
+    const t = P.titles.find((x) => x.text === m.name);
+    assert.ok(n.b + r + 0.0125 + 0.0095 / 2 < t.b - 0.0125 / 2, `${n.name}: its name under the module's`);
+  }
+  assert.deepEqual(P.settings.map((s) => s.k), mod.map((_, i) => STEPS + 1 + i));
+  for (const s of P.settings) {
+    const n = R.knobs[s.k];
+    assert.ok(near(s.a1 - s.a0, RACK.setting.w) && near(s.b1 - s.b0, RACK.setting.h) && near((s.a0 + s.a1) / 2, n.a), `${n.name}'s setting`);
+    assert.ok(s.b1 < n.b - r, `${n.name}'s setting under it`);
+    const m = P.modules.find((x) => x.id === n.part);
+    assert.ok(s.a0 > m.a0 && s.a1 < m.a1, `${n.name}'s setting in its module`);
+    for (const o of P.settings) if (o !== s) assert.ok(o.a0 >= s.a1 || o.a1 <= s.a0 || o.b0 >= s.b1 || o.b1 <= s.b0, `${n.name}'s setting apart from ${R.knobs[o.k].name}'s`);
+    for (const [j, o] of R.knobs.entries()) if (o.on === 'panel' && j !== s.k) assert.ok(Math.hypot(Math.max(s.a0 - o.a, 0, o.a - s.a1), Math.max(s.b0 - o.b, 0, o.b - s.b1)) > knobRadius(o), `${n.name}'s setting clear of knob ${j}`);
+    for (const j of P.jacks) assert.ok(s.b0 > j.b + 0.024, `${n.name}'s setting over ${j.id} and its plate (kit.js drawPlate)`);
+  }
+  // The LFO's light by its name, in its module, clear of the name.
+  const lfo = P.modules[3], name = P.titles.find((t) => t.text === 'LFO');
+  assert.ok(P.light.a > name.a + 0.02 && P.light.a + 0.006 < lfo.a1 - 0.008 && near(P.light.b, name.b));
 });
 
 test('a ray meets the key it points at (a step\'s, an accent\'s, a slide\'s), a knob, a jack, a button, and the rest as the rack', () => {
@@ -168,13 +210,19 @@ test('a ray meets the key it points at (a step\'s, an accent\'s, a slide\'s), a 
     assert.deepEqual([h?.kind, h?.rack, h?.jack], ['rackbutton', i, -1], b.id);
     assert.ok(near(h.nz, R.panel.normal[2]));
   }
-  const tempo = R.knobs[STEPS];
-  assert.deepEqual([ray(eye, panelPoint(R, tempo.a, tempo.b))?.kind, ray(eye, panelPoint(R, tempo.a, tempo.b))?.rack], ['rackknob', STEPS]);
-  // The rest: its displays, its numbers, a blank plate, its front, its side, its sign.
+  // The knobs on the panel: the tempo's, the delay's and the LFO's.
+  for (let k = STEPS; k < R.knobs.length; k++) {
+    const n = R.knobs[k], h = ray(eye, panelPoint(R, n.a, n.b));
+    assert.deepEqual([h?.kind, h?.rack, h?.jack], ['rackknob', k, -1], `${n.part} ${n.name ?? ''}`);
+  }
+  // The rest: its displays, its numbers, the delay's plate between its knobs, a setting, its front,
+  // its side, its sign.
   for (const d of [R.panel.displays.clock, R.panel.displays.seq]) assert.equal(ray(eye, panelPoint(R, (d.a0 + d.a1) / 2, (d.b0 + d.b1) / 2 + 0.01))?.kind, 'rack');
   assert.equal(ray(eye, boardPoint(R, mid(R.keys[3])[0], (R.numbers.b0 + R.numbers.b1) / 2))?.kind, 'rack', 'a step\'s number');
-  const plate = R.panel.modules[3];
-  assert.equal(ray(eye, panelPoint(R, (plate.a0 + plate.a1) / 2, 0.15))?.kind, 'rack', 'a blank plate');
+  const plate = R.panel.modules[2];
+  assert.equal(ray(eye, panelPoint(R, (plate.a0 + plate.a1) / 2, 0.155))?.kind, 'rack', "the delay's plate between its knobs");
+  const shown = R.panel.settings[4];
+  assert.equal(ray(eye, panelPoint(R, (shown.a0 + shown.a1) / 2, (shown.b0 + shown.b1) / 2))?.kind, 'rack', "the LFO's shape's setting");
   const front = ray([R.x0 + 0.3, 0.5, R.zFront + 1], [R.x0 + 0.3, 0.5, R.zFront]);
   assert.deepEqual([front?.kind, front?.nz], ['rack', 1]);
   const right = ray([R.x1 + 1, 0.5, (R.zBack + R.zFront) / 2], [R.x1, 0.5, (R.zBack + R.zFront) / 2]);

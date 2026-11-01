@@ -20,9 +20,9 @@
 // in are kept for the next visit (localStorage); a preset sets all the knobs, and Mono, at once.
 // Its patch bay (the jacks are patch.js's, the cables main.js's): its sound out (output), and two
 // modulations out, the LFO (shared) and the filter envelope (each voice's own, 0…1, as a signal:
-// a voice's goes to that voice), into three inputs (setInput): the pitch (an octave at full), the
-// cutoff (three octaves) and the amp (half open, the modulation opening it or closing it the rest of
-// the way). Its arpeggiator (arp.js) takes the keys while it is on: they make the chord it plays,
+// a voice's goes to that voice), into three inputs (setInput), which take one from outside it too
+// (the rack's LFO, lfo.js): the pitch (an octave at full), the cutoff (three octaves) and the amp
+// (half open, the modulation opening it or closing it the rest of the way). Its arpeggiator (arp.js) takes the keys while it is on: they make the chord it plays,
 // a step at a time (arpStep, on the room's clock, or arpRun, on its own), each note set ahead on the
 // audio clock and let go ARP_GATE of the step later, started afresh in mono too, whatever the pedal.
 // Its NOTES in takes the rack's sequencer (seq.js): a step at a time (seqStep), each note set ahead
@@ -305,7 +305,10 @@ const VELOCITY_CENTS = 1200;
 const BEND_CENTS = 200;
 
 /** The patch bay's inputs for a modulation (patch.js's synth.pitch, synth.cutoff, synth.amp). @typedef {'pitch' | 'cutoff' | 'amp'} ModInput */
-/** What can go into them: the LFO, or the filter envelope (each voice's into that voice). @typedef {'lfo' | 'env'} ModSource */
+/** What can go into them: the LFO, the filter envelope (each voice's into that voice), or a node from outside the synth (the rack's LFO's out, into every voice). @typedef {'lfo' | 'env' | AudioNode} ModSource */
+
+/** Whether a source is a node from outside the synth. @param {unknown} s @returns {s is AudioNode} */
+const isNode = (s) => typeof s === 'object' && s !== null && typeof (/** @type {{ connect?: unknown }} */ (s)).connect === 'function';
 
 /** The modulation inputs. @type {readonly ModInput[]} */
 export const MOD_INPUTS = Object.freeze(['pitch', 'cutoff', 'amp']);
@@ -902,20 +905,21 @@ export class Synth {
 
   /**
    * What is plugged into one of the patch bay's modulation inputs: the LFO, the filter envelope
-   * (each voice's into that voice), or nothing; heard at once.
+   * (each voice's into that voice), a node from outside the synth (in the sound's context), or
+   * nothing; heard at once.
    * @param {ModInput} input
    * @param {ModSource | null} source
    */
   setInput(input, source) {
     if (!MOD_INPUTS.includes(input)) return;
-    const to = source === 'lfo' || source === 'env' ? source : null, was = this.inputs[input];
+    const to = source === 'lfo' || source === 'env' || isNode(source) ? source : null, was = this.inputs[input];
     if (to === was) return;
     this.inputs[input] = to;
     const g = this._graph, ctx = this.sound.ctx;
     if (!g || !ctx) return;
     for (const v of this._voices) {
       /** @type {(s: ModSource) => AudioNode} */
-      const out = (s) => (s === 'lfo' ? g.lfo : v.env);
+      const out = (s) => (s === 'lfo' ? g.lfo : s === 'env' ? v.env : s);
       if (was) out(was).disconnect(v.inputs[input]);
       if (to) out(to).connect(v.inputs[input]);
     }
@@ -1277,7 +1281,7 @@ export class Synth {
     // What the patch has plugged into the modulation inputs already.
     for (const input of MOD_INPUTS) {
       const from = this.inputs[input];
-      if (from) for (const v of this._voices) (from === 'lfo' ? lfo : v.env).connect(v.inputs[input]);
+      if (from) for (const v of this._voices) (from === 'lfo' ? lfo : from === 'env' ? v.env : from).connect(v.inputs[input]);
     }
     this._graph = { lfo, vibrato, wah, pwm, bend, width, pre, post, wet, level };
     for (const id of IDS) this._apply(id, false);

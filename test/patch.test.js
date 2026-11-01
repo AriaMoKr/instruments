@@ -1,6 +1,7 @@
 // The patch (patch.js): the jacks (the clock's outputs, the drums' clock input and an output for
-// each pad, the delay's input, the synth's patch bay, the rack's clock outputs and its sequencer's
-// clock in and notes out), the patch the room comes with, what a cable can join, plugging and
+// each pad, the delay's input, the synth's patch bay, the rack's clock outputs, its sequencer's
+// clock in and notes out, its delay's in and its LFO's out), the patch the room comes with, what a
+// cable can join, plugging and
 // unplugging (an input takes one cable, an output feeds any number), onChange, and the patch kept
 // for the next visit (what was kept but can't be plugged, as it comes).
 import { test } from 'node:test';
@@ -23,15 +24,18 @@ const SYNTH_JACKS = [
   ['synth.pitch', 'PITCH', 'in', 'mod'], ['synth.cutoff', 'CUTOFF', 'in', 'mod'], ['synth.amp', 'AMP', 'in', 'mod'],
   ['synth.notes', 'NOTES', 'in', 'notes'],
 ];
-/** The rack's jacks: its clock's outputs, then the sequencer's clock in and notes out. */
+/** The rack's jacks: its clock's outputs, the sequencer's clock in and notes out, the delay's in, the LFO's out. */
 const RACK_JACKS = [
   ['rack.x1', '×1', 'out', 'clock'], ['rack.d2', '÷2', 'out', 'clock'], ['rack.d4', '÷4', 'out', 'clock'],
   ['seq.clock', 'CLOCK', 'in', 'clock'], ['seq.notes', 'NOTES', 'out', 'notes'],
+  ['rackdelay.in', 'IN', 'in', 'audio'], ['lfo.out', 'OUT', 'out', 'mod'],
 ];
+/** The rack's modules. */
+const RACK_MODULES = new Set(['rackclock', 'seq', 'rackdelay', 'lfo']);
 /** Every input as kept with the patch as it comes, and `o` changed. */
 const kept = (o = {}) => ({
   'drums.clock': 'clock.x1', 'delay.in': null, 'synth.clock': 'clock.x1', 'synth.pitch': null, 'synth.cutoff': null, 'synth.amp': null,
-  'synth.notes': 'seq.notes', 'seq.clock': 'rack.x1', ...o,
+  'synth.notes': 'seq.notes', 'seq.clock': 'rack.x1', 'rackdelay.in': null, ...o,
 });
 
 /** A patch kept nowhere, and each onChange it calls, as [to, from, was]. */
@@ -54,12 +58,12 @@ test("the jacks: the clock's three outputs, the drums' clock input, an output fo
   assert.deepEqual(JACKS.filter((j) => j.module === 'clock').map((j) => j.id), CLOCK_OUTS.map((o) => o.id), "clock.js's outputs");
   assert.deepEqual(JACKS.filter((j) => j.id.startsWith('pad.')), PADS.map((p) => ({ id: `pad.${p.id}`, module: 'drums', name: `${p.name} out`, label: p.name, dir: 'out', kind: 'audio' })));
   assert.deepEqual(JACKS.filter((j) => j.module === 'synth').map((j) => [j.id, j.label, j.dir, j.kind]), SYNTH_JACKS);
-  assert.deepEqual(JACKS.filter((j) => j.module === 'rackclock' || j.module === 'seq').map((j) => [j.id, j.label, j.dir, j.kind]), RACK_JACKS);
+  assert.deepEqual(JACKS.filter((j) => RACK_MODULES.has(j.module)).map((j) => [j.id, j.label, j.dir, j.kind]), RACK_JACKS);
   assert.deepEqual(JACKS.filter((j) => j.module === 'rackclock').map((j) => j.id), RACK_CLOCK_OUTS.map((o) => o.id), "clock.js's outputs on the rack");
   assert.deepEqual(JACKS.filter((j) => j.dir === 'in').map((j) => [j.id, j.module, j.kind]), [
     ['drums.clock', 'drums', 'clock'], ['delay.in', 'delay', 'audio'],
     ['synth.clock', 'synth', 'clock'], ['synth.pitch', 'synth', 'mod'], ['synth.cutoff', 'synth', 'mod'], ['synth.amp', 'synth', 'mod'],
-    ['synth.notes', 'synth', 'notes'], ['seq.clock', 'seq', 'clock'],
+    ['synth.notes', 'synth', 'notes'], ['seq.clock', 'seq', 'clock'], ['rackdelay.in', 'rackdelay', 'audio'],
   ]);
   for (const j of JACKS) {
     assert.ok(j.name && j.label, `${j.id}: a name and a label`);
@@ -220,8 +224,27 @@ test('the patch: kept at every change for the next visit, every input (one left 
   const before = new Patch({ storage: memoryStorage({ patch: '{"drums.clock":"clock.d2","delay.in":"pad.kick"}' }) });
   assert.deepEqual(before.cables(), [{ from: 'clock.d2', to: 'drums.clock' }, { from: 'pad.kick', to: 'delay.in' }, { from: 'clock.x1', to: 'synth.clock' }, ...RACK_CABLES]);
   // One kept before the rack: its inputs as they come; the synth's kept as they were.
-  const synthOnly = new Patch({ storage: memoryStorage({ patch: JSON.stringify({ ...kept({ 'synth.amp': 'synth.lfo' }), 'synth.notes': undefined, 'seq.clock': undefined }) }) });
+  const synthOnly = new Patch({ storage: memoryStorage({ patch: JSON.stringify({ ...kept({ 'synth.amp': 'synth.lfo' }), 'synth.notes': undefined, 'seq.clock': undefined, 'rackdelay.in': undefined }) }) });
   assert.deepEqual(synthOnly.cables(), [AS_IT_COMES[0], AS_IT_COMES[1], { from: 'synth.lfo', to: 'synth.amp' }, ...RACK_CABLES]);
+  // One kept before the rack's delay and LFO: its delay's in as it comes (nothing), the rest as kept.
+  const noDelay = new Patch({ storage: memoryStorage({ patch: JSON.stringify({ ...kept({ 'seq.clock': 'rack.d2' }), 'rackdelay.in': undefined }) }) });
+  assert.deepEqual(noDelay.cables(), [AS_IT_COMES[0], AS_IT_COMES[1], RACK_CABLES[0], { from: 'rack.d2', to: 'seq.clock' }]);
+});
+
+test("the rack's delay takes sound (a pad's, the synth's), and its LFO goes where a modulation goes: the synth's pitch, cutoff and amp", () => {
+  const { patch, changes } = noted();
+  assert.ok(patch.canPlug('synth.out', 'rackdelay.in') && patch.canPlug('rackdelay.in', 'pad.clap'));
+  assert.ok(!patch.canPlug('lfo.out', 'rackdelay.in') && !patch.canPlug('seq.notes', 'rackdelay.in') && !patch.canPlug('rack.x1', 'rackdelay.in'));
+  for (const m of ['synth.pitch', 'synth.cutoff', 'synth.amp']) assert.ok(patch.canPlug('lfo.out', m), m);
+  assert.ok(!patch.canPlug('lfo.out', 'seq.clock') && !patch.canPlug('lfo.out', 'delay.in') && !patch.canPlug('lfo.out', 'synth.lfo'));
+  assert.ok(patch.plug('synth.out', 'rackdelay.in') && patch.plug('delay.in', 'synth.out'), 'one sound into both delays');
+  assert.ok(patch.plug('lfo.out', 'synth.cutoff') && patch.plug('synth.amp', 'lfo.out'), 'one LFO into two inputs');
+  assert.deepEqual(patch.targets('synth.out'), ['delay.in', 'rackdelay.in']);
+  assert.deepEqual(patch.targets('lfo.out'), ['synth.cutoff', 'synth.amp']);
+  assert.ok(patch.plug('synth.env', 'synth.cutoff'), 'the envelope in its place');
+  assert.deepEqual(changes.slice(-1), [['synth.cutoff', 'synth.env', 'lfo.out']]);
+  assert.ok(patch.unplug('lfo.out'));
+  assert.deepEqual(patch.targets('lfo.out'), []);
 });
 
 test("what was kept but can't be plugged is as it comes, and so is an input not kept; storage that refuses or is blocked breaks nothing", () => {

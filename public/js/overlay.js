@@ -19,7 +19,8 @@
 // section each as on its top, and the cables into its inputs likewise. Rack is the rack beside it: a
 // button to go and play at it, its clock (the room's again: Start or Stop, the tempo), its
 // sequencer's sixteen steps a row each (whether the step plays, its note a choice, its accent and its
-// slide; the step playing marked), the octave the line plays in, and the cables into its inputs.
+// slide; the step playing marked), the octave the line plays in, its delay's knobs and its LFO's as
+// sliders, and the cables into its inputs.
 // Sound is the volume and mute over the room's sound, and a MIDI device to play from, where the
 // browser has Web MIDI.
 // On a TV (common's tv.js) the remote reaches only the card, so Wave is in it, and there is nothing
@@ -29,6 +30,7 @@ import { KNOBS, PADS, ROWS, keyLabel, knobText } from './drums.js';
 import { TEMPO } from './clock.js';
 import { STEPS } from './pattern.js';
 import { DELAY_KNOBS, MAX_STEPS, delaySteps, delayText } from './delay.js';
+import { LFO_KNOBS, LFO_RATES, LFO_SHAPES, knobPlace, lfoText } from './lfo.js';
 import { JACKS } from './patch.js';
 import { KEYS, LOWEST, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack, noteName, spokenNote, synthText } from './synth.js';
 import { ARP_MODES, ARP_RANGES } from './arp.js';
@@ -50,6 +52,22 @@ function press(b, on) {
   const pressed = String(on);
   if (b.getAttribute('aria-pressed') !== pressed) b.setAttribute('aria-pressed', pressed);
 }
+
+/** A delay's knobs (delay.js) on its sliders, and in words: its time in steps, the rest in percent. */
+function showDelay(inputs, knobs) {
+  for (const [name, { input, out }] of inputs) {
+    const value = String(name === 'time' ? delaySteps(knobs[name]) : Math.round(knobs[name] * 100));
+    if (input.value !== value) input.value = value;
+    const text = delayText(name, knobs[name]);
+    if (out.textContent !== text) {
+      out.textContent = text;
+      input.setAttribute('aria-valuetext', text);
+    }
+  }
+}
+
+/** How many places an LFO knob's slider has (its rate's, its shape's), else 0 (its depth: a percent). */
+const lfoPlaces = (name) => (name === 'rate' ? LFO_RATES.length : name === 'shape' ? LFO_SHAPES.length : 0);
 
 // tv: walking with a remote, and a line for TalkBack, which keeps the arrows (the view is described
 // by the hint); tv-card: in the card. The hallway's.
@@ -252,24 +270,36 @@ export class Overlay {
     this.stepsBox = el('fieldset', { class: 'pattern' }, el('legend', {}, 'Steps: ', this.stepPad), this.stepGrid, el('div', { class: 'actions' }, this.clearSteps, this.resetPattern));
     /** @private the step marked as playing, else -1 */
     this._playhead = -1;
-    // The delay's knobs: its time in steps of the clock, its feedback and level.
+    // A delay's knobs (the board's, the rack's): its time in steps of the clock, its feedback and
+    // level, and a button for them as they come.
+    /**
+     * @param {(name: import('./delay.js').DelayKnob, value: number) => void} apply
+     * @param {() => void} reset
+     */
+    const delayBox = (apply, reset) => {
+      /** @type {Map<import('./delay.js').DelayKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+      const inputs = new Map();
+      const rows = DELAY_KNOBS.map((name) => {
+        const label = name[0].toUpperCase() + name.slice(1);
+        const s = name === 'time'
+          ? range(label, 1, MAX_STEPS, (n) => apply(name, (n - 1) / (MAX_STEPS - 1)))
+          : slider(label, (v) => apply(name, v));
+        inputs.set(name, s);
+        return s.row;
+      });
+      const button = el('button', { class: 'chip', type: 'button' }, 'Delay as it comes');
+      button.addEventListener('click', reset);
+      return { box: el('fieldset', { class: 'delay' }, el('legend', {}, 'Delay'), ...rows, el('div', { class: 'actions' }, button)), inputs, button };
+    };
     /** (name, value) a knob of the delay set 0…1. @type {(name: import('./delay.js').DelayKnob, value: number) => void} */
     this.onDelay = () => {};
     /** The delay's knobs as it comes. */
     this.onResetDelay = () => {};
-    /** Each of the delay's sliders and the words for its setting. @type {Map<import('./delay.js').DelayKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
-    this.delayInputs = new Map();
-    const delayRows = DELAY_KNOBS.map((name) => {
-      const label = name[0].toUpperCase() + name.slice(1);
-      const s = name === 'time'
-        ? range(label, 1, MAX_STEPS, (n) => this.onDelay(name, (n - 1) / (MAX_STEPS - 1)))
-        : slider(label, (v) => this.onDelay(name, v));
-      this.delayInputs.set(name, s);
-      return s.row;
-    });
-    this.resetDelay = el('button', { class: 'chip', type: 'button' }, 'Delay as it comes');
-    this.resetDelay.addEventListener('click', () => this.onResetDelay());
-    this.delayBox = el('fieldset', { class: 'delay' }, el('legend', {}, 'Delay'), ...delayRows, el('div', { class: 'actions' }, this.resetDelay));
+    const boardDelay = delayBox((name, v) => this.onDelay(name, v), () => this.onResetDelay());
+    /** Each of the delay's sliders and the words for its setting. */
+    this.delayInputs = boardDelay.inputs;
+    this.resetDelay = boardDelay.button;
+    this.delayBox = boardDelay.box;
     // The cables: for each input, the output plugged into it, or nothing. The board's here (the
     // drums' and the delay's), the synth's and the rack's with them.
     /** (input, output) the output chosen for an input (patch.js ids), null for nothing. @type {(input: string, output: string | null) => void} */
@@ -496,9 +526,37 @@ export class Overlay {
       el('div', { class: 'seq-steps' }, ...this.seqSteps.map((r) => r.row)),
       seqOctave.row,
       el('div', { class: 'actions' }, this.clearSeq, this.resetSeq));
-    this.rackCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['seq']));
+    // Its delay, as the board's; and its LFO: its rate (a note value) and its shape, each a slider
+    // along its knob's places, and its depth.
+    /** (name, value) a knob of the rack's delay set 0…1. @type {(name: import('./delay.js').DelayKnob, value: number) => void} */
+    this.onRackDelay = () => {};
+    /** The rack's delay's knobs as it comes. */
+    this.onResetRackDelay = () => {};
+    const rackDelay = delayBox((name, v) => this.onRackDelay(name, v), () => this.onResetRackDelay());
+    /** Each of the rack's delay's sliders and the words for its setting. */
+    this.rackDelayInputs = rackDelay.inputs;
+    this.resetRackDelay = rackDelay.button;
+    this.rackDelayBox = rackDelay.box;
+    /** (name, value) a knob of the LFO set 0…1. @type {(name: import('./lfo.js').LfoKnob, value: number) => void} */
+    this.onLfo = () => {};
+    /** The LFO's knobs as it comes. */
+    this.onResetLfo = () => {};
+    /** Each of the LFO's sliders and the words for its setting. @type {Map<import('./lfo.js').LfoKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.lfoInputs = new Map();
+    const lfoRows = LFO_KNOBS.map((name) => {
+      const label = name[0].toUpperCase() + name.slice(1), places = lfoPlaces(name);
+      const s = places
+        ? range(label, 1, places, (n) => this.onLfo(name, (n - 1) / (places - 1)))
+        : slider(label, (v) => this.onLfo(name, v));
+      this.lfoInputs.set(name, s);
+      return s.row;
+    });
+    this.resetLfo = el('button', { class: 'chip', type: 'button' }, 'LFO as it comes');
+    this.resetLfo.addEventListener('click', () => this.onResetLfo());
+    this.lfoBox = el('fieldset', { class: 'lfo' }, el('legend', {}, 'LFO'), ...lfoRows, el('div', { class: 'actions' }, this.resetLfo));
+    this.rackCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['seq', 'rackdelay']));
     this.rackPlayRow = el('div', { class: 'actions' }, this.playRack);
-    this.rack = el('div', { class: 'part rack', id: 'rack', hidden: '' }, this.rackPlayRow, this.rackClockBox, this.seqBox, this.rackCablesBox);
+    this.rack = el('div', { class: 'part rack', id: 'rack', hidden: '' }, this.rackPlayRow, this.rackClockBox, this.seqBox, this.rackDelayBox, this.lfoBox, this.rackCablesBox);
     // The room's sound: its volume and Mute, and a MIDI device to play from.
     this.soundToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'sound' }, 'Sound');
     this.soundToggle.addEventListener('click', () => this.openSound(this.sound.hidden));
@@ -860,10 +918,21 @@ export class Overlay {
 
   /** The delay's knobs (delay.js): their sliders and words. */
   setDelay(knobs) {
-    for (const [name, { input, out }] of this.delayInputs) {
-      const value = String(name === 'time' ? delaySteps(knobs[name]) : Math.round(knobs[name] * 100));
+    showDelay(this.delayInputs, knobs);
+  }
+
+  /** The rack's delay's knobs (delay.js), likewise. */
+  setRackDelay(knobs) {
+    showDelay(this.rackDelayInputs, knobs);
+  }
+
+  /** The LFO's knobs (lfo.js): their sliders and words. */
+  setLfo(knobs) {
+    for (const [name, { input, out }] of this.lfoInputs) {
+      const places = lfoPlaces(name);
+      const value = String(places ? knobPlace(knobs[name], places) + 1 : Math.round(knobs[name] * 100));
       if (input.value !== value) input.value = value;
-      const text = delayText(name, knobs[name]);
+      const text = lfoText(name, knobs[name]);
       if (out.textContent !== text) {
         out.textContent = text;
         input.setAttribute('aria-valuetext', text);

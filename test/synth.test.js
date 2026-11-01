@@ -443,6 +443,28 @@ test('the patch bay: the LFO, or each voice its own filter envelope, into the pi
   assert.ok(other._voices.every((x) => x.vca.gain.value === AMP_MOD && other._graph.lfo.outputs.includes(x.inputs.amp)));
 });
 
+test("a modulation from outside it (the rack's LFO's out): into every voice, plugged in before the voices are made or after; moved, pulled out, and nothing for what is not a node", () => {
+  const { sound, synth } = make();
+  const ctx = /** @type {FakeContext} */ (/** @type {unknown} */ (sound.wake()));
+  const rack = ctx.createGain();
+  synth.setInput('cutoff', rack);
+  assert.equal(synth.inputs.cutoff, rack);
+  synth.noteOn(60);
+  const voices = synth._voices, g = synth._graph;
+  assert.ok(voices.every((v) => rack.outputs.includes(v.inputs.cutoff)), 'plugged in before: connected as they are made');
+  synth.setInput('pitch', rack);
+  assert.ok(voices.every((v) => rack.outputs.includes(v.inputs.pitch)), 'and after: at once');
+  synth.setInput('cutoff', 'lfo');
+  assert.ok(voices.every((v) => !rack.outputs.includes(v.inputs.cutoff) && g.lfo.outputs.includes(v.inputs.cutoff)), 'moved to its own LFO');
+  synth.setInput('amp', rack);
+  for (const v of voices) assert.deepEqual(last(v.vca.gain).slice(0, 2), ['target', AMP_MOD], 'half open, the rest the LFO');
+  synth.setInput('pitch', null);
+  synth.setInput('amp', null);
+  assert.deepEqual(rack.outputs, [], 'pulled out');
+  synth.setInput('pitch', /** @type {any} */ ({ connect: 'no' }));
+  assert.equal(synth.inputs.pitch, null, 'not a node: nothing');
+});
+
 test('the arpeggiator: the keys make its chord, and each step plays its next note, set ahead and let go ARP_GATE of the step later', () => {
   const { sound, synth } = make();
   let arps = 0;

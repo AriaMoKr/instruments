@@ -3,7 +3,8 @@
 // `time` (in steps of the clock, so that the echoes fall on the beat and follow its tempo), a little
 // darker each time round (a low-pass in the loop) and turned down by `feedback`; `level` is how loud
 // the echoes are. What goes in is still heard as it was: its pad's out feeds the drums' channel too.
-// The knobs are kept for the next visit (localStorage).
+// The knobs are kept for the next visit (localStorage). The rack's delay is another (`rackdelay.in`,
+// its own channel and knobs).
 import { pageStorage } from './sound.js';
 import { TEMPO, stepSeconds } from './clock.js';
 
@@ -50,10 +51,12 @@ export function delayText(name, k) {
 export class Delay {
   /**
    * @param {Sound} sound
-   * @param {{ storage?: import('./sound.js').Store | null, key?: string }} [o] where the knobs are kept (localStorage)
+   * @param {{ storage?: import('./sound.js').Store | null, key?: string, channel?: string }} [o] where the knobs are kept (localStorage), and the mixer's channel its echoes go into
    */
-  constructor(sound, { storage = pageStorage(), key = 'delay' } = {}) {
+  constructor(sound, { storage = pageStorage(), key = 'delay', channel = 'delay' } = {}) {
     this.sound = sound;
+    /** The mixer's channel its echoes go into. */
+    this.channel = channel;
     /** @type {DelayKnobs} */
     this.knobs = { ...DEFAULT_DELAY };
     /** The clock's tempo, which its time follows. */
@@ -75,12 +78,12 @@ export class Delay {
   }
 
   /**
-   * Its input (the `delay.in` jack's), made with its loop the first time it is asked for once the
-   * sound has woken; else null.
+   * Its input (the `delay.in` jack's, or `rackdelay.in`'s), made with its loop the first time it is
+   * asked for once the sound has woken; else null.
    */
   input() {
     if (this._graph) return this._graph.input;
-    const ctx = this.sound.ctx, channel = this.sound.channel('delay');
+    const ctx = this.sound.ctx, channel = this.sound.channel(this.channel);
     if (!ctx || !channel) return null;
     const input = ctx.createGain();
     const delay = ctx.createDelay(MAX_STEPS * stepSeconds(TEMPO.min) + 0.05);
