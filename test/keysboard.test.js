@@ -1,22 +1,25 @@
 // The keyboard (keysboard.js): where it stands beside the drum board and what is on it (its keys, its
-// drawbars and knobs in a row with their names and their sections', and the panel's display and
-// buttons), a drawbar's tab along its slot, what a ray meets on it (a black key over the white ones,
-// a drawbar, a knob, a button), one walking round it and playing it (all of it in view on a screen, or
-// on a narrow one the keys round middle C; the keys in reach in VR), and a tip down in a key.
+// drawbars and knobs in a row with their names and their sections', and the panel's display, buttons
+// and jacks), a drawbar's tab along its slot, what a ray meets on it (a black key over the white ones,
+// a drawbar, a knob, a button, a jack), one walking round it and playing it (all of it in view on a
+// screen, or on a narrow one the keys round middle C; the keys in reach in VR), and a tip down in a key.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
 import { EYE, MARGIN, layoutRoom } from '../public/js/room.js';
-import { BOARD, boardBlocks, boardFront, boardPoint, boardStand, clampBoard, layoutBoard, panelPoint } from '../public/js/board.js';
+import { BOARD, boardBlocks, boardFront, boardPoint, boardStand, clampBoard, jackAt, layoutBoard, panelPoint } from '../public/js/board.js';
 import { SYNTH, buttonAt, dialAt, keyAt, keyUnder, layoutSynth } from '../public/js/synthboard.js';
+import { layoutRack } from '../public/js/rackboard.js';
 import { KEYBOARD, drawbarAlong, drawbarAt, drawbarValue, framedKeys, hitKeys, layoutKeyboard, tabB } from '../public/js/keysboard.js';
 import { DRAWBARS, KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_SECTIONS, KEYS_SOUNDS } from '../public/js/keys.js';
+import { JACKS } from '../public/js/patch.js';
 import { isBlack } from '../public/js/synth.js';
 
 const L = layoutRoom(ROOM);
 const B = layoutBoard(L);
 const S = layoutSynth(L, B);
-const K = layoutKeyboard(L, B);
+const rack = layoutRack(L, S);
+const K = layoutKeyboard(L, B, rack);
 const KEY = SYNTH.key, D = KEYBOARD.drawbar;
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 const blank = () => ({ t: 0, kind: '', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, u: 0, v: 0, walkable: true, piece: -1, pad: 0, step: 0, knob: 0, jack: 0, key: 0, dial: 0, button: 0, seq: 0, rack: 0, keys: 0 });
@@ -126,15 +129,41 @@ test('on the panel: the display, then the sounds, the percussion, the rotary spe
     assert.equal(buttonAt(K, (b.a0 + b.a1) / 2, (b.b0 + b.b1) / 2), i);
     for (const o of P.buttons) if (o !== b) assert.ok(o.a0 >= b.a1 + 0.005 || o.a1 <= b.a0 - 0.005, `${b.id} apart from ${o.id}`);
   }
-  assert.deepEqual(P.titles.map((t) => t.text), ['SOUND', 'PERCUSSION', 'ROTARY', 'OCTAVE']);
+  assert.deepEqual(P.titles.map((t) => t.text), ['SOUND', 'PERCUSSION', 'ROTARY', 'OCTAVE', 'PATCH']);
   const group = { SOUND: 'sound.', PERCUSSION: 'switch.', ROTARY: 'switch.rotaryFast', OCTAVE: 'octave.' };
-  for (const t of P.titles) {
+  for (const t of P.titles.filter((x) => x.text in group)) {
     const under = P.buttons.filter((b) => b.id.startsWith(group[t.text]) && (t.text !== 'PERCUSSION' || b.id !== 'switch.rotaryFast'));
     assert.ok(under.length && near(t.a, (under[0].a0 + under[under.length - 1].a1) / 2), `${t.text} over its buttons`);
     assert.ok(t.b > Math.max(...under.map((b) => b.b1)) + 0.01 && t.b < P.height - 0.012, `${t.text} over them, on the panel`);
   }
   assert.equal(buttonAt(K, (P.display.a0 + P.display.a1) / 2, (P.display.b0 + P.display.b1) / 2), -1);
   assert.ok(P.display.a1 - P.display.a0 > 0.25 && P.display.b1 < P.height);
+});
+
+test('its jacks over the buttons at the right end, nearest the board: its sound and its notes out on a plate, the rotary speaker\'s speed in, PATCH over them', () => {
+  const P = K.panel, J = BOARD.panel.jack;
+  assert.deepEqual(P.jacks.map((j) => j.id), JACKS.filter((j) => j.module === 'keys').map((j) => j.id), "patch.js's, in its order");
+  assert.deepEqual(P.jacks.map((j) => j.out), [true, true, false]);
+  assert.equal(P.jackBase, rack.panel.jackBase + rack.panel.jacks.length, "in the room's list after the rack's");
+  const [out, notes, rotary] = P.jacks, buttons = Math.max(...P.buttons.map((b) => b.b1));
+  assert.ok(out.a > notes.a && notes.a > rotary.a, 'its sound out at the end, nearest the board');
+  assert.ok(out.a + 0.026 <= K.width - 0.02, 'the plate on the panel');
+  for (const [k, j] of P.jacks.entries()) {
+    assert.ok(near(j.b, KEYBOARD.panel.row) && j.b - J - 0.02 > buttons + 0.02 && j.b + 0.024 < P.height - 0.03, `${j.id}: over the buttons and their names, under PATCH`);
+    assert.equal(jackAt(K, j.a, j.b), k);
+    for (const o of P.jacks) if (o !== j) assert.ok(Math.abs(o.a - j.a) >= KEYBOARD.panel.pitch - 1e-9, `${j.id} apart from ${o.id}`);
+  }
+  assert.ok(rotary.a - J > P.buttons.find((b) => b.id === 'sustain').a1, 'at the right end, past SUSTAIN');
+  const patch = P.titles.find((t) => t.text === 'PATCH');
+  assert.ok(patch.a0 < rotary.a - J && patch.a1 > out.a + J && patch.a1 < K.width && near(patch.a, (patch.a0 + patch.a1) / 2), 'PATCH over all three');
+  assert.ok(patch.b > out.b + 0.024 && patch.b < P.height);
+  for (const b of P.buttons) assert.equal(jackAt(K, (b.a0 + b.a1) / 2, (b.b0 + b.b1) / 2), -1, b.id);
+  // Pointed at: a jack, the room's index for it.
+  for (const [k, j] of P.jacks.entries()) {
+    const h = ray(eye, panelPoint(K, j.a, j.b));
+    assert.deepEqual([h?.kind, h?.jack, h?.keys, h?.button], ['jack', P.jackBase + k, -1, -1], j.id);
+  }
+  assert.deepEqual([ray(eye, panelPoint(K, notes.a, notes.b + 0.03))?.kind, ray(eye, panelPoint(K, notes.a, notes.b + 0.03))?.jack], ['keys', -1], 'beside one: the panel');
 });
 
 test('a ray meets the key it points at (a black one over the white), a drawbar, a knob, a button, and the rest as the keyboard', () => {
@@ -152,7 +181,7 @@ test('a ray meets the key it points at (a black one over the white), a drawbar, 
   }
   for (const [i, b] of K.panel.buttons.entries()) {
     const h = ray(eye, panelPoint(K, (b.a0 + b.a1) / 2, (b.b0 + b.b1) / 2));
-    assert.deepEqual([h?.kind, h?.keys, h?.button], ['keysbutton', i, -1], b.id);
+    assert.deepEqual([h?.kind, h?.keys, h?.button, h?.jack], ['keysbutton', i, -1, -1], b.id);
     assert.ok(near(h.nz, K.panel.normal[2]));
   }
   const P = K.panel.display;

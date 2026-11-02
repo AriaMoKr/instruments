@@ -12,7 +12,8 @@
 // Drums is the drum board: a button to go and play it (or step away), its clock (Start or Stop, and
 // the tempo), its pads as buttons (each plays as it is pressed, as on the board), the steps of the
 // pad last played as toggles (the step playing marked), its knobs and the delay's as sliders, and the
-// cables as a choice for each of the board's inputs (the synth's sound among those for the delay's).
+// cables as a choice for each of the board's inputs (the synth's sound and the keyboard's among those
+// for the delay's).
 // Synth is the synth: a button to go and play it, its keys (each sounds while pressed, one stop among
 // them with the arrows going along them), its sounds (the presets a choice, Mono, the octave), its
 // arpeggiator (off or one of its ways, Hold, the octaves it plays over), its knobs as sliders, a
@@ -22,8 +23,9 @@
 // slide; the step playing marked), the octave the line plays in, its delay's knobs and its LFO's as
 // sliders, and the cables into its inputs. Keys is the keyboard: a button to go and play at it, its
 // keys as the synth's, its sound (the organ, the electric piano or both, Sustain, the octave the
-// computer's keys play in), its drawbars as sliders in eighths, its percussion's switches, and its
-// organ's knobs and its electric piano's, a section each as on its top.
+// computer's keys play in), its drawbars as sliders in eighths, its percussion's switches, its
+// organ's knobs and its electric piano's, a section each as on its top, and the cable into its input
+// (ROTARY).
 // Sound is the volume and mute over the room's sound, and a MIDI device to play from, where the
 // browser has Web MIDI.
 // On a TV (common's tv.js) the remote reaches only the card, so Wave is in it, and there is nothing
@@ -397,7 +399,7 @@ export class Overlay {
     this.resetDelay = boardDelay.button;
     this.delayBox = boardDelay.box;
     // The cables: for each input, the output plugged into it, or nothing. The board's here (the
-    // drums' and the delay's), the synth's and the rack's with them.
+    // drums' and the delay's), the synth's, the rack's and the keyboard's with them.
     /** (input, output) the output chosen for an input (patch.js ids), null for nothing. @type {(input: string, output: string | null) => void} */
     this.onPlug = () => {};
     /** Each input's choice. @type {Map<string, HTMLSelectElement>} */
@@ -694,8 +696,11 @@ export class Overlay {
     this.percBox = el('fieldset', { class: 'perc' }, el('legend', {}, 'Percussion'),
       el('div', { class: 'choices' }, ...KEYS_SWITCHES.filter((w) => w.id !== 'rotaryFast').map(check)));
     const [drawbarsBox, ...soundBoxes] = this.keysSectionBoxes;
+    // Its cable in, ROTARY (its sound and its notes go out from the delays' and the synth's choices).
+    this.keysCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['keys']));
     this.keysPlayRow = el('div', { class: 'actions' }, this.playKeys);
-    this.keysPart = el('div', { class: 'part keys', id: 'keys', hidden: '' }, this.keysPlayRow, this.keysRow, this.keysSoundBox, drawbarsBox, this.percBox, ...soundBoxes);
+    this.keysPart = el('div', { class: 'part keys', id: 'keys', hidden: '' }, this.keysPlayRow, this.keysRow, this.keysSoundBox, drawbarsBox, this.percBox, ...soundBoxes,
+      this.keysCablesBox);
     // The room's sound: its volume and Mute, and a MIDI device to play from.
     this.soundToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'sound' }, 'Sound');
     this.soundToggle.addEventListener('click', () => this.openSound(this.sound.hidden));

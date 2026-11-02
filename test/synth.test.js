@@ -5,8 +5,8 @@
 // voice, the one held longest taken for a seventh), the sustain pedal, mono (one note, stacked and
 // spread, legato and gliding), the knobs heard at once, the presets, a note played for a moment,
 // the patch bay (its sound out, the LFO and the filter envelope into the pitch, the cutoff and the
-// amp), the arpeggiator played through it, the rack's sequencer through its NOTES in, and the
-// settings kept for the next visit.
+// amp, and out to another instrument), the arpeggiator played through it, the rack's sequencer
+// through its NOTES in, and the settings kept for the next visit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -463,6 +463,70 @@ test("a modulation from outside it (the rack's LFO's out): into every voice, plu
   assert.deepEqual(rack.outputs, [], 'pulled out');
   synth.setInput('pitch', /** @type {any} */ ({ connect: 'no' }));
   assert.equal(synth.inputs.pitch, null, 'not a node: nothing');
+});
+
+test("its modulations out to another instrument (the keyboard's ROTARY in): the LFO as it is, and the filter envelope of the voice started last; the voices made for them once there is sound", () => {
+  const { sound, synth } = make();
+  let built = 0;
+  synth.onBuilt = () => built++;
+  assert.equal(synth.modOutput('lfo'), null, 'no sound yet');
+  assert.equal(synth.modOutput('env'), null);
+  sound.wake();
+  const lfo = synth.modOutput('lfo'), envs = synth.modOutput('env');
+  assert.equal(built, 1, 'the voices made for them');
+  assert.equal(lfo, synth._graph.lfo);
+  assert.equal(envs, synth._graph.envs);
+  assert.equal(synth.modOutput('env'), envs, 'the same each time');
+  const voices = synth._voices;
+  assert.ok(voices.every((v) => v.env.outputs.includes(v.tap) && v.tap.outputs.includes(envs)), 'each voice\'s through its tap');
+  /** The voices whose taps are open at time t: as the switch set latest at or before it (of two at once, the last) left them. */
+  const open = (t) => voices.filter((v) => {
+    let x = v.tap.gain.value, at = -Infinity;
+    for (const [kind, value, when] of v.tap.gain.events) if (kind === 'set' && when <= t && when >= at) [x, at] = [value, when];
+    return x === 1;
+  });
+  assert.deepEqual(open(0), [], 'no voice started yet: none');
+  synth.noteOn(60);
+  const first = voices.find((v) => v.note === 60);
+  assert.deepEqual(open(0), [first]);
+  sound.ctx.currentTime = 1;
+  synth.noteOn(64);
+  const second = voices.find((v) => v.note === 64);
+  assert.deepEqual(open(1), [second], 'the one started last, the one before no more');
+  assert.deepEqual(open(0.5), [first], 'switched at its time');
+  // A note set ahead (the sequencer's) switches at its own time, and one played before that goes
+  // out till then.
+  synth.seqStep(67, 0.8, 1.12, 1.2);
+  const ahead = voices.find((v) => v.note === 67);
+  assert.deepEqual(open(1.1), [second], 'set ahead: not before its time');
+  assert.deepEqual(open(1.12), [ahead]);
+  sound.ctx.currentTime = 1.05;
+  synth.noteOn(72);
+  const now = voices.find((v) => v.note === 72);
+  assert.deepEqual(open(1.05), [now], 'played before it comes: till then');
+  assert.deepEqual(open(1.2), [ahead], 'then the one started after it');
+  sound.ctx.currentTime = 2;
+  synth.noteOn(64);
+  assert.deepEqual(open(2), [second], 'the same voice again');
+  synth.setMono(true);
+  synth.noteOn(48);
+  assert.deepEqual(open(2), [voices[0]], 'in mono, the first voice\'s: the rest start with it');
+});
+
+test('in mono a key let go that isn\'t held here lets nothing go: the voices are another\'s (the sequencer\'s note held on)', () => {
+  const { sound, synth } = make();
+  synth.setMono(true);
+  sound.wake();
+  assert.equal(synth.seqStep(48, 0.8, 0, Infinity), true);
+  const playing = () => synth._voices.filter((v) => v.started > -Infinity && v.ended === Infinity);
+  const n = playing().length;
+  assert.ok(n > 0);
+  synth.noteOff(60);
+  assert.equal(playing().length, n, 'played on');
+  synth.noteOn(60);
+  sound.ctx.currentTime = 1;
+  synth.noteOff(60);
+  assert.deepEqual(playing(), [], 'a key held here, let go: let go');
 });
 
 test('the arpeggiator: the keys make its chord, and each step plays its next note, set ahead and let go ARP_GATE of the step later', () => {

@@ -8,15 +8,16 @@
 // section's in front of those, the sections spread across the row; and on the panel a display (the
 // sound, the drawbars as an organist writes them, the percussion, the rotary speaker, the octave, the
 // knob turned last), the sounds' buttons (ORGAN, E.PIANO, BOTH), the percussion's (PERC, 3RD, FAST),
-// the rotary speaker's (FAST), SUSTAIN and the octave's. Pure functions with no three.js, as board.js's,
-// so the tests run them in Node: where it stands and what is on it (layoutKeyboard), what a ray meets
-// on it (hitKeys: a black key over the white ones), where along its slot a drawbar is pulled to
-// (drawbarValue, drawbarAlong, tabB), and the part of it to stand back from on a narrow screen
-// (framedKeys).
+// the rotary speaker's (FAST), SUSTAIN and the octave's; over them at its right end, nearest the
+// board, its jacks (patch.js's keys jacks: its sound and its notes out on a plate, and the rotary
+// speaker's speed in). Pure functions with no three.js, as board.js's, so the tests run them in Node:
+// where it stands and what is on it (layoutKeyboard), what a ray meets on it (hitKeys: a black key
+// over the white ones), where along its slot a drawbar is pulled to (drawbarValue, drawbarAlong,
+// tabB), and the part of it to stand back from on a narrow screen (framedKeys).
 //
 // Coordinates as board.js's: on the top `a` from its left edge (world +x), `b` from its front edge
 // up the slope; on the panel `a` likewise, `b` from its foot up its face.
-import { meetDesk, writeHit } from './board.js';
+import { jackAt, meetDesk, writeHit } from './board.js';
 import { SYNTH, blackKeyAt, buttonAt, dialAt, keyAt, layoutKeys } from './synthboard.js';
 import { KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_SECTIONS, KEYS_SOUNDS, KEYS_SWITCHES } from './keys.js';
 
@@ -36,8 +37,11 @@ export const KEYBOARD = Object.freeze({
    * apart; its slot `slot` long, from pushed in (0) at its back end to pulled out (8) at its front.
    */
   drawbar: Object.freeze({ tab: 0.024, grip: 0.026, h: 0.016, spacing: 0.04, slot: 0.12 }),
-  /** The panel: `height` up its face, leaning back `lean`, `thick`; its buttons standing `button` out of it. */
-  panel: Object.freeze({ height: 0.16, lean: 0.35, thick: 0.04, button: 0.007 }),
+  /**
+   * The panel: `height` up its face, leaning back `lean`, `thick`; its buttons standing `button` out
+   * of it; its jacks (as large as the board's, board.js BOARD.panel.jack) `pitch` apart along `row`.
+   */
+  panel: Object.freeze({ height: 0.24, lean: 0.35, thick: 0.04, button: 0.007, pitch: 0.062, row: 0.165 }),
   /** The top's front edge `front` high, leaning back by `tilt`, `thick`; the panel's back `wall` from the wall; `gap` left of the board. */
   front: 0.9, tilt: 0.12, thick: 0.05, wall: 0.08, gap: 0.5,
   /** The sign over it on the wall, as wide as it: from `bottom` to `top` high, `out` from the wall. */
@@ -66,12 +70,14 @@ export const KEYBOARD = Object.freeze({
  * `blacks`, and the bed they lie on), its drawbars and its knobs (in keys.js KEYS_KNOBS's order) and
  * their sections (each one's place across), the row they are in (the bands in front of it where their
  * names and their sections' are, and its span up the top, b0…b1, the drawbars' slots), the part of the
- * top behind the keys where those are drawn (`deck`); on the panel its display, its buttons and what is
- * written over them; and its sign.
+ * top behind the keys where those are drawn (`deck`); on the panel its display, its buttons, its jacks
+ * (as the board's, in patch.js JACKS's order; in the room's list of jacks after the rack's, from
+ * `jackBase`) and what is written over them; and its sign.
  * @param {{ z1: number }} L the room's layout (room.js layoutRoom)
  * @param {{ x0: number }} B the drum board's (board.js layoutBoard)
+ * @param {{ panel: { jackBase: number, jacks: readonly unknown[] } }} rack the rack's (rackboard.js layoutRack), whose jacks come before its
  */
-export function layoutKeyboard(L, B) {
+export function layoutKeyboard(L, B, rack) {
   const { drawbar: D, panel, tilt, front, wall } = KEYBOARD, R = SYNTH.dial, band = SYNTH.row;
   const { keys, whites, blacks, bed, width } = layoutKeys(KEYS_LOWEST, KEYS_COUNT);
   // Behind the keys, the sections' names in a band, the drawbars' and the knobs' over it, then the
@@ -133,6 +139,17 @@ export function layoutKeyboard(L, B) {
   put('ROTARY', [{ id: 'switch.rotaryFast', label: 'FAST' }]);
   put('', [{ id: 'sustain', label: 'SUSTAIN' }]);
   put('OCTAVE', [{ id: 'octave.down', label: '−', w: 0.045 }, { id: 'octave.up', label: '+', w: 0.045 }]);
+  // Over them at the right end, nearest the board, its jacks along a row: its outs on a plate, its
+  // sound's at the end, then its notes'; then the rotary speaker's speed in.
+  const J = panel.row, end = width - 0.05;
+  /** @type {import('./board.js').BoardJack[]} */
+  const jacks = [
+    { id: 'keys.out', a: end, b: J, out: true, color: null },
+    { id: 'keys.notes', a: end - panel.pitch, b: J, out: true, color: null },
+    { id: 'keys.rotary', a: end - 2 * panel.pitch - 0.01, b: J, out: false, color: null },
+  ];
+  const bay = { a0: end - 2 * panel.pitch - 0.036, a1: width - 0.024 };
+  over.push({ text: 'PATCH', a: (bay.a0 + bay.a1) / 2, b: panel.height - 0.022, ...bay });
   return {
     x0, x1, zBack, zFront, width, length, tilt, front, top,
     /** @type {[number, number, number]} */
@@ -162,7 +179,10 @@ export function layoutKeyboard(L, B) {
       height: panel.height, lean: panel.lean, top: top + panel.height * lc,
       display: { a0: 0.03, a1: 0.33, b0: 0.022, b1: 0.122 },
       buttons,
-      /** what is written over the buttons' groups */
+      jacks,
+      /** where its jacks start in the room's list of them (the board's, the synth's and the rack's first) */
+      jackBase: rack.panel.jackBase + rack.panel.jacks.length,
+      /** what is written over the buttons' groups, and over its jacks */
       titles: over,
     },
     sign: { x0, x1, y0: KEYBOARD.sign.bottom, y1: KEYBOARD.sign.top, z: L.z1 + KEYBOARD.sign.out },
@@ -232,8 +252,9 @@ const MET = { on: '', t: 0, a: 0, b: 0, nx: 0, ny: 0, nz: 0 };
  * What a ray meets on the keyboard, if nearer than `within` (what it meets in the room otherwise): a
  * black key's top (over the white keys'), a white key's ('note': where its gap is, the one it is
  * beside; u across it and v along it, from its front left), a drawbar's lane ('drawbar': v how far out
- * a press there pulls it), a knob ('keysknob'), on the panel a button ('keysbutton'), or the rest of
- * the keyboard ('keys': its top, its panel, its front, its sides, its sign), written into out as
+ * a press there pulls it), a knob ('keysknob'), on the panel a jack ('jack', as the board's are: `jack`
+ * its index in the room's list of them, K.panel.jackBase on) or a button ('keysbutton'), or the rest
+ * of the keyboard ('keys': its top, its panel, its front, its sides, its sign), written into out as
  * room.js castRay writes a hit, with `keys` which key, drawbar, knob or button it is (its index in
  * K.keys, K.drawbars, K.dials or K.panel.buttons; else -1, and the other desks' -1). Whether it met
  * the keyboard.
@@ -249,7 +270,7 @@ const MET = { on: '', t: 0, a: 0, b: 0, nx: 0, ny: 0, nz: 0 };
  */
 export function hitKeys(K, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
   const S = SYNTH.key;
-  let kind = 'keys', index = -1, u = 0, v = 0;
+  let kind = 'keys', index = -1, jack = -1, u = 0, v = 0;
   const [Ox, Oy, Oz] = K.origin, [, Uy, Uz] = K.up, [, Ny, Nz] = K.normal, dn = dy * Ny + dz * Nz;
   if (dn < 0) {
     const rise = S.rise + S.blackRise, s = ((Oy + Ny * rise - oy) * Ny + (Oz + Nz * rise - oz) * Nz) / dn;
@@ -274,7 +295,13 @@ export function hitKeys(K, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
       if ((index = keyAt(K, MET.a, MET.b)) >= 0) kind = 'note';
       else if ((index = drawbarAt(K, MET.a, MET.b)) >= 0) kind = 'drawbar';
       else if ((index = dialAt(K, MET.a, MET.b)) >= 0) kind = 'keysknob';
-    } else if (MET.on === 'panel' && (index = buttonAt(K, MET.a, MET.b)) >= 0) kind = 'keysbutton';
+    } else if (MET.on === 'panel') {
+      const j = jackAt(K, MET.a, MET.b);
+      if (j >= 0) {
+        kind = 'jack';
+        jack = K.panel.jackBase + j;
+      } else if ((index = buttonAt(K, MET.a, MET.b)) >= 0) kind = 'keysbutton';
+    }
   }
   if (kind === 'note') {
     const q = K.keys[index];
@@ -282,7 +309,8 @@ export function hitKeys(K, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
     v = clamp((MET.b - q.b0) / (q.b1 - q.b0), 0, 1);
   } else if (kind === 'drawbar') v = drawbarValue(K, MET.b);
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
-  out.pad = out.step = out.knob = out.jack = out.key = out.dial = out.button = out.seq = out.rack = -1;
+  out.pad = out.step = out.knob = out.key = out.dial = out.button = out.seq = out.rack = -1;
+  out.jack = jack;
   out.keys = index;
   return true;
 }

@@ -1,10 +1,12 @@
 // Just enough of Web Audio for sound.js, drums.js, delay.js, synth.js and keys.js in Node: nodes that
-// keep what they are connected to (and let go of one, or all), params that keep their automation and
-// refuse what a browser would (a time, a value or a time constant that isn't finite, an exponential
-// ramp to 0, a negative time constant), sources that keep when they start and stop (and refuse a
-// second start, or a stop before one), delays that refuse a longest time a browser wouldn't make, a
-// merger that refuses an input it hasn't, and periodic waves that refuse terms a browser would (of
-// two lengths, fewer than two, or not finite). A test sets the context's currentTime itself.
+// keep what they are connected to (and let go of one, refusing one they aren't connected to, or of
+// all), params that keep their automation and refuse what a browser would (a time, a value or a time
+// constant that isn't finite, an exponential ramp to 0, a negative time constant), sources that keep
+// when they start and stop (and refuse a second start, or a stop before one), delays that refuse a
+// longest time a browser wouldn't make, a merger that refuses an input it hasn't, periodic waves that
+// refuse terms a browser would (of two lengths, fewer than two, or not finite), and IIR filters that
+// keep their coefficients and refuse those a browser would (none or more than 20, not finite, a
+// feedforward all 0, a first feedback of 0). A test sets the context's currentTime itself.
 
 class Param {
   constructor(value) {
@@ -67,6 +69,7 @@ class Node {
   }
 
   disconnect(node) {
+    if (node !== undefined && !this.outputs.includes(node)) throw new Error(`disconnect: the ${this.kind} isn't connected to that ${node.kind}`);
     this.outputs = node === undefined ? [] : this.outputs.filter((o) => o !== node);
   }
 }
@@ -175,6 +178,18 @@ export class FakeContext {
     const n = new Node(this, 'shaper');
     n.curve = null;
     n.oversample = 'none';
+    return n;
+  }
+
+  createIIRFilter(feedforward, feedback) {
+    const ff = Array.from(feedforward), fb = Array.from(feedback);
+    for (const c of [ff, fb]) if (!(c.length >= 1 && c.length <= 20)) throw new RangeError(`createIIRFilter: ${c.length} coefficients`);
+    for (const x of [...ff, ...fb]) if (!Number.isFinite(x)) throw new TypeError(`createIIRFilter: ${x} is not finite`);
+    if (ff.every((x) => x === 0)) throw new Error('createIIRFilter: the feedforward is all 0');
+    if (fb[0] === 0) throw new Error('createIIRFilter: the first feedback is 0');
+    const n = new Node(this, 'iir');
+    n.feedforward = ff;
+    n.feedback = fb;
     return n;
   }
 

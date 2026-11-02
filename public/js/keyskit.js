@@ -7,8 +7,9 @@
 // black the rest, as an organ's) over its slot, as far towards the player as the drawbar is pulled
 // out; its knobs, turned to the organ's and the piano's, with a line on each; the drawbars' slots, and
 // the names of the drawbars, of the knobs and of their sections, on the top behind the keys, and the
-// panel's face with its buttons' caps standing out of it, their names on them (one canvas, drawn
-// once); the display on the panel (the sound, the drawbars as an organist writes them or the piano's
+// panel's face with its buttons' caps standing out of it, their names on them, and its jacks as the
+// board's are (kit.js: its outs on a plate, the cables kit.js's too) (one canvas, drawn once); the
+// display on the panel (the sound, the drawbars as an organist writes them or the piano's
 // tone, the percussion, the rotary speaker or the tremolo, the octave and SUSTAIN, the knob turned
 // last), redrawn when it changes, at most ten times a second; a light on the sound chosen, on each
 // switch that is on and on SUSTAIN; and its sign on the wall over it. In VR a stick's tip (kit.js's
@@ -17,11 +18,12 @@
 // Per frame nothing is allocated.
 import * as THREE from 'three';
 import { Builder } from './builder.js';
-import { boardPoint, panelPoint } from './board.js';
+import { BOARD, boardPoint, panelPoint } from './board.js';
 import { SYNTH, keyUnder, keyVelocity } from './synthboard.js';
 import { KEYBOARD, tabB } from './keysboard.js';
 import { DEFAULT_KEYS, KEYS_COUNT, KEYS_LOWEST, isDrawbar, keysKnobName, keysText, registration } from './keys.js';
-import { STICK, canvas, context, fit, lin, signPlate, texture, times } from './kit.js';
+import { JACKS } from './patch.js';
+import { STICK, canvas, context, drawJack, drawPlate, fit, lin, signPlate, texture, times } from './kit.js';
 import { GOLD, SANS } from './textures.js';
 
 /** @typedef {import('./keysboard.js').KeysDesk} KeysDesk */
@@ -48,8 +50,9 @@ const ATLAS = 3072;
 /**
  * What is drawn once, on one canvas: the top behind the keys (the sections named with a line across
  * each, the drawbars' and the knobs' names, the drawbars' slots with a mark at each step) over the
- * panel's face (the display's frame, the names over the buttons, each button's cap with its name, the
- * keyboard's own). `deck` and `panel`: where each is, in the canvas's rows.
+ * panel's face (the display's frame, the names over the buttons and the jacks, its jacks, each
+ * button's cap with its name, the keyboard's own). `deck` and `panel`: where each is, in the canvas's
+ * rows.
  * @param {KeysDesk} K
  */
 function faces(K) {
@@ -120,9 +123,33 @@ function faces(K) {
   g.roundRect(x(S2.a0) - 6, panelY(S2.b1) - 6, x(S2.a1) - x(S2.a0) + 12, panelY(S2.b0) - panelY(S2.b1) + 12, 12);
   g.fill();
   g.stroke();
-  g.fillStyle = GOLD;
   g.font = `600 ${Math.round(0.0105 * k)}px ${SANS}`;
-  for (const t of P.titles) g.fillText(t.text, x(t.a), panelY(t.b));
+  for (const t of P.titles) {
+    const y = panelY(t.b);
+    g.fillStyle = GOLD;
+    g.fillText(t.text, x(t.a), y);
+    if (t.a0 === undefined || t.a1 === undefined) continue;
+    // Over a span (its jacks'): a line along it either side of the name, its ends turned down to what
+    // it names, as the synth's.
+    const half = g.measureText(t.text).width / 2 + 12;
+    g.strokeStyle = 'rgba(224,187,114,0.5)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(x(t.a0), y + 8);
+    g.lineTo(x(t.a0), y);
+    g.lineTo(x(t.a) - half, y);
+    g.moveTo(x(t.a) + half, y);
+    g.lineTo(x(t.a1), y);
+    g.lineTo(x(t.a1), y + 8);
+    g.stroke();
+  }
+  // Its jacks, as the board's: the outputs on a plate, each with what it is under it.
+  drawPlate(g, P.jacks.filter((j) => j.out), x, panelY, k);
+  for (const j of P.jacks) {
+    drawJack(g, x(j.a), panelY(j.b), BOARD.panel.jack * k);
+    g.fillStyle = '#efe5cf';
+    g.fillText(JACKS.find((J) => J.id === j.id)?.label ?? '', x(j.a), panelY(j.b - BOARD.panel.jack - 0.011));
+  }
   for (const b of P.buttons) {
     const bx = x(b.a0), by = panelY(b.b1), bw = x(b.a1) - bx, bh = panelY(b.b0) - by;
     g.fillStyle = '#3d3934';

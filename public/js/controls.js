@@ -26,7 +26,8 @@
 //     (as the synth's: onKeysOn(note, velocity), onKeysOff(note), onKeysTap), its drawbars (a press
 //     in one's lane pulls it out to there, or takes its tab, and a drag along it moves it:
 //     onDrawbar(id, value)), its knobs (onKeysKnob(id, by), as the board's; the drawbars too, by the
-//     wheel or a stick), its panel's buttons (onKeysButton(i)) and the rest of it.
+//     wheel or a stick), its panel's buttons (onKeysButton(i)), its jacks (onJack, as the board's:
+//     the room's list of them, the board's, the synth's and the rack's first) and the rest of it.
 //     Choosing any of them walks up to it to play it (walkToBoard, walkToSynth, walkToRack,
 //     walkToKeys): on a screen the visitor is then `at` it (onPlaying), so a press on a pad, a key, a
 //     step key, a jack, RUN or a button works as it goes down (fingers at once on a phone); a jack
@@ -158,7 +159,7 @@ export class Controls extends Walking {
     this.onStep = () => {};
     /** (k, by) when knob k (board.js layoutBoard's knobs) is turned, by this much of its whole turn. @type {(k: number, by: number) => void} */
     this.onKnob = () => {};
-    /** (j) when jack j (the room's list of them: board.js layoutBoard's panel.jacks, then the synth's) is chosen. @type {(j: number) => void} */
+    /** (j) when jack j (the room's list of them: board.js layoutBoard's panel.jacks, then the synth's, the rack's and the keyboard's) is chosen. @type {(j: number) => void} */
     this.onJack = () => {};
     /** RUN pressed: the clock started, or stopped. */
     this.onRun = () => {};
@@ -321,7 +322,9 @@ export class Controls extends Walking {
    */
   deskOf(hit) {
     if (!hit) return null;
-    if (hit.kind === 'jack') return hit.jack < this.synth.panel.jackBase ? 'board' : hit.jack < this.rack.panel.jackBase ? 'synth' : 'rack';
+    if (hit.kind === 'jack') {
+      return hit.jack < this.synth.panel.jackBase ? 'board' : hit.jack < this.rack.panel.jackBase ? 'synth' : hit.jack < this.keyboard.panel.jackBase ? 'rack' : 'keys';
+    }
     return ON_BOARD.has(hit.kind) ? 'board' : ON_SYNTH.has(hit.kind) ? 'synth' : ON_RACK.has(hit.kind) ? 'rack' : ON_KEYS.has(hit.kind) ? 'keys' : null;
   }
 

@@ -57,7 +57,7 @@ import { SEQ_GATE, SEQ_RANGE, SEQ_VELOCITY, Seq } from './seq.js';
 import { RACK, layoutRack } from './rackboard.js';
 import { RackKit } from './rackkit.js';
 import { KEYS_COUNT, KEYS_LOWEST, KEYS_SWITCHES, Keys, isDrawbar, keysText, switchWords } from './keys.js';
-import { layoutKeyboard } from './keysboard.js';
+import { KEYBOARD, layoutKeyboard } from './keysboard.js';
 import { KeysKit } from './keyskit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
@@ -234,24 +234,27 @@ select(drums.selected);
 // and likewise on a step of the synth's arpeggiator. While the clock is stopped, or not patched into
 // it, the arpeggiator keeps its own, at the clock's tempo. Likewise on a step of the rack's
 // sequencer, whose note, with its notes out patched into the synth's notes in, the synth plays at
-// that step's time (synth.js seqStep). Each pulse is a step of the rack's LFO too, whose cycles start
+// that step's time (synth.js seqStep); the keyboard's notes, patched there instead, it plays as they
+// are played (keys.js onNoteOut). Each pulse is a step of the rack's LFO too, whose cycles start
 // again with the clock; while the clock is stopped it keeps on by itself, at the tempo. What a pulse
 // shows (the steps playing, the pads lit, RUN's lights on the beat, the sequencer's note on the
 // synth's keys) is queued until it is heard. A pad patched into a delay's in (the board's, the
-// rack's), or the synth, is connected to it once there is sound (sound.onReady; the synth's onBuilt),
-// as the rack's LFO is to what it is patched into.
+// rack's), the synth or the keyboard, is connected to it once there is sound (sound.onReady; the
+// synth's onBuilt), as the rack's LFO is to what it is patched into, and the synth's LFO or filter
+// envelope to the keyboard's ROTARY.
 
 /**
  * How many of the clock's pulses make a step of the drums, of the arpeggiator and of the sequencer
  * (the output each one's clock in is patched to), else 0; and whether the sequencer's notes go into
- * the synth.
+ * the synth, or the keyboard's.
  */
-let drumsEvery = 0, synthEvery = 0, seqEvery = 0, seqPlays = false;
+let drumsEvery = 0, synthEvery = 0, seqEvery = 0, seqPlays = false, keysPlays = false;
 function patchedClock() {
   drumsEvery = clockEvery(patch.source('drums.clock'));
   synthEvery = clockEvery(patch.source('synth.clock'));
   seqEvery = clockEvery(patch.source('seq.clock'));
   seqPlays = patch.source('synth.notes') === 'seq.notes';
+  keysPlays = patch.source('synth.notes') === 'keys.notes';
 }
 patchedClock();
 /** How hard the pattern plays a pad: on the beat, and between. */
@@ -456,12 +459,12 @@ overlay.onResetLfo = () => {
 /** The delays, by their in's jack. @type {[string, Delay][]} */
 const DELAYS = [['delay.in', delay], ['rackdelay.in', rackDelay]];
 /**
- * What comes out of output `id` (a pad's sound, the synth's) into a delay (`on`: the board's, or
- * `into` another), or out of it, once there is sound (else, when there is: onReady, and the synth's
- * once its voices are made).
+ * What comes out of output `id` (a pad's sound, the synth's, the keyboard's) into a delay (`on`: the
+ * board's, or `into` another), or out of it, once there is sound (else, when there is: onReady, and
+ * the synth's once its voices are made).
  */
 function feedDelay(id, on, into = delay) {
-  const i = padForJack(id), out = i >= 0 ? drums.out(i) : id === 'synth.out' ? synth.output : null, input = into.input();
+  const i = padForJack(id), out = i >= 0 ? drums.out(i) : id === 'synth.out' ? synth.output : id === 'keys.out' ? keys.output() : null, input = into.input();
   if (!out || !input) return;
   if (on) out.connect(input);
   else {
@@ -476,23 +479,25 @@ sound.onReady = () => {
   for (const [jack, d] of DELAYS) feedDelay(patch.source(jack), true, d);
   lfo.output(); // its wave written from now on
   for (const m of MOD_INPUTS) if (patch.source(`synth.${m}`) === 'lfo.out') synth.setInput(m, lfo.output());
+  keys.setInput(keysModSource(patch.source('keys.rotary')));
 };
 synth.onBuilt = () => {
   for (const [jack, d] of DELAYS) if (patch.source(jack) === 'synth.out') feedDelay('synth.out', true, d);
 };
-/** The cables' colours: the clock's amber, a pad's sound in the pad's colour, the synth's blue, a modulation's pink, notes green. */
-const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8', SYNTH_CABLE = '#5aa2f0', MOD_CABLE = '#e8609a', NOTES_CABLE = '#62c87a';
+/** The cables' colours: the clock's amber, a pad's sound in the pad's colour, the synth's blue, the keyboard's red, a modulation's pink, notes green. */
+const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8', SYNTH_CABLE = '#5aa2f0', KEYS_CABLE = '#d8434d', MOD_CABLE = '#e8609a', NOTES_CABLE = '#62c87a';
 const cableColor = (id) => {
   const i = padForJack(id), kind = patch.jack(id)?.kind;
   if (i >= 0) return PADS[i].color;
   if (id === 'synth.out') return SYNTH_CABLE;
+  if (id === 'keys.out') return KEYS_CABLE;
   return kind === 'audio' ? SOUND_CABLE : kind === 'mod' ? MOD_CABLE : kind === 'notes' ? NOTES_CABLE : CLOCK_CABLE;
 };
-/** Jack `id`'s place in the room's list of them (the board's, then the synth's, then the rack's: kit.js), else -1. */
+/** Jack `id`'s place in the room's list of them (the board's, then the synth's, the rack's and the keyboard's: kit.js), else -1. */
 function jackIndex(id) {
   const k = board.panel.jacks.findIndex((j) => j.id === id);
   if (k >= 0) return k;
-  for (const D of [synthDesk, rackDesk]) {
+  for (const D of [synthDesk, rackDesk, keysDesk]) {
     const s = D.panel.jacks.findIndex((j) => j.id === id);
     if (s >= 0) return D.panel.jackBase + s;
   }
@@ -502,9 +507,10 @@ function jackIndex(id) {
 function jackId(k) {
   if (k < synthDesk.panel.jackBase) return board.panel.jacks[k]?.id;
   if (k < rackDesk.panel.jackBase) return synthDesk.panel.jacks[k - synthDesk.panel.jackBase]?.id;
-  return rackDesk.panel.jacks[k - rackDesk.panel.jackBase]?.id;
+  if (k < keysDesk.panel.jackBase) return rackDesk.panel.jacks[k - rackDesk.panel.jackBase]?.id;
+  return keysDesk.panel.jacks[k - keysDesk.panel.jackBase]?.id;
 }
-/** The cables on the board, the synth and the rack, and in the card. */
+/** The cables on the board, the synth, the rack and the keyboard, and in the card. */
 function showPatch() {
   if (kit) kit.setCables(patch.cables().map((c) => ({ from: jackIndex(c.from), to: jackIndex(c.to), color: cableColor(c.from) })));
   overlay.setPatch(patch);
@@ -514,6 +520,12 @@ function showPatch() {
  * the rack's LFO (once there is sound: until then nothing, and then it, sound.onReady), else nothing.
  */
 const modSource = (id) => (id === 'synth.lfo' ? 'lfo' : id === 'synth.env' ? 'env' : id === 'lfo.out' ? lfo.output() : null);
+/**
+ * What goes into the keyboard's ROTARY from output `id`: the synth's LFO or its filter envelope (its
+ * voices made for them), the rack's LFO; each once there is sound (until then nothing, and then it,
+ * sound.onReady), else nothing.
+ */
+const keysModSource = (id) => (id === 'synth.lfo' ? synth.modOutput('lfo') : id === 'synth.env' ? synth.modOutput('env') : id === 'lfo.out' ? lfo.output() : null);
 patch.onChange = (to, from, was) => {
   for (const [jack, d] of DELAYS) {
     if (to !== jack) continue;
@@ -523,8 +535,11 @@ patch.onChange = (to, from, was) => {
   if (to === 'drums.clock' || to === 'synth.clock' || to === 'seq.clock' || to === 'synth.notes') patchedClock();
   // The sequencer's clock or its notes unplugged: a note it slid on, let go.
   if ((to === 'seq.clock' || to === 'synth.notes') && !(seqEvery && seqPlays)) synth.seqEnd();
+  // The keyboard's notes unplugged: those it was playing on the synth, let go.
+  if (to === 'synth.notes' && was === 'keys.notes') keysOffSynth();
   const input = MOD_INPUTS.find((m) => to === `synth.${m}`);
   if (input) synth.setInput(input, modSource(from));
+  if (to === 'keys.rotary') keys.setInput(keysModSource(from));
   showPatch();
 };
 for (const m of MOD_INPUTS) synth.setInput(m, modSource(patch.source(`synth.${m}`)));
@@ -736,7 +751,8 @@ showSeq();
 // MIDI keyboard's while playing at it, in VR a stick or a forefinger down in it; a click, OK, A or a
 // trigger plays one a moment. SUSTAIN (its button, the card's, a MIDI keyboard's pedal while playing
 // at it) holds the notes let go. What it plays shows on it (its keys, its display, its lights) and in
-// the card.
+// the card. Its jacks: its sound out into a delay (feedDelay), its notes out into the synth (played
+// there too, onNoteOut), and ROTARY in, a modulation into its rotary speaker's speed (keysModSource).
 
 const keys = new Keys(sound, { key: `${ROOM.id}.keys` });
 /** The keyboard in 3D (keyskit.js), once the scene is made. @type {KeysKit | null} */
@@ -772,6 +788,28 @@ function showKeysNotes() {
   overlay.setKeysNotes(keys.down);
 }
 keys.onNotes = showKeysNotes;
+/** The keyboard's notes the synth is playing (its NOTES out patched into the synth's NOTES in). */
+const keysOnSynth = new Set();
+// Its notes out: into the synth, while patched there, each as it goes down and as it ends (the
+// keyboard's pedal holding it till then), as though played on the synth's own keys; a tap as the
+// synth's own is, into the arpeggiator's chord or out of it while HOLD keeps it.
+keys.onNoteOut = (note, velocity, tap) => {
+  if (velocity === null) {
+    if (keysOnSynth.delete(note)) synth.noteOff(note);
+  } else if (keysPlays) {
+    if (tap && synth.arp.on && synth.arp.hold) {
+      synth.tap(note, velocity);
+      return;
+    }
+    keysOnSynth.add(note);
+    synth.noteOn(note, velocity);
+  }
+};
+/** The keyboard's notes on the synth let go (its NOTES out unplugged from it). */
+function keysOffSynth() {
+  for (const note of keysOnSynth) synth.noteOff(note);
+  keysOnSynth.clear();
+}
 /** A drawbar (to its nearest eighth) or a knob of the keyboard's set 0…1: heard at once (or from the next note), on it and its display, and in the card. */
 function setKeysKnob(id, value) {
   if (!Number.isFinite(value)) return;
@@ -832,14 +870,14 @@ for (const type of ['pointerup', 'touchend', 'keydown']) {
 }
 // Put away: every note let go (none kept sounding, nor waiting to), and the sound asleep.
 addEventListener('pagehide', () => {
-  synth.allOff();
   keys.allOff();
+  synth.allOff();
   sound.sleep();
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) return;
-  synth.allOff();
   keys.allOff();
+  synth.allOff();
   sound.sleep();
 });
 
@@ -885,8 +923,8 @@ async function listen() {
       } else if (m.type === 'mod') synth.setMod(m.value);
       else if (m.type === 'bend') synth.setBend(m.value);
       else {
-        synth.allOff();
         keys.allOff();
+        synth.allOff();
         midiKeys.clear();
       }
     }, (names) => overlay.setMidi(names.length ? `Playing from ${names.join(', ')}` : 'No MIDI device is plugged in: plug one in to play from it'));
@@ -941,15 +979,16 @@ const L = layoutRoom(ROOM, { doorWidth, doorHeight });
 const room = buildRoom(L, { colors: ROOM.colors, skyYaw: ROOM.skyYaw, glow, name: leadsTo, anisotropy });
 scene.add(room.group);
 // The drum board against the far wall, in the room's light, and the synth beside it, likewise, and
-// the rack beside that; the cables between their jacks, the board's kit's (its own, then the synth's,
-// then the rack's). The keyboard on the board's other side.
+// the rack beside that; the keyboard on the board's other side; the cables between their jacks, the
+// board's kit's (its own, then the synth's, the rack's and the keyboard's).
 const board = layoutBoard(L);
 const synthDesk = layoutSynth(L, board);
 const rackDesk = layoutRack(L, synthDesk);
-const keysDesk = layoutKeyboard(L, board);
+const keysDesk = layoutKeyboard(L, board, rackDesk);
 kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 kit.addJacks(synthDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise));
 kit.addJacks(rackDesk, RACK.knob.h);
+kit.addJacks(keysDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise, KEYBOARD.drawbar.h));
 scene.add(kit.group);
 select(drums.selected);
 kit.setTempo(clock.tempo);
@@ -1126,9 +1165,9 @@ if (tv) {
 // A pad played: a press on it, its key, a trigger, A or OK on it, and in VR a stick or a forefinger
 // coming down on it (which the controller feels); a step key likewise. A knob turned: a drag, the
 // wheel, a stick. RUN pressed, or Space. On a TV a pad chosen with the arrows. Walking up to the
-// board to play it, and stepping away. A cable: taken from a jack, the board's or the synth's (out
-// of an input, the one plugged in there), carried to where it is pointed (to the other desk too),
-// and plugged into another, or put away.
+// board to play it, and stepping away. A cable: taken from a jack, on any desk (out of an input, the
+// one plugged in there), carried to where it is pointed (to another desk too), and plugged into
+// another, or put away.
 
 controls.onPad = play;
 controls.onStep = toggleStep;
@@ -1168,7 +1207,7 @@ function putDown(plugged = false) {
   if (!plugged) overlay.toast('Cable put away');
 }
 /** What each kind of jack carries, in words. */
-const CARRIES = { clock: "the clock's pulses", audio: 'sound', mod: 'an LFO or the envelope', notes: "the sequencer's notes" };
+const CARRIES = { clock: "the clock's pulses", audio: 'sound', mod: 'an LFO or the envelope', notes: 'notes to play' };
 /** Why the cable carried, from jack a, can't go into jack b. */
 function whyNot(a, b) {
   if (a.dir === b.dir) return a.dir === 'out' ? 'Both are outs: an out goes into an in' : 'Both are ins: an in takes an out';

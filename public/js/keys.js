@@ -22,6 +22,10 @@
 // SUSTAIN button, holds the notes let go until it is let go too. The knobs (0…1 each, as on the
 // keyboard; a drawbar's in eighths), the switches, the sound chosen and the octave the computer's keys
 // play in are kept for the next visit (localStorage).
+// Its jacks (patch.js's; the cables main.js's): its sound out (output, both sounds), its notes out
+// (onNoteOut: each note as its key goes down, and as it ends, let go with the pedal up), and ROTARY
+// in (setInput), where a modulation moves the rotary speaker's speed on from where FAST has it,
+// towards fast (or slow), as far as it goes and no further.
 import { pageStorage } from './sound.js';
 import { driveGain, noteHz, tanhCurve, velocityLevel } from './synth.js';
 
@@ -261,6 +265,14 @@ const SCANNER = Object.freeze({ base: 0.0006, hz: 6.9 });
 const DRIVE_REACH = 4;
 /** Where the rotary speaker's horn takes over from its drum, in Hz, and the delay its turning sways around (seconds). */
 const CROSSOVER = 800, ROTOR_DELAY = 0.001;
+/** How fast the rotors go, FAST's (SLOW_SPEED slow, 1 fast) and ROTARY's together, kept from slow to fast: a WaveShaper's curve over −1…1, nothing to 0, then as it is. */
+const SPEED_CURVE = new Float32Array([0, 0, 1]);
+/**
+ * FAST's speed when it is off: slow, though never quite 0. To Chrome a ConstantSource at 0 is
+ * silence, and an IIRFilter whose input is silent stops after its tail (the horn's lag, a quarter of a
+ * second), holding where it was: the horn would drop to slow there, and leap back from there.
+ */
+export const SLOW_SPEED = 1e-6;
 /**
  * The rotary speaker's horn and drum: how fast each goes round, slow and fast (Hz), how quickly it
  * gets there (a time constant, in seconds: the drum, heavier, takes longer), how far its turning
@@ -309,7 +321,8 @@ const LIVE = Object.freeze({ organ: ['chorus', 'drive', 'rotary', 'organLevel'],
 /**
  * The organ's: where its notes go in, its clicks' band, the scanner (how far it sways, how much of
  * its copy and of what went in), the drive, the rotary speaker (what passes it by, what goes through
- * it, its horn's and its drum's turning) and its level; the drawbars' wave now, and their steps.
+ * it, how fast its horn and its drum go round: FAST's speed, and with ROTARY's in it, kept from slow
+ * to fast; their turning) and its level; the drawbars' wave now, and their steps.
  * @typedef {object} OrganGraph
  * @property {GainNode} bus
  * @property {BiquadFilterNode} clicks
@@ -320,6 +333,8 @@ const LIVE = Object.freeze({ organ: ['chorus', 'drive', 'rotary', 'organLevel'],
  * @property {GainNode} post
  * @property {GainNode} straight
  * @property {GainNode} turning
+ * @property {ConstantSourceNode} speed FAST's: SLOW_SPEED slow, 1 fast
+ * @property {WaveShaperNode} speedIn where FAST's speed and ROTARY's modulation go in together
  * @property {Record<'horn' | 'drum', OscillatorNode>} rotors
  * @property {GainNode} level
  * @property {PeriodicWave} wave
@@ -373,6 +388,19 @@ export class Keys {
     this.sustain = false;
     /** When the keys down change (to show them). */
     this.onNotes = () => {};
+    /**
+     * Its notes out (its NOTES jack): each note as its key goes down, `velocity` 0…1 hard, and as it
+     * ends (its key let go with the pedal up, or the pedal let go), null; `tap` for a note played for a
+     * moment (tap), where that is played otherwise (the synth's arpeggiator holding its chord).
+     * @type {(note: number, velocity: number | null, tap?: boolean) => void}
+     */
+    this.onNoteOut = () => {};
+    /** What is plugged into ROTARY (setInput): a modulation, else null. @type {AudioNode | null} */
+    this.input = null;
+    /** @private the notes gone out and not ended yet @type {Set<number>} */
+    this._sent = new Set();
+    /** @private the note noteOn is about to play is a tap (tap's, for onNoteOut) */
+    this._tapping = false;
     /** @private @type {KeysVoice[]} */
     this._voices = [];
     /** @private notes played for a moment, and when each is let go @type {Map<number, ReturnType<typeof setTimeout>>} */
@@ -414,6 +442,11 @@ export class Keys {
     return registration(this.knobs);
   }
 
+  /** Its sound, both sounds', for a cable (its OUT jack; before the mixer's channel): made once there is sound, null before. */
+  output() {
+    return this._outNode();
+  }
+
   /**
    * A key pressed: its note (MIDI) played, `velocity` 0…1 loud (the piano's; the organ is as loud
    * however hard), waking the sound: whether it is heard (no Web Audio: not).
@@ -421,11 +454,15 @@ export class Keys {
    * @param {number} [velocity]
    */
   noteOn(note, velocity = 0.8) {
+    const tap = this._tapping;
+    this._tapping = false;
     if (!Number.isFinite(note)) return false;
     clearTimeout(this._taps.get(note));
     this._taps.delete(note);
     this.down.add(note);
     this.onNotes();
+    this._sent.add(note);
+    this.onNoteOut(note, clamp(velocity, 0, 1), tap);
     const ctx = this.sound.wake();
     if (!ctx) return false;
     const t = ctx.currentTime;
@@ -450,6 +487,7 @@ export class Keys {
     clearTimeout(this._taps.get(note));
     this._taps.delete(note);
     if (this.down.delete(note)) this.onNotes();
+    if (!this.sustain && this._sent.delete(note)) this.onNoteOut(note, null);
     const t = this.sound.ctx?.currentTime;
     if (t === undefined) return;
     for (const voice of this._voices) {
@@ -470,6 +508,7 @@ export class Keys {
    */
   tap(note, velocity = 0.8, length = 0.35) {
     if (!Number.isFinite(note)) return false;
+    this._tapping = true;
     const heard = this.noteOn(note, velocity);
     this._taps.set(note, setTimeout(() => this.noteOff(note), length * 1000));
     return heard;
@@ -482,6 +521,9 @@ export class Keys {
     const had = this.down.size > 0;
     this.down.clear();
     if (had) this.onNotes();
+    const sent = [...this._sent];
+    this._sent.clear();
+    for (const note of sent) this.onNoteOut(note, null);
     const t = this.sound.ctx?.currentTime ?? 0;
     for (const voice of this._voices) {
       voice.gate = false;
@@ -490,10 +532,15 @@ export class Keys {
     }
   }
 
-  /** The sustain pedal down, or let go (then the notes it held are released). @param {boolean} on */
+  /** The sustain pedal down, or let go (then the notes it held are released, and end out too). @param {boolean} on */
   setSustain(on) {
     this.sustain = !!on;
     if (this.sustain) return;
+    for (const note of [...this._sent]) {
+      if (this.down.has(note)) continue;
+      this._sent.delete(note);
+      this.onNoteOut(note, null);
+    }
     const t = this.sound.ctx?.currentTime ?? 0;
     for (const voice of this._voices) {
       if (!voice.held) continue;
@@ -525,8 +572,24 @@ export class Keys {
   setSwitch(id, on) {
     if (!SWITCHES.includes(id) || this.switches[id] === !!on) return;
     this.switches[id] = !!on;
-    if (id === 'rotaryFast') this._rotors(true);
+    if (id === 'rotaryFast') this._speed();
     this._saveSoon();
+  }
+
+  /**
+   * What is plugged into ROTARY: a modulation (a node in the sound's context: the rack's LFO's out,
+   * the synth's LFO or its filter envelope), moving the rotary speaker's speed on from where FAST has
+   * it, or nothing; heard at once (the rotors getting there at their pace).
+   * @param {AudioNode | null} source
+   */
+  setInput(source) {
+    const to = source ?? null, was = this.input;
+    if (to === was) return;
+    this.input = to;
+    const g = this._organ;
+    if (!g) return;
+    was?.disconnect(g.speedIn);
+    to?.connect(g.speedIn);
   }
 
   /** What the keys play (KEYS_SOUNDS's ids; another word changes nothing): every note let go first. Whether it is one. @param {string} id */
@@ -738,24 +801,16 @@ export class Keys {
   }
 
   /**
-   * The rotary speaker's horn and drum going round as switched, slow or fast: at once (the graph
-   * made), or getting there as a real one's do (`ramp`).
+   * The rotary speaker switched slow or fast: its speed so from now, its horn and its drum getting
+   * there as a real one's do (each at its own pace: its lag's, _buildOrgan).
    * @private
-   * @param {boolean} ramp
    */
-  _rotors(ramp) {
+  _speed() {
     const g = this._organ, ctx = this.sound.ctx;
     if (!g || !ctx) return;
-    const t = ctx.currentTime, fast = this.switches.rotaryFast;
-    for (const name of /** @type {const} */ (['horn', 'drum'])) {
-      const R = ROTORS[name], f = g.rotors[name].frequency, hz = fast ? R.fast : R.slow;
-      if (!ramp) {
-        f.value = hz;
-        continue;
-      }
-      f.cancelScheduledValues(t);
-      f.setTargetAtTime(hz, t, R.ramp);
-    }
+    const t = ctx.currentTime, p = g.speed.offset;
+    p.cancelScheduledValues(t);
+    p.setValueAtTime(this.switches.rotaryFast ? 1 : SLOW_SPEED, t);
   }
 
   /**
@@ -891,10 +946,29 @@ export class Keys {
     straight.connect(sides, 0, 0);
     straight.connect(sides, 0, 1);
     post.connect(turning);
+    // How fast they go round: FAST's speed (SLOW_SPEED slow, 1 fast) and what ROTARY's cable brings,
+    // together kept from slow to fast; each rotor following it at its own pace (a lag of one pole, its
+    // time constant its `ramp`: the drum, heavier, slower), from its slow speed up to its fast. A lag
+    // starts at rest, so it follows how far the speed goes from FAST's now (`from`, taken off it): the
+    // rotors start at that speed, not spinning up to it.
+    const s = this.switches.rotaryFast ? 1 : SLOW_SPEED;
+    const speed = ctx.createConstantSource(), speedIn = ctx.createWaveShaper(), from = ctx.createConstantSource();
+    speed.offset.value = s;
+    speedIn.curve = SPEED_CURVE;
+    speed.connect(speedIn);
+    this.input?.connect(speedIn);
+    speed.start(t);
+    from.offset.value = -s;
+    from.start(t);
     /** @type {Partial<Record<'horn' | 'drum', OscillatorNode>>} */
     const rotors = {};
     for (const name of /** @type {const} */ (['horn', 'drum'])) {
       const R = ROTORS[name], split = ctx.createBiquadFilter(), rotor = ctx.createOscillator();
+      const a = Math.exp(-1 / (R.ramp * ctx.sampleRate)), lag = ctx.createIIRFilter([1 - a], [1, -a]), span = ctx.createGain();
+      rotor.frequency.value = R.slow + (R.fast - R.slow) * s;
+      span.gain.value = R.fast - R.slow;
+      speedIn.connect(lag).connect(span).connect(rotor.frequency);
+      from.connect(lag);
       split.type = name === 'horn' ? 'highpass' : 'lowpass';
       split.frequency.value = CROSSOVER;
       split.Q.value = 0.5;
@@ -917,11 +991,10 @@ export class Keys {
     const { real, imag } = drawbarWave(this.knobs);
     const wave = ctx.createPeriodicWave(real, imag, { disableNormalization: true });
     this._organ = {
-      bus, clicks, depth, dry, wet, pre, post, straight, turning, rotors: /** @type {Record<'horn' | 'drum', OscillatorNode>} */ (rotors), level, wave,
-      steps: this.registration,
+      bus, clicks, depth, dry, wet, pre, post, straight, turning, speed, speedIn,
+      rotors: /** @type {Record<'horn' | 'drum', OscillatorNode>} */ (rotors), level, wave, steps: this.registration,
     };
     for (const id of LIVE.organ) this._apply(id, false);
-    this._rotors(false);
     return this._organ;
   }
 

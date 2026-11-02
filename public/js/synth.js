@@ -22,7 +22,9 @@
 // modulations out, the LFO (shared) and the filter envelope (each voice's own, 0…1, as a signal:
 // a voice's goes to that voice), into three inputs (setInput), which take one from outside it too
 // (the rack's LFO, lfo.js): the pitch (an octave at full), the cutoff (three octaves) and the amp
-// (half open, the modulation opening it or closing it the rest of the way). Its arpeggiator (arp.js) takes the keys while it is on: they make the chord it plays,
+// (half open, the modulation opening it or closing it the rest of the way). Out to another
+// instrument (modOutput: the keyboard's rotary speaker) its LFO goes as it is, and the envelope of
+// the voice started last. Its arpeggiator (arp.js) takes the keys while it is on: they make the chord it plays,
 // a step at a time (arpStep, on the room's clock, or arpRun, on its own), each note set ahead on the
 // audio clock and let go ARP_GATE of the step later, started afresh in mono too, whatever the pedal.
 // Its NOTES in takes the rack's sequencer (seq.js): a step at a time (seqStep), each note set ahead
@@ -486,6 +488,7 @@ export class Glide {
  * @property {Envelope} ampEnv
  * @property {Envelope} filterEnv
  * @property {ConstantSourceNode} env the filter envelope as a signal, 0…1: ENV out
+ * @property {GainNode} tap env out to another instrument (envs): 1 from when it is the voice started last, else 0
  * @property {Envelope} envOut the filter envelope again, on env (base 0, scale 1)
  * @property {Record<ModInput, GainNode>} inputs where a modulation comes in, each at its depth
  * @property {Glide} pitch
@@ -505,6 +508,7 @@ export class Glide {
  * @property {GainNode} post
  * @property {GainNode[]} wet
  * @property {GainNode} level
+ * @property {GainNode} envs the filter envelope out to another instrument: each voice's through its tap, the voice started last's open
  */
 
 export class Synth {
@@ -590,6 +594,17 @@ export class Synth {
   }
 
   /**
+   * A modulation out to another instrument, for a cable (the keyboard's ROTARY in): the LFO (−1…1),
+   * or the filter envelope of the voice started last (0…1); the voices made for it once there is
+   * sound, null before.
+   * @param {'lfo' | 'env'} id
+   */
+  modOutput(id) {
+    const g = this._build();
+    return !g ? null : id === 'lfo' ? g.lfo : g.envs;
+  }
+
+  /**
    * A key pressed: its note (MIDI) played, `velocity` 0…1 loud, waking the sound (with the
    * arpeggiator on, into its chord): whether it is heard (no Web Audio: not).
    * @param {number} note
@@ -658,6 +673,8 @@ export class Synth {
     }
     const t = ctx.currentTime;
     if (this.mono) {
+      // Not a key held here (its note-on went elsewhere, or came before Mono): the voices are another's.
+      if (!this._held.includes(note)) return;
       const was = this._held[this._held.length - 1];
       this._held = this._held.filter((n) => n !== note);
       const top = this._held[this._held.length - 1];
@@ -1068,6 +1085,11 @@ export class Synth {
     const base = (voice.note - 60) * KEY_TRACK + (velocity - 0.6) * VELOCITY_CENTS + voice.offset;
     voice.filterEnv.start(voice.cutoffs, t, 1, attackSeconds(k.filterAttack), decaySeconds(k.filterDecay), k.filterSustain, base, envOctaves(k.amount) * 1200);
     voice.envOut.start([voice.env.offset], t, 1, attackSeconds(k.filterAttack), decaySeconds(k.filterDecay), k.filterSustain);
+    // Out to another instrument (envs): this voice's envelope from t, every other's closed, till the
+    // next voice's time. Each switch sets all six, so a note set ahead takes over at its own time and
+    // one played before that goes out till then. In mono the first voice's: the rest start with it.
+    if (this.mono && voice !== this._voices[0]) return;
+    for (const v of this._voices) v.tap.gain.setValueAtTime(v === voice ? 1 : 0, t);
   }
 
   /**
@@ -1221,6 +1243,9 @@ export class Synth {
     hiss.loop = true;
     hiss.start(t);
     const edge = tanhCurve(EDGE);
+    // The filter envelope out to another instrument: each voice's through its tap, opened once it
+    // starts (_start).
+    const envs = ctx.createGain();
     for (let i = 0; i < VOICES; i++) {
       // Where the patch bay's modulations come in, each at its depth; and the filter envelope out.
       /** @type {Record<ModInput, GainNode>} */
@@ -1231,6 +1256,9 @@ export class Synth {
       const env = ctx.createConstantSource();
       env.offset.value = 0;
       env.start(t);
+      const tap = ctx.createGain();
+      tap.gain.value = 0;
+      env.connect(tap).connect(envs);
       const saw = ctx.createOscillator(), sub = ctx.createOscillator();
       saw.type = 'sawtooth';
       saw.frequency.value = 440;
@@ -1275,7 +1303,7 @@ export class Synth {
         note: -1, gate: false, held: false, started: -Infinity, ended: -Infinity,
         offset: ((i / (VOICES - 1)) * 2 - 1) * FILTER_SPREAD, saw, sub, levels, filters,
         cutoffs: filters.map((f) => f.detune), amp, vca,
-        ampEnv: new Envelope(), filterEnv: new Envelope(), env, envOut: new Envelope(), inputs, pitch: new Glide(),
+        ampEnv: new Envelope(), filterEnv: new Envelope(), env, tap, envOut: new Envelope(), inputs, pitch: new Glide(),
       });
     }
     // What the patch has plugged into the modulation inputs already.
@@ -1283,7 +1311,7 @@ export class Synth {
       const from = this.inputs[input];
       if (from) for (const v of this._voices) (from === 'lfo' ? lfo : from === 'env' ? v.env : from).connect(v.inputs[input]);
     }
-    this._graph = { lfo, vibrato, wah, pwm, bend, width, pre, post, wet, level };
+    this._graph = { lfo, vibrato, wah, pwm, bend, width, pre, post, wet, level, envs };
     for (const id of IDS) this._apply(id, false);
     this.onBuilt();
     return this._graph;

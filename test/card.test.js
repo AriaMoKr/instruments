@@ -7,7 +7,8 @@
 // its sequencer's steps a row each (whether it plays, its note, its accent, its slide), its octave,
 // its delay's knobs and its LFO's as sliders, and its cables. The keys: its keys as the synth's, its
 // sound (the organ, the electric piano or both, Sustain, the computer's keys' octave), its drawbars in
-// eighths, its percussion, its knobs. Sound: the volume, Mute, and MIDI where there is Web MIDI.
+// eighths, its percussion, its knobs, and its cables. Sound: the volume, Mute, and MIDI where there is
+// Web MIDI.
 // Playing at the board, the synth, the rack or the keys and stepping away, with its hint; and all
 // five kept, open, where there is no 3D view.
 import { test } from 'node:test';
@@ -237,33 +238,42 @@ test("the rack's delay, as the board's but its own, and its LFO: its rate and sh
   }
 });
 
-test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is; the board\'s with the drums, the synth\'s with it, the rack\'s with it', async () => {
+test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is; the board\'s with the drums, the synth\'s with it, the rack\'s with it, the keyboard\'s with it', async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
     const ins = JACKS.filter((j) => j.dir === 'in');
     assert.deepEqual([...o.plugs.keys()], ins.map((j) => j.id));
-    const boxes = [o.cablesBox, o.synthCablesBox, o.rackCablesBox];
+    const boxes = [o.cablesBox, o.synthCablesBox, o.rackCablesBox, o.keysCablesBox];
     for (const j of ins) {
       const select = o.plugs.get(j.id);
       assert.equal(select.parentNode.children[0].textContent, j.name, 'its label');
       const options = select.children.map((c) => [c.getAttribute('value'), c.textContent]);
       assert.deepEqual(options, [['', 'Nothing'], ...JACKS.filter((x) => x.dir === 'out' && x.kind === j.kind).map((x) => [x.id, x.name])]);
-      const here = j.module === 'synth' ? o.synthCablesBox : j.module === 'seq' || j.module === 'rackdelay' ? o.rackCablesBox : o.cablesBox;
+      const here = j.module === 'synth' ? o.synthCablesBox : j.module === 'seq' || j.module === 'rackdelay' ? o.rackCablesBox : j.module === 'keys' ? o.keysCablesBox : o.cablesBox;
       assert.deepEqual(boxes.map((box) => box.findAll((c) => c === select).length), boxes.map((box) => (box === here ? 1 : 0)), j.id);
     }
     assert.deepEqual(o.rackCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), ['seq.clock', 'rackdelay.in'], "the sequencer's clock in and the delay's in, the rack's");
-    for (const id of ['delay.in', 'rackdelay.in']) assert.ok(o.plugs.get(id).children.some((c) => c.getAttribute('value') === 'synth.out'), `the synth's sound into ${id} too`);
+    assert.deepEqual(o.keysCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), ['keys.rotary'], "the rotary speaker's speed in, the keyboard's");
+    assert.equal(o.keysPart.children.at(-1), o.keysCablesBox, 'last in Keys');
+    for (const id of ['delay.in', 'rackdelay.in']) {
+      const outs = o.plugs.get(id).children.map((c) => c.getAttribute('value'));
+      assert.ok(outs.includes('synth.out') && outs.includes('keys.out'), `the synth's sound and the keyboard's into ${id} too`);
+    }
     assert.deepEqual(o.plugs.get('rackdelay.in').parentNode.children[0].textContent, 'Rack delay in');
-    assert.deepEqual(o.plugs.get('synth.pitch').children.map((c) => c.textContent), ['Nothing', 'LFO out', 'Filter envelope out', 'Rack LFO out']);
-    assert.deepEqual(o.plugs.get('synth.notes').children.map((c) => c.textContent), ['Nothing', 'Sequencer notes out']);
+    const mods = ['Nothing', 'Synth LFO out', 'Synth filter envelope out', 'Rack LFO out'];
+    assert.deepEqual(o.plugs.get('synth.pitch').children.map((c) => c.textContent), mods);
+    assert.deepEqual(o.plugs.get('keys.rotary').children.map((c) => c.textContent), mods, 'whose each is, said');
+    assert.deepEqual(o.plugs.get('keys.rotary').parentNode.children[0].textContent, 'Rotary speed in');
+    assert.deepEqual(o.plugs.get('synth.notes').children.map((c) => c.textContent), ['Nothing', 'Sequencer notes out', 'Keyboard notes out']);
     assert.deepEqual(o.plugs.get('seq.clock').children.map((c) => c.getAttribute('value')), ['', 'clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d2', 'rack.d4'], "the board's clock or the rack's");
     const patch = new Patch({ storage: null });
     patch.plug('pad.snare', 'delay.in');
     patch.plug('synth.lfo', 'synth.cutoff');
+    patch.plug('lfo.out', 'keys.rotary');
     o.setPatch(patch);
-    assert.deepEqual(['drums.clock', 'delay.in', 'synth.clock', 'synth.pitch', 'synth.cutoff', 'synth.notes', 'seq.clock', 'rackdelay.in'].map((id) => o.plugs.get(id).value),
-      ['clock.x1', 'pad.snare', 'clock.x1', '', 'synth.lfo', 'seq.notes', 'rack.x1', '']);
+    assert.deepEqual(['drums.clock', 'delay.in', 'synth.clock', 'synth.pitch', 'synth.cutoff', 'synth.notes', 'seq.clock', 'rackdelay.in', 'keys.rotary'].map((id) => o.plugs.get(id).value),
+      ['clock.x1', 'pad.snare', 'clock.x1', '', 'synth.lfo', 'seq.notes', 'rack.x1', '', 'lfo.out']);
     o.plugs.get('drums.clock').value = 'clock.d4';
     o.plugs.get('drums.clock').fire('change');
     o.plugs.get('delay.in').value = '';
@@ -276,8 +286,12 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
     o.plugs.get('rackdelay.in').fire('change');
     o.plugs.get('synth.cutoff').value = 'lfo.out';
     o.plugs.get('synth.cutoff').fire('change');
+    o.plugs.get('keys.rotary').value = 'synth.env';
+    o.plugs.get('keys.rotary').fire('change');
+    o.plugs.get('synth.notes').value = 'keys.notes';
+    o.plugs.get('synth.notes').fire('change');
     assert.deepEqual(calls, [['onPlug', 'drums.clock', 'clock.d4'], ['onPlug', 'delay.in', null], ['onPlug', 'synth.amp', 'synth.env'], ['onPlug', 'seq.clock', 'clock.d2'],
-      ['onPlug', 'rackdelay.in', 'synth.out'], ['onPlug', 'synth.cutoff', 'lfo.out']]);
+      ['onPlug', 'rackdelay.in', 'synth.out'], ['onPlug', 'synth.cutoff', 'lfo.out'], ['onPlug', 'keys.rotary', 'synth.env'], ['onPlug', 'synth.notes', 'keys.notes']]);
   } finally {
     remove();
   }
@@ -593,7 +607,7 @@ test('with no 3D view, the drums, the synth, the rack, the keys and the sound st
     for (const box of [o.keyboard, o.presetsBox, o.arpBox, ...o.sectionBoxes, o.synthCablesBox]) assert.equal(o.synth.findAll((c) => c === box).length, 1, 'the keys, the sounds, the arpeggiator, the knobs and the cables');
     for (const box of [o.rackClockBox, o.seqBox, o.rackDelayBox, o.lfoBox, o.rackCablesBox]) assert.equal(o.rack.findAll((c) => c === box).length, 1, 'its clock, the sequencer, the delay, the LFO and the cables');
     assert.equal(o.keysPart.findAll((c) => c === o.playKeys).length, 0);
-    for (const box of [o.keysRow, o.keysSoundBox, o.percBox, ...o.keysSectionBoxes]) assert.equal(o.keysPart.findAll((c) => c === box).length, 1, 'the keys, the sound, the percussion, the drawbars and the knobs');
+    for (const box of [o.keysRow, o.keysSoundBox, o.percBox, ...o.keysSectionBoxes, o.keysCablesBox]) assert.equal(o.keysPart.findAll((c) => c === box).length, 1, 'the keys, the sound, the percussion, the drawbars, the knobs and the cables');
   } finally {
     remove();
   }

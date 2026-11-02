@@ -8,12 +8,13 @@
 // tempo and the delay's settings (canvases, each redrawn when they change, at most ten times a
 // second), over its face (one canvas, drawn once: its sections, its jacks and what they are); the RUN
 // button, its light lit while the clock runs and brighter on each beat; the cables between the
-// jacks, its own, the synth's and the rack's (addJacks), each in its colour with a plug at either end,
-// kept off every desk (made again when the patch changes), and the one being carried, from its jack to
-// wherever it is pointed (moved each frame, in place), and a ring round the jack pointed at; and its
-// sign on the wall over it. In VR a stick in each hand that holds a controller, near the board, whose
-// tip comes down on a pad to play it (board.js strikeAt), as hard as it was going, or on a step key
-// to set it; a hand without a controller plays with its forefinger. Per frame nothing is allocated.
+// jacks, its own, the synth's, the rack's and the keyboard's (addJacks), each in its colour with a
+// plug at either end, kept off every desk (made again when the patch changes), and the one being
+// carried, from its jack to wherever it is pointed (moved each frame, in place), and a ring round the
+// jack pointed at; and its sign on the wall over it. In VR a stick in each hand that holds a
+// controller, near the board, whose tip comes down on a pad to play it (board.js strikeAt), as hard as
+// it was going, or on a step key to set it; a hand without a controller plays with its forefinger. Per
+// frame nothing is allocated.
 import * as THREE from 'three';
 import { Builder } from './builder.js';
 import { BOARD, REARM, boardPoint, heightOver, panelPoint, strikeAt, strikeVelocity } from './board.js';
@@ -61,10 +62,11 @@ const BUTTON = 0.008;
 const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton', 'drawbar', 'keysknob', 'keysbutton']);
 /**
  * A cable: its radius, its plug's length out of the panel and radius, how far it hangs (`sag`, and
- * `sagPer` metre between its ends, to `sagMax`), and how far the one carried reaches from its jack
- * (from one end of the board to the far end of the rack); and how finely it is drawn.
+ * `sagPer` metre between its ends, to `sagMax`), and how much farther the one carried reaches from
+ * its jack than the farthest two jacks are apart (`slack`: any it may go into is in reach); and how
+ * finely it is drawn.
  */
-const CABLE = { r: 0.0042, plug: 0.032, plugR: 0.0068, sag: 0.03, sagPer: 0.2, sagMax: 0.12, reach: 3.4 };
+const CABLE = { r: 0.0042, plug: 0.032, plugR: 0.0068, sag: 0.03, sagPer: 0.2, sagMax: 0.12, slack: 0.3 };
 const SEGMENTS = 20, SIDES = 8;
 const COS = Float32Array.from({ length: SIDES }, (_, k) => Math.cos((k / SIDES) * 2 * Math.PI));
 const SIN = Float32Array.from({ length: SIDES }, (_, k) => Math.sin((k / SIDES) * 2 * Math.PI));
@@ -627,6 +629,8 @@ export class Kit {
     this._desks = [{ D: B, rise: BOARD.rise }];
     /** @private @type {PlacedJack[]} */
     this._jacks = B.panel.jacks.map((j) => ({ desk: 0, a: j.a, b: j.b }));
+    /** @private how far the cable carried reaches from its jack (_reaches) */
+    this._reach = this._reaches();
     /** @private the panel's light, the cables' colours lit by it */
     this._panelLight = panelLight;
     this.cables = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
@@ -831,16 +835,30 @@ export class Kit {
   }
 
   /**
-   * Another desk's jacks (the synth's, synthboard.js; the rack's, rackboard.js), after those there
-   * are: cables go into them too, kept off its top (what stands on it, `rise` high) and in front of its
-   * panel. Where its first is in the room's list of jacks.
+   * Another desk's jacks (the synth's, synthboard.js; the rack's, rackboard.js; the keyboard's,
+   * keysboard.js), after those there are: cables go into them too, kept off its top (what stands on
+   * it, `rise` high) and in front of its panel, and the one carried reaches them. Where its first is
+   * in the room's list of jacks.
    * @param {import('./board.js').Desk & { panel: { jacks: readonly { a: number, b: number }[] } }} D
    * @param {number} rise
    */
   addJacks(D, rise) {
     const first = this._jacks.length, desk = this._desks.push({ D, rise }) - 1;
     for (const j of D.panel.jacks) this._jacks.push({ desk, a: j.a, b: j.b });
+    this._reach = this._reaches();
     return first;
+  }
+
+  /**
+   * How far the cable carried reaches from its jack: as far as the farthest two jacks are apart, and
+   * CABLE.slack more.
+   * @private
+   */
+  _reaches() {
+    const at = this._jacks.map((j) => panelPoint(this._desks[j.desk].D, j.a, j.b, 0, [0, 0, 0]));
+    let far = 0;
+    for (const p of at) for (const q of at) far = Math.max(far, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+    return far + CABLE.slack;
   }
 
   /**
@@ -990,8 +1008,8 @@ export class Kit {
       q[2] = a.z + a.nz * 0.008;
       // Pointed farther than it reaches (across the room): held out towards there, as far as it goes.
       const dx = q[0] - p[0], dy = q[1] - p[1], dz = q[2] - p[2], d = Math.hypot(dx, dy, dz);
-      if (d > CABLE.reach) {
-        const k = CABLE.reach / d;
+      if (d > this._reach) {
+        const k = this._reach / d;
         q[0] = p[0] + dx * k;
         q[1] = p[1] + dy * k;
         q[2] = p[2] + dz * k;

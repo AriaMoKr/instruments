@@ -4,13 +4,14 @@
 // harder brighter and louder, lower notes ringing longer, the damper, a key struck again), each made
 // as a browser takes it (on test/helpers/audio.js's fake Web Audio, which refuses what a browser
 // would) with its first note and only then; both at once; the voices held at most; the sustain
-// pedal; the knobs and the rotary speaker heard at once; a note played for a moment; and the settings
-// kept for the next visit.
+// pedal; the knobs and the rotary speaker heard at once (its speed, FAST's and ROTARY's, kept from
+// slow to fast, each rotor getting there at its own pace); its jacks (its sound out, its notes out,
+// ROTARY in); a note played for a moment; and the settings kept for the next visit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_KEYS, DEFAULT_SWITCHES, DRAWBARS, DRAWBAR_HARMONICS, KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_OCTAVES, KEYS_SECTIONS, KEYS_SOUNDS,
-  KEYS_SWITCHES, KEYS_VOICES, Keys, ORGAN_OUT, PERC, ROTORS, ampAt, barkIndex, drawbarLevel, drawbarStep, drawbarWave, isDrawbar, keysKnobName,
+  KEYS_SWITCHES, KEYS_VOICES, Keys, ORGAN_OUT, PERC, ROTORS, SLOW_SPEED, ampAt, barkIndex, drawbarLevel, drawbarStep, drawbarWave, isDrawbar, keysKnobName,
   keysLevel, keysText, noteDecay, pianoDecay, registration, scannerDepth, scannerMix, switchWords, toneIndex, tremoloHz,
 } from '../public/js/keys.js';
 import { noteHz } from '../public/js/synth.js';
@@ -134,16 +135,17 @@ test('the organ is made with its first note, as a browser takes it, into the key
   assert.equal(keys.noteOn(60), true);
   const ctx = sound.ctx;
   assert.ok(ctx instanceof FakeContext);
-  const counts = () => ['oscillator', 'buffer', 'filter', 'merger', 'delay', 'shaper'].map((k) => ctx.all(k).length);
+  const counts = () => ['oscillator', 'buffer', 'filter', 'merger', 'delay', 'shaper', 'constant', 'iir'].map((k) => ctx.all(k).length);
   // The scanner's sway and the two rotors, the note and its percussion; the click; the clicks' band
   // and the crossover's two; the rotary speaker's sides; the scanner and a delay a rotor a side; the
-  // drive and the mixer's clipper.
-  assert.deepEqual(counts(), [5, 1, 3, 1, 5, 2]);
-  for (const s of [...ctx.all('oscillator'), ...ctx.all('buffer')]) assert.equal(s.started, 0);
+  // drive, the rotors' speed kept from slow to fast and the mixer's clipper; FAST's speed, and where
+  // it was when made; a lag a rotor.
+  assert.deepEqual(counts(), [5, 1, 3, 1, 5, 3, 2, 2]);
+  for (const s of [...ctx.all('oscillator'), ...ctx.all('buffer'), ...ctx.all('constant')]) assert.equal(s.started, 0);
   const channel = sound.channel('keys');
   assert.ok(ctx.nodes.some((n) => n.outputs.includes(channel)), 'into the keys channel');
   keys.noteOn(64);
-  assert.deepEqual(counts(), [6, 2, 3, 1, 5, 2], 'a note and its click more, nothing else');
+  assert.deepEqual(counts(), [6, 2, 3, 1, 5, 3, 2, 2], 'a note and its click more, nothing else');
   // As it comes: the chorus half and half, the drive's gains, the rotary speaker three quarters in, slow.
   const g = keys._organ;
   assert.deepEqual([g.dry.gain.value, g.wet.gain.value], [0.5, 0.5]);
@@ -151,8 +153,143 @@ test('the organ is made with its first note, as a browser takes it, into the key
   assert.ok(near(g.pre.gain.value, 1.36 / 4) && near(g.post.gain.value, 1 / Math.sqrt(1.36)));
   assert.deepEqual([g.straight.gain.value, g.turning.gain.value], [0.25, 0.75]);
   assert.ok(near(g.level.gain.value, ORGAN_OUT * keysLevel(0.7)), 'as loud as the piano and the synth');
-  assert.deepEqual([g.rotors.horn.frequency.value, g.rotors.drum.frequency.value], [ROTORS.horn.slow, ROTORS.drum.slow]);
+  for (const name of ['horn', 'drum']) assert.ok(near(g.rotors[name].frequency.value, ROTORS[name].slow, 1e-4), `${name}: slow`);
+  assert.equal(g.speed.offset.value, SLOW_SPEED, 'slow');
+  assert.ok(SLOW_SPEED > 0, 'never quite 0: to Chrome, silence, which stops the rotors\' lags');
+  assert.ok(SLOW_SPEED * (ROTORS.horn.fast - ROTORS.horn.slow) < 1e-4, 'yet as slow as slow, near enough');
   assert.equal(keys._piano, null, 'no piano until it plays');
+});
+
+/** What a WaveShaper with this curve makes of x: its ends past −1 and 1, else between its points (the spec's). */
+const shape = (curve, x) => {
+  const n = curve.length, v = ((n - 1) * (x + 1)) / 2;
+  if (v <= 0) return curve[0];
+  if (v >= n - 1) return curve[n - 1];
+  const k = Math.floor(v), f = v - k;
+  return (1 - f) * curve[k] + f * curve[k + 1];
+};
+
+/** Where an IIR filter's output has got to `seconds` after its input went from 0 to 1. */
+const stepAfter = (lag, seconds, rate) => {
+  const [b0] = lag.feedforward, [a0, a1] = lag.feedback;
+  let y = 0;
+  for (let i = Math.round(seconds * rate); i > 0; i--) y = (b0 - a1 * y) / a0;
+  return y;
+};
+
+test('the rotary speaker\'s speed: FAST\'s and ROTARY\'s together kept from slow to fast, each rotor getting there at its own pace from FAST\'s when made', () => {
+  const { sound, keys } = make();
+  keys.setSwitch('rotaryFast', true);
+  keys.noteOn(60);
+  const ctx = sound.ctx, g = keys._organ;
+  assert.equal(g.speed.offset.value, 1, 'made with FAST on: fast');
+  assert.ok(g.speed.outputs.includes(g.speedIn));
+  assert.deepEqual([-2, -1, -0.5, 0, 0.3, 1, 2].map((x) => Math.round(shape(g.speedIn.curve, x) * 1000) / 1000), [0, 0, 0, 0, 0.3, 1, 1]);
+  const [from] = ctx.all('constant').filter((n) => n !== g.speed);
+  assert.equal(from.offset.value, -1, 'FAST\'s speed when made, to take off');
+  for (const name of ['horn', 'drum']) {
+    const R = ROTORS[name], f = g.rotors[name].frequency;
+    const [span] = ctx.nodes.filter((n) => n.outputs.includes(f));
+    const [lag] = ctx.nodes.filter((n) => n.outputs.includes(span));
+    assert.equal(lag.kind, 'iir', name);
+    assert.ok(g.speedIn.outputs.includes(lag) && from.outputs.includes(lag));
+    // Fast from the start, its lag at rest following how far the speed goes from there; as much
+    // again as fast is faster than slow: from its slow speed up to its fast.
+    assert.equal(f.value, R.fast);
+    assert.ok(near(span.gain.value, R.fast - R.slow));
+    // A lag of one pole: there by 1 − 1/e of the way in `ramp` seconds, nearly all the way in five.
+    assert.ok(near(stepAfter(lag, R.ramp, ctx.sampleRate), 1 - Math.exp(-1), 1e-4), `${name}: its time constant`);
+    assert.ok(stepAfter(lag, 5 * R.ramp, ctx.sampleRate) > 0.99);
+  }
+  assert.ok(ROTORS.drum.ramp > ROTORS.horn.ramp, 'the drum, heavier, takes longer');
+  ctx.currentTime = 3;
+  keys.setSwitch('rotaryFast', false);
+  assert.deepEqual(g.speed.offset.events, [['cancel', 0, 3], ['set', SLOW_SPEED, 3]], 'slow from now');
+  ctx.currentTime = 4;
+  keys.setSwitch('rotaryFast', true);
+  assert.deepEqual(g.speed.offset.events.slice(-1), [['set', 1, 4]]);
+});
+
+test('ROTARY in: a modulation into the rotary speaker\'s speed, from before the organ is made or at once, replaced or pulled out', () => {
+  const { sound, keys } = make();
+  const ctx = sound.wake();
+  const lfo = ctx.createOscillator(), env = ctx.createConstantSource();
+  keys.setInput(lfo);
+  assert.equal(keys.input, lfo);
+  keys.noteOn(60);
+  const g = keys._organ;
+  assert.ok(lfo.outputs.includes(g.speedIn), 'connected as the organ is made');
+  keys.setInput(lfo);
+  assert.equal(lfo.outputs.filter((n) => n === g.speedIn).length, 1, 'the same again: once');
+  keys.setInput(env);
+  assert.ok(!lfo.outputs.includes(g.speedIn) && env.outputs.includes(g.speedIn), 'replaced');
+  keys.setInput(null);
+  assert.ok(!env.outputs.includes(g.speedIn));
+  assert.equal(keys.input, null);
+  assert.ok(g.speed.outputs.includes(g.speedIn), 'FAST\'s speed stays');
+});
+
+test('its sound out: both sounds\' way into the keys channel, made once there is sound', () => {
+  const { sound, keys } = make();
+  assert.equal(keys.output(), null, 'no sound yet');
+  keys.choose('both');
+  keys.noteOn(60);
+  const out = keys.output();
+  assert.equal(out, keys.output(), 'the same each time');
+  assert.ok(out.outputs.includes(sound.channel('keys')));
+  assert.ok(keys._organ.level.outputs.includes(out) && keys._piano.level.outputs.includes(out), 'the organ and the piano both');
+});
+
+test('its notes out: each as its key goes down, and as it ends; the pedal holding it, everything let go', () => {
+  const { keys } = make();
+  /** @type {[number, number | null][]} */
+  const out = [];
+  keys.onNoteOut = (note, velocity) => out.push([note, velocity]);
+  keys.noteOn(60, 0.5);
+  keys.noteOn(64, 3);
+  keys.noteOff(60);
+  assert.deepEqual(out, [[60, 0.5], [64, 1], [60, null]]);
+  out.length = 0;
+  keys.noteOff(60);
+  assert.deepEqual(out, [], 'ended already: nothing');
+  keys.setSustain(true);
+  keys.noteOff(64);
+  keys.noteOn(67, 0.8);
+  assert.deepEqual(out, [[67, 0.8]], 'held by the pedal: not ended');
+  keys.setSustain(false);
+  assert.deepEqual(out, [[67, 0.8], [64, null]], 'the pedal let go: those let go end, a key still down doesn\'t');
+  out.length = 0;
+  keys.noteOn(72);
+  keys.allOff();
+  assert.deepEqual(out.map(([n, v]) => [n, v === null]), [[72, false], [67, true], [72, true]], 'everything let go: everything ends');
+  out.length = 0;
+  keys.noteOn(48);
+  keys.choose('epiano');
+  assert.deepEqual(out, [[48, 0.8], [48, null]], 'another sound: every note let go first');
+});
+
+test('a tap goes out said to be one, as it may be played otherwise there (the synth\'s arpeggiator holding its chord)', () => {
+  const { keys } = make();
+  const out = [];
+  keys.onNoteOut = (note, velocity, tap) => out.push([note, velocity, tap]);
+  keys.noteOn(50, 0.5);
+  keys.tap(52, 0.6);
+  keys.noteOn(53, 0.7);
+  keys.allOff();
+  assert.deepEqual(out.slice(0, 3), [[50, 0.5, false], [52, 0.6, true], [53, 0.7, false]], 'the notes either side not');
+  assert.ok(out.slice(3).every(([, v]) => v === null), 'ending as any other');
+});
+
+test('without Web Audio its notes still go out', () => {
+  const sound = new Sound({ Context: null, storage: null });
+  const keys = new Keys(sound, { storage: null });
+  const out = [];
+  keys.onNoteOut = (note, velocity) => out.push([note, velocity]);
+  assert.equal(keys.noteOn(60), false);
+  keys.noteOff(60);
+  assert.deepEqual(out, [[60, 0.8], [60, null]]);
+  assert.equal(keys.output(), null);
+  assert.doesNotThrow(() => keys.setInput(null));
 });
 
 test('an organ note: one oscillator an octave under, its drawbars\' wave, as loud however hard', () => {
@@ -270,7 +407,7 @@ test('the drawbars heard at once: a new wave on every organ note sounding, each 
   assert.equal(sound.ctx.all('oscillator').length, 6, 'no new oscillators');
 });
 
-test('the organ\'s knobs heard at once, eased; the rotary speaker speeding up and slowing down at its own pace', () => {
+test('the organ\'s knobs heard at once, eased; the rotary speaker heard on each side as it turns', () => {
   const { sound, keys } = make();
   keys.noteOn(60);
   const ctx = sound.ctx, g = keys._organ;
@@ -283,13 +420,6 @@ test('the organ\'s knobs heard at once, eased; the rotary speaker speeding up an
   assert.ok(near(last(g.level.gain)[1], ORGAN_OUT * 1.2));
   keys.setKnob('drive', 1);
   assert.ok(near(last(g.pre.gain)[1], 10 / 4) && near(last(g.post.gain)[1], 1 / Math.sqrt(10)));
-  keys.setSwitch('rotaryFast', true);
-  assert.deepEqual(last(g.rotors.horn.frequency), ['target', ROTORS.horn.fast, 3, ROTORS.horn.ramp]);
-  assert.deepEqual(last(g.rotors.drum.frequency), ['target', ROTORS.drum.fast, 3, ROTORS.drum.ramp]);
-  assert.ok(ROTORS.drum.ramp > ROTORS.horn.ramp, 'the drum, heavier, takes longer');
-  ctx.currentTime = 4;
-  keys.setSwitch('rotaryFast', false);
-  assert.deepEqual(last(g.rotors.horn.frequency), ['target', ROTORS.horn.slow, 4, ROTORS.horn.ramp]);
   // Each rotor heard on each side: louder and sooner as it faces it, the other side the other way.
   for (const name of ['horn', 'drum']) {
     const rotor = g.rotors[name], R = ROTORS[name];
