@@ -2,14 +2,16 @@
 // drums' clock input and an output for each pad's sound, the delay's input; the synth's patch bay,
 // its sound out, its arpeggiator's clock in, its LFO and filter envelope out, its pitch, cutoff and
 // amp in and its notes in; in the rack beside it the clock's outputs again, the sequencer's clock in
-// and notes out, its delay's input and its LFO's output; and on the keyboard its sound out, its
-// notes out and its rotary speaker's speed in) and the cables between them. A cable runs from an
-// output to an input of its kind, a clock's pulses, sound, a modulation (a voltage that moves
-// something, as an LFO's does) or notes (a sequencer's or a keyboard's, to play); an input takes one
-// cable at most, so plugging in another pulls the first out, and an output may feed any number. The
-// page draws the cables and connects the sound as they change (onChange). The patch is kept for the
-// next visit (localStorage) at every change, an input left empty on purpose too; an input added
-// since comes as the patch comes.
+// and notes out, its delay's input, its LFO's output, its filter's in, cutoff in and out and its
+// reverb's in; and on the keyboard its sound out, its notes out and its rotary speaker's speed in)
+// and the cables between them. A cable runs from an output to an input of its kind, a clock's
+// pulses, sound, a modulation (a voltage that moves something, as an LFO's does) or notes (a
+// sequencer's or a keyboard's, to play); an input takes one cable at most, so plugging in another
+// pulls the first out, and an output may feed any number; no cable may bring a sound back round into
+// where it came from (the filter's out into its own in), as no sound can go round so. The page draws
+// the cables and connects the sound as they change (onChange). The patch is kept for the next visit
+// (localStorage) at every change, an input left empty on purpose too; an input added since comes as
+// the patch comes.
 import { PADS } from './drums.js';
 import { pageStorage } from './sound.js';
 
@@ -17,7 +19,7 @@ import { pageStorage } from './sound.js';
 
 /**
  * A jack: its id, the module it is on ('clock', 'drums', 'delay', 'synth', the rack's 'rackclock',
- * 'seq', 'rackdelay' and 'lfo', and 'keys'), its name in words (the page's list of cables, screen
+ * 'seq', 'rackdelay', 'lfo', 'filter' and 'reverb', and 'keys'), its name in words (the page's list of cables, screen
  * readers), its label (short, printed by it on the board, the synth, the rack or the keyboard),
  * whether signals come out of it or go in, and what kind they are.
  * @typedef {{ id: string, module: string, name: string, label: string, dir: 'in' | 'out', kind: JackKind }} Jack
@@ -42,9 +44,10 @@ const padJack = (p) => ({ id: `pad.${p.id}`, module: 'drums', name: `${p.name} o
  * input; then the synth's patch bay, its sound out, its arpeggiator's clock in, its two modulations
  * out (the LFO, and each voice's filter envelope), the three places they can go in (the pitch, the
  * filter's cutoff, the amp) and its notes in; then the rack's, the clock's outputs (the room's clock
- * again, nearer the synth), the sequencer's clock in and notes out, its delay's input and its LFO's
- * output; then the keyboard's, its sound out, its notes out (to play the synth with it) and its
- * rotary speaker's speed in.
+ * again, nearer the synth), the sequencer's clock in and notes out, its delay's input, its LFO's
+ * output, its filter's in, its cutoff in (a modulation) and its out, and its reverb's in; then the
+ * keyboard's, its sound out, its notes out (to play the synth with it) and its rotary speaker's speed
+ * in.
  * @type {readonly Jack[]}
  */
 export const JACKS = Object.freeze([
@@ -69,6 +72,10 @@ export const JACKS = Object.freeze([
   { id: 'seq.notes', module: 'seq', name: 'Sequencer notes out', label: 'NOTES', dir: 'out', kind: 'notes' },
   { id: 'rackdelay.in', module: 'rackdelay', name: 'Rack delay in', label: 'IN', dir: 'in', kind: 'audio' },
   { id: 'lfo.out', module: 'lfo', name: 'Rack LFO out', label: 'OUT', dir: 'out', kind: 'mod' },
+  { id: 'filter.in', module: 'filter', name: 'Filter in', label: 'IN', dir: 'in', kind: 'audio' },
+  { id: 'filter.cutoff', module: 'filter', name: 'Filter cutoff in', label: 'CUTOFF', dir: 'in', kind: 'mod' },
+  { id: 'filter.out', module: 'filter', name: 'Filter out', label: 'OUT', dir: 'out', kind: 'audio' },
+  { id: 'reverb.in', module: 'reverb', name: 'Reverb in', label: 'IN', dir: 'in', kind: 'audio' },
   { id: 'keys.out', module: 'keys', name: 'Keyboard out', label: 'OUT', dir: 'out', kind: 'audio' },
   { id: 'keys.notes', module: 'keys', name: 'Keyboard notes out', label: 'NOTES', dir: 'out', kind: 'notes' },
   { id: 'keys.rotary', module: 'keys', name: 'Rotary speed in', label: 'ROTARY', dir: 'in', kind: 'mod' },
@@ -150,12 +157,41 @@ export class Patch {
 
   /**
    * Whether a cable can join jacks a and b, in either order: one an output, the other an input,
-   * of one kind.
+   * of one kind, bringing no sound back round into where it came from (loops).
    * @param {string} a
    * @param {string} b
    */
   canPlug(a, b) {
-    return this._ends(a, b) !== null;
+    const ends = this._ends(a, b);
+    return ends !== null && !this.loops(ends.from, ends.to);
+  }
+
+  /**
+   * Whether a cable from output `from` into input `to` would bring a sound back round into where it
+   * came from: whether sound goes on from what `to` is on, out of its sound outputs and along the
+   * cables from them (through whatever passes it on, as the filter does), to what `from` is on. The
+   * cable in `to` now, which it would pull out, isn't followed.
+   * @param {string} from
+   * @param {string} to
+   */
+  loops(from, to) {
+    const out = this._byId.get(from), into = this._byId.get(to);
+    if (!out || !into || out.kind !== 'audio' || into.kind !== 'audio') return false;
+    const next = [into.module], seen = new Set();
+    while (next.length) {
+      const m = next.pop();
+      if (m === out.module) return true;
+      if (seen.has(m)) continue;
+      seen.add(m);
+      for (const j of this.jacks) {
+        if (j.module !== m || j.dir !== 'out' || j.kind !== 'audio') continue;
+        for (const t of this.targets(j.id)) {
+          const on = this._byId.get(t)?.module;
+          if (t !== to && on) next.push(on);
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -166,7 +202,7 @@ export class Patch {
    */
   plug(a, b) {
     const ends = this._ends(a, b);
-    return ends !== null && this._set([[ends.to, ends.from]]);
+    return ends !== null && !this.loops(ends.from, ends.to) && this._set([[ends.to, ends.from]]);
   }
 
   /**
@@ -209,7 +245,7 @@ export class Patch {
   }
 
   /**
-   * Every input's cable as the patch comes: its default where that can be plugged, else none.
+   * Every input's cable as the patch comes: its default where a cable can join them, else none.
    * @private
    */
   _defaultCables() {
@@ -218,7 +254,7 @@ export class Patch {
     for (const j of this.jacks) {
       if (j.dir !== 'in') continue;
       const out = this._defaults[j.id];
-      from.set(j.id, typeof out === 'string' && this.canPlug(out, j.id) ? out : null);
+      from.set(j.id, typeof out === 'string' && this._ends(out, j.id) !== null ? out : null);
     }
     return from;
   }

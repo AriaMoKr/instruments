@@ -3,25 +3,28 @@
 // one instanced mesh, each step's lit in the room's glow where it plays and its accent's and slide's
 // where they are set, the step playing lit up as the clock goes round, a key a little lighter pointed
 // at (or chosen with a TV's arrows); the knobs, each step's turned to its note, the tempo's, the
-// delay's and the LFO's; on one canvas, drawn once, what is written on the top (the steps' numbers, the
-// rows' names) over the panel's face (its modules' plates and names, the displays' frames, the knobs'
-// names, the jacks as the board's are, kit.js: its outs on plates, the cables kit.js's too, and the
-// buttons' caps); on another, redrawn when it changes, at most ten times a second, the names of the
-// steps' notes behind their keys, the two displays (the tempo; the octave and what was set last) and
-// the delay's and the LFO's knobs' settings under them; two lights, one mesh: RUN's, lit while the
-// clock runs and brighter on each beat, as the board's, and the LFO's, as bright as its wave is high;
-// and its sign on the wall over it. In VR a stick's tip (kit.js's sticks, which show near it too) or a
-// forefinger coming down on a key presses it. Per frame nothing is allocated.
+// delay's, the LFO's, the filter's and the reverb's; on one canvas, drawn once, what is written on the
+// top (the steps' numbers, the rows' names) over the panel's face (its modules' plates and names in
+// their two rows, the blank plate, the displays' frames, the knobs' names, the jacks as the board's
+// are, kit.js: its outs on plates, the cables kit.js's too, and the buttons' caps); on another,
+// redrawn when it changes, at most ten times a second, the names of the steps' notes behind their
+// keys, the two displays (the tempo; the octave and what was set last) and the modules' knobs'
+// settings under them; two lights, one mesh: RUN's, lit while the clock runs and brighter on each
+// beat, as the board's, and the LFO's, as bright as its wave is high; and its sign on the wall over
+// it. In VR a stick's tip (kit.js's sticks, which show near it too) or a forefinger coming down on a
+// key presses it. Per frame nothing is allocated.
 import * as THREE from 'three';
 import { Builder } from './builder.js';
 import { BOARD, REARM, boardPoint, heightOver, panelPoint } from './board.js';
-import { RACK, SEQ_ROWS, knobRadius, rackStrike } from './rackboard.js';
+import { RACK, SEQ_ROWS, isModuleKnob, knobRadius, rackStrike } from './rackboard.js';
 import { STEPS } from './pattern.js';
 import { SEQ_RANGE } from './seq.js';
-import { noteName } from './synth.js';
+import { cutoffHz, hertz, noteName } from './synth.js';
 import { TEMPO } from './clock.js';
 import { DEFAULT_DELAY, MAX_STEPS, delaySteps } from './delay.js';
 import { DEFAULT_LFO, LFO_RATES, LFO_SHAPES, knobPlace, lfoRate, lfoShape } from './lfo.js';
+import { DEFAULT_FILTER, FILTER_MODES, MOD_OCTAVES, filterMode } from './filter.js';
+import { DEFAULT_REVERB, reverbSeconds } from './reverb.js';
 import { JACKS } from './patch.js';
 import { STICK, canvas, context, drawJack, drawPlate, fit, lin, signPlate, texture, times } from './kit.js';
 import { GOLD, SANS } from './textures.js';
@@ -40,10 +43,12 @@ const LED = { off: lin('#2a1d18'), on: lin('#36c766'), beat: lin('#dcffe6'), lfo
 const ATLAS = 1536;
 /**
  * The canvas redrawn: the notes' names in a band across it, under it the two displays side by side,
- * each `display` wide, and under them the knobs' settings in a row, each `cell` by `cellH` (the shape
- * of where it is written, rackboard.js RACK.setting).
+ * each `display` wide, and under them the knobs' settings in rows of eight, each `cell` by `cellH`
+ * (the shape of where it is written, rackboard.js RACK.setting).
  */
 const VALUES = { w: 1024, band: 32, display: 512, cell: 128, cellH: 32 };
+/** How many settings a row of that canvas holds. */
+const PER_ROW = VALUES.w / VALUES.cell;
 /** A module's plate. */
 const PLATE = '#2b2824';
 /** A light's radius (RUN's, the LFO's). */
@@ -51,10 +56,19 @@ const LIGHT = 0.0048;
 
 /**
  * How many places a knob on the panel has, where it turns in steps (the delay's time, the LFO's rate
- * and shape), else 0.
+ * and shape, the filter's mode), else 0.
  * @param {import('./rackboard.js').RackKnob} n
  */
-const placesOf = (n) => (n.part === 'delay' && n.name === 'time' ? MAX_STEPS : n.part === 'lfo' && n.name === 'rate' ? LFO_RATES.length : n.part === 'lfo' && n.name === 'shape' ? LFO_SHAPES.length : 0);
+function placesOf(n) {
+  if (n.part === 'delay' && n.name === 'time') return MAX_STEPS;
+  if (n.part === 'lfo' && n.name === 'rate') return LFO_RATES.length;
+  if (n.part === 'lfo' && n.name === 'shape') return LFO_SHAPES.length;
+  if (n.part === 'filter' && n.name === 'mode') return FILTER_MODES.length;
+  return 0;
+}
+
+/** What a module's knob is called over it: its name, short where it is long. @param {import('./rackboard.js').ModuleKnob} n */
+const knobLabel = (n) => (n.name === 'resonance' ? 'RES' : n.name.toUpperCase());
 
 /**
  * Where a knob on the panel points, turned to `v` (0…1): at its place, where it has them, so on a
@@ -68,8 +82,9 @@ function pointsAt(n, v) {
 }
 
 /**
- * A setting of the delay's or the LFO's under its knob, in a word or two: the delay's time in steps,
- * the LFO's rate as a note value, its shape, the rest in percent.
+ * A setting of a module's under its knob, in a word or two: the delay's time in steps, the LFO's rate
+ * as a note value, its shape, the filter's mode, its cutoff in Hz and how far its CUTOFF in moves it,
+ * how long the reverb rings, the rest in percent.
  * @param {import('./rackboard.js').RackKnob} n
  * @param {number} v
  */
@@ -80,17 +95,21 @@ function setting(n, v) {
   }
   if (n.part === 'lfo' && n.name === 'rate') return lfoRate(v).label.toLowerCase();
   if (n.part === 'lfo' && n.name === 'shape') return lfoShape(v).id;
+  if (n.part === 'filter' && n.name === 'mode') return filterMode(v).name.toLowerCase();
+  if (n.part === 'filter' && n.name === 'cutoff') return hertz(cutoffHz(v));
+  if (n.part === 'filter' && n.name === 'mod') return v <= 0 ? 'none' : `${(MOD_OCTAVES * v).toFixed(1)} oct`;
+  if (n.part === 'reverb' && n.name === 'size') return `${reverbSeconds(v).toFixed(1)} s`;
   return `${Math.round(v * 100)}%`;
 }
 
 /**
  * What is drawn once, on one canvas: the top (the steps' numbers along its front edge, the first of
  * each four in gold, a line between the fours, the rows' names in the margin) over the panel's face
- * (the case between its modules, each module's plate with a screw at each corner and its name, the
- * displays' frames, a ring and a scale round each of its knobs, the LFO's light's bezel, the outs'
- * plates, the jacks with what each is under it, the buttons' caps with their names, the names of the
- * tempo's knob, the octave's buttons and the delay's and the LFO's knobs). `top` and `panel`: how many
- * of its rows each takes.
+ * (the case between its modules, each module's plate in its row with a screw at each corner and its
+ * name, the blank plate likewise, the displays' frames, a ring and a scale round each of its knobs,
+ * the LFO's light's bezel, the outs' plates, the jacks with what each is under it, the buttons' caps
+ * with their names, the names of the tempo's knob, the octave's buttons and the modules' knobs).
+ * `top` and `panel`: how many of its rows each takes.
  * @param {RackDesk} R
  */
 function faces(R) {
@@ -125,11 +144,12 @@ function faces(R) {
     fit(g, l.text, x(RACK.step.left) - 20, Math.round(0.0092 * k));
     g.fillText(l.text, x(RACK.step.left / 2), topY(l.b));
   }
-  // The panel, its top edge against the top's back edge in the canvas: the case, then its modules.
+  // The panel, its top edge against the top's back edge in the canvas: the case, then its modules and
+  // the blank plate, each in its row.
   g.fillStyle = '#141311';
   g.fillRect(0, th, ATLAS, ph);
-  for (const m of P.modules) {
-    const mx = x(m.a0), my = panelY(P.height - 0.006), mw = x(m.a1) - mx, mh = panelY(0.006) - my;
+  for (const m of [...P.modules, ...P.blanks]) {
+    const mx = x(m.a0), my = panelY(m.b1), mw = x(m.a1) - mx, mh = panelY(m.b0) - my;
     g.fillStyle = PLATE;
     g.beginPath();
     g.roundRect(mx, my, mw, mh, 6);
@@ -158,7 +178,7 @@ function faces(R) {
   }
   for (const t of P.titles) {
     g.fillStyle = GOLD;
-    g.font = `600 ${Math.round((t.b > 0.2 ? 0.0125 : 0.0105) * k)}px ${SANS}`;
+    g.font = `600 ${Math.round((P.modules.some((m) => m.name === t.text) ? 0.0125 : 0.0105) * k)}px ${SANS}`;
     g.fillText(t.text, x(t.a), panelY(t.b));
   }
   // Round each knob on the panel a dark ring, so that it stands off its plate, and a scale over the
@@ -184,16 +204,16 @@ function faces(R) {
   g.beginPath();
   g.arc(x(P.light.a), panelY(P.light.b), (LIGHT + 0.0013) * k, 0, 2 * Math.PI);
   g.fill();
-  // The delay's and the LFO's knobs' names, over them.
+  // The modules' knobs' names, over them.
   for (const n of R.knobs) {
-    if (n.part !== 'delay' && n.part !== 'lfo') continue;
-    const name = n.name.toUpperCase();
+    if (!isModuleKnob(n)) continue;
+    const name = knobLabel(n);
     g.fillStyle = GOLD;
     fit(g, name, RACK.setting.w * k, Math.round(0.0095 * k));
     g.fillText(name, x(n.a), panelY(n.b + RACK.knob.module + 0.0125));
   }
-  // The outs on plates: the clock's, the sequencer's notes and the LFO's.
-  for (const prefix of ['rack.', 'seq.notes', 'lfo.out']) drawPlate(g, P.jacks.filter((j) => j.id.startsWith(prefix)), x, panelY, k);
+  // The outs on plates: the clock's, the sequencer's notes, the LFO's and the filter's.
+  for (const prefix of ['rack.', 'seq.notes', 'lfo.out', 'filter.out']) drawPlate(g, P.jacks.filter((j) => j.id.startsWith(prefix)), x, panelY, k);
   const r = BOARD.panel.jack * k;
   g.font = `600 ${Math.round(0.0105 * k)}px ${SANS}`;
   for (const j of P.jacks) {
@@ -306,10 +326,10 @@ export class RackKit {
     // redrawn, lit as the faces.
     const Dc = R.panel.displays.clock, Ds = R.panel.displays.seq;
     const ch = Math.round((VALUES.display * (Dc.b1 - Dc.b0)) / (Dc.a1 - Dc.a0)), sh = Math.round((VALUES.display * (Ds.b1 - Ds.b0)) / (Ds.a1 - Ds.a0));
-    /** @private where the settings' row is on it (pixels down) */
+    /** @private where the settings' rows are on it (pixels down) */
     this._settingsY = VALUES.band + Math.max(ch, sh);
     /** @private */
-    this._values = canvas(VALUES.w, this._settingsY + VALUES.cellH);
+    this._values = canvas(VALUES.w, this._settingsY + Math.ceil(R.panel.settings.length / PER_ROW) * VALUES.cellH);
     /** @private where each display is on it: x, y, w, h (pixels) */
     this._clockArea = { x: 0, y: VALUES.band, w: VALUES.display, h: ch };
     /** @private */
@@ -331,7 +351,7 @@ export class RackKit {
     };
     display(Dc, this._clockArea);
     display(Ds, this._seqArea);
-    R.panel.settings.forEach((s, i) => display(s, { x: i * VALUES.cell, y: this._settingsY, w: VALUES.cell, h: VALUES.cellH }));
+    R.panel.settings.forEach((s, i) => display(s, this._cell(i)));
     this._add(new THREE.Mesh(lit(shown), new THREE.MeshBasicMaterial({ map: this._valuesTexture, vertexColors: true })), 'rack values');
 
     // On the top and on the panel, in their own frames, as the board's (kit.js).
@@ -407,7 +427,7 @@ export class RackKit {
 
     // The sign on the wall, as wide as the rack.
     const G = R.sign, sw = G.x1 - G.x0, sgh = G.y1 - G.y0, mid = [(G.x0 + G.x1) / 2, (G.y0 + G.y1) / 2, G.z];
-    const plate = signPlate(1024, Math.round((1024 * sgh) / sw), 'Rack', 'a clock, a sequencer, a delay and an LFO');
+    const plate = signPlate(1024, Math.round((1024 * sgh) / sw), 'Rack', 'a clock, a sequencer, a delay, an LFO, a filter and a reverb');
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(sw, sgh), new THREE.MeshBasicMaterial({ map: texture(plate, anisotropy), color: lightColor(mid, [0, 0, 1]) }));
     sign.position.set(mid[0], mid[1], mid[2]);
     this._add(sign, 'rack sign');
@@ -434,10 +454,14 @@ export class RackKit {
     this.lfo = NaN;
     /** @private what the LFO's light was last set to (-1 off, else its brightness) */
     this._lfoShown = -1;
-    /** @private the delay's knobs and the LFO's, for their settings @type {import('./delay.js').DelayKnobs} */
+    /** @private the delay's knobs, the LFO's, the filter's and the reverb's, for their settings @type {import('./delay.js').DelayKnobs} */
     this._delay = { ...DEFAULT_DELAY };
     /** @private @type {import('./lfo.js').LfoKnobs} */
     this._lfo = { ...DEFAULT_LFO };
+    /** @private @type {import('./filter.js').FilterKnobs} */
+    this._filter = { ...DEFAULT_FILTER };
+    /** @private @type {import('./reverb.js').ReverbKnobs} */
+    this._reverb = { ...DEFAULT_REVERB };
     /** @private */
     this._valuesDirty = true;
     /** @private seconds since the names and the displays were drawn */
@@ -445,7 +469,18 @@ export class RackKit {
     this.setTempo(this._tempo);
     this.setDelay(this._delay);
     this.setLfo(this._lfo);
+    this.setFilter(this._filter);
+    this.setReverb(this._reverb);
     for (let i = 0; i < n; i++) this._writeKey(i);
+  }
+
+  /**
+   * Where setting i (in R.panel.settings) is on the canvas redrawn: x, y, w, h (pixels), eight to a row.
+   * @private
+   * @param {number} i
+   */
+  _cell(i) {
+    return { x: (i % PER_ROW) * VALUES.cell, y: this._settingsY + Math.floor(i / PER_ROW) * VALUES.cellH, w: VALUES.cell, h: VALUES.cellH };
   }
 
   /**
@@ -526,6 +561,32 @@ export class RackKit {
     for (let k = 0; k < this.rack.knobs.length; k++) {
       const n = this.rack.knobs[k];
       if (n.part === 'lfo') this._turn(k, pointsAt(n, knobs[n.name]));
+    }
+    this._valuesDirty = true;
+  }
+
+  /**
+   * The filter's knobs (filter.js): turned to them (its mode to its place), and their settings under them.
+   * @param {import('./filter.js').FilterKnobs} knobs
+   */
+  setFilter(knobs) {
+    this._filter = knobs;
+    for (let k = 0; k < this.rack.knobs.length; k++) {
+      const n = this.rack.knobs[k];
+      if (n.part === 'filter') this._turn(k, pointsAt(n, knobs[n.name]));
+    }
+    this._valuesDirty = true;
+  }
+
+  /**
+   * The reverb's knobs (reverb.js): turned to them, and their settings under them.
+   * @param {import('./reverb.js').ReverbKnobs} knobs
+   */
+  setReverb(knobs) {
+    this._reverb = knobs;
+    for (let k = 0; k < this.rack.knobs.length; k++) {
+      const n = this.rack.knobs[k];
+      if (n.part === 'reverb') this._turn(k, knobs[n.name]);
     }
     this._valuesDirty = true;
   }
@@ -659,17 +720,19 @@ export class RackKit {
       fit(g, this._last, S.w - 32, Math.round(S.h * 0.24), '500');
       g.fillText(this._last, S.x + 16, S.y + S.h * 0.72);
     }
-    // The delay's and the LFO's settings, each under its knob, on its module's plate.
+    // The modules' settings, each under its knob, on its module's plate.
     g.textAlign = 'center';
-    const y = this._settingsY;
     for (let i = 0; i < R.panel.settings.length; i++) {
-      const n = R.knobs[R.panel.settings[i].k], x = i * VALUES.cell;
+      const n = R.knobs[R.panel.settings[i].k], { x, y, w, h } = this._cell(i);
       g.fillStyle = PLATE;
-      g.fillRect(x, y, VALUES.cell, VALUES.cellH);
-      const text = n.part === 'delay' ? setting(n, this._delay[n.name]) : n.part === 'lfo' ? setting(n, this._lfo[n.name]) : '';
+      g.fillRect(x, y, w, h);
+      const text = n.part === 'delay' ? setting(n, this._delay[n.name])
+        : n.part === 'lfo' ? setting(n, this._lfo[n.name])
+          : n.part === 'filter' ? setting(n, this._filter[n.name])
+            : n.part === 'reverb' ? setting(n, this._reverb[n.name]) : '';
       g.fillStyle = '#efe5cf';
-      fit(g, text, VALUES.cell - 8, 23, '500');
-      g.fillText(text, x + VALUES.cell / 2, y + VALUES.cellH / 2 + 1);
+      fit(g, text, w - 8, 23, '500');
+      g.fillText(text, x + w / 2, y + h / 2 + 1);
     }
     this._valuesTexture.needsUpdate = true;
   }

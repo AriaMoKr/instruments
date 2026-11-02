@@ -20,8 +20,9 @@
 // section each as on its top, and the cables into its inputs likewise. Rack is the rack beside it: a
 // button to go and play at it, its clock (the room's again: Start or Stop, the tempo), its
 // sequencer's sixteen steps a row each (whether the step plays, its note a choice, its accent and its
-// slide; the step playing marked), the octave the line plays in, its delay's knobs and its LFO's as
-// sliders, and the cables into its inputs. Keys is the keyboard: a button to go and play at it, its
+// slide; the step playing marked), the octave the line plays in, its delay's knobs, its LFO's, its
+// filter's and its reverb's as sliders, and the cables into its inputs (one that would bring a sound
+// back round into itself refused, and said why). Keys is the keyboard: a button to go and play at it, its
 // keys as the synth's, its sound (the organ, the electric piano or both, Sustain, the octave the
 // computer's keys play in), its drawbars as sliders in eighths, its percussion's switches, its
 // organ's knobs and its electric piano's, a section each as on its top, and the cable into its input
@@ -37,6 +38,8 @@ import { TEMPO } from './clock.js';
 import { STEPS } from './pattern.js';
 import { DELAY_KNOBS, MAX_STEPS, delaySteps, delayText } from './delay.js';
 import { LFO_KNOBS, LFO_RATES, LFO_SHAPES, knobPlace, lfoText } from './lfo.js';
+import { FILTER_KNOBS, FILTER_MODES, filterText } from './filter.js';
+import { REVERB_KNOBS, reverbText } from './reverb.js';
 import { JACKS } from './patch.js';
 import { KEYS, LOWEST, NOTE_KEYS, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack, noteName, spokenNote, synthText } from './synth.js';
 import { ARP_MODES, ARP_RANGES } from './arp.js';
@@ -75,6 +78,29 @@ function showDelay(inputs, knobs) {
 
 /** How many places an LFO knob's slider has (its rate's, its shape's), else 0 (its depth: a percent). */
 const lfoPlaces = (name) => (name === 'rate' ? LFO_RATES.length : name === 'shape' ? LFO_SHAPES.length : 0);
+/** How many places a filter knob's slider has (its mode's), else 0 (a percent). */
+const filterPlaces = (name) => (name === 'mode' ? FILTER_MODES.length : 0);
+
+/**
+ * A module's knobs (the LFO's, the filter's, the reverb's) on their sliders, and in words: a knob that
+ * turns in steps at its place (from 1), the rest in percent.
+ * @param {Map<string, { input: HTMLInputElement, out: HTMLOutputElement }>} inputs
+ * @param {Record<string, number>} knobs
+ * @param {(name: string) => number} places
+ * @param {(name: string, k: number) => string} text
+ */
+function showKnobs(inputs, knobs, places, text) {
+  for (const [name, { input, out }] of inputs) {
+    const p = places(name);
+    const value = String(p ? knobPlace(knobs[name], p) + 1 : Math.round(knobs[name] * 100));
+    if (input.value !== value) input.value = value;
+    const words = text(name, knobs[name]);
+    if (out.textContent !== words) {
+      out.textContent = words;
+      input.setAttribute('aria-valuetext', words);
+    }
+  }
+}
 
 /** How far over its first note (A's) the computer's keys reach. */
 const REACH = Math.max(...Object.values(NOTE_KEYS));
@@ -404,11 +430,15 @@ export class Overlay {
     this.onPlug = () => {};
     /** Each input's choice. @type {Map<string, HTMLSelectElement>} */
     this.plugs = new Map();
-    /** The rows for the inputs on these modules (patch.js Jack module). @param {string[]} modules */
+    /**
+     * The rows for the inputs on these modules (patch.js Jack module): each a choice of the outputs of
+     * its kind, but its own module's (the filter's out into its in: round into itself).
+     * @param {string[]} modules
+     */
     const plugRows = (modules) => JACKS.filter((j) => j.dir === 'in' && modules.includes(j.module)).map((j) => {
       const select = el('select', { name: j.id },
         el('option', { value: '' }, 'Nothing'),
-        ...JACKS.filter((o) => o.dir === 'out' && o.kind === j.kind).map((o) => el('option', { value: o.id }, o.name)));
+        ...JACKS.filter((o) => o.dir === 'out' && o.kind === j.kind && !(o.kind === 'audio' && o.module === j.module)).map((o) => el('option', { value: o.id }, o.name)));
       select.addEventListener('change', () => this.onPlug(j.id, select.value || null));
       this.plugs.set(j.id, select);
       return el('label', { class: 'plug' }, el('span', {}, j.name), select);
@@ -617,9 +647,42 @@ export class Overlay {
     this.resetLfo = el('button', { class: 'chip', type: 'button' }, 'LFO as it comes');
     this.resetLfo.addEventListener('click', () => this.onResetLfo());
     this.lfoBox = el('fieldset', { class: 'lfo' }, el('legend', {}, 'LFO'), ...lfoRows, el('div', { class: 'actions' }, this.resetLfo));
-    this.rackCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['seq', 'rackdelay']));
+    // In its second row: its filter, its mode a slider along its places, its cutoff, its resonance and
+    // how far its CUTOFF in moves it (Mod, as on it); and its reverb, its size, damping and level.
+    /** (name, value) a knob of the filter set 0…1. @type {(name: import('./filter.js').FilterKnob, value: number) => void} */
+    this.onFilter = () => {};
+    /** The filter's knobs as it comes. */
+    this.onResetFilter = () => {};
+    /** Each of the filter's sliders and the words for its setting. @type {Map<import('./filter.js').FilterKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.filterInputs = new Map();
+    const filterRows = FILTER_KNOBS.map((name) => {
+      const label = name[0].toUpperCase() + name.slice(1), places = filterPlaces(name);
+      const s = places
+        ? range(label, 1, places, (n) => this.onFilter(name, (n - 1) / (places - 1)))
+        : slider(label, (v) => this.onFilter(name, v));
+      this.filterInputs.set(name, s);
+      return s.row;
+    });
+    this.resetFilter = el('button', { class: 'chip', type: 'button' }, 'Filter as it comes');
+    this.resetFilter.addEventListener('click', () => this.onResetFilter());
+    this.filterBox = el('fieldset', { class: 'filter' }, el('legend', {}, 'Filter'), ...filterRows, el('div', { class: 'actions' }, this.resetFilter));
+    /** (name, value) a knob of the reverb set 0…1. @type {(name: import('./reverb.js').ReverbKnob, value: number) => void} */
+    this.onReverb = () => {};
+    /** The reverb's knobs as it comes. */
+    this.onResetReverb = () => {};
+    /** Each of the reverb's sliders and the words for its setting. @type {Map<import('./reverb.js').ReverbKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.reverbInputs = new Map();
+    const reverbRows = REVERB_KNOBS.map((name) => {
+      const s = slider(name[0].toUpperCase() + name.slice(1), (v) => this.onReverb(name, v));
+      this.reverbInputs.set(name, s);
+      return s.row;
+    });
+    this.resetReverb = el('button', { class: 'chip', type: 'button' }, 'Reverb as it comes');
+    this.resetReverb.addEventListener('click', () => this.onResetReverb());
+    this.reverbBox = el('fieldset', { class: 'reverb' }, el('legend', {}, 'Reverb'), ...reverbRows, el('div', { class: 'actions' }, this.resetReverb));
+    this.rackCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['seq', 'rackdelay', 'filter', 'reverb']));
     this.rackPlayRow = el('div', { class: 'actions' }, this.playRack);
-    this.rack = el('div', { class: 'part rack', id: 'rack', hidden: '' }, this.rackPlayRow, this.rackClockBox, this.seqBox, this.rackDelayBox, this.lfoBox, this.rackCablesBox);
+    this.rack = el('div', { class: 'part rack', id: 'rack', hidden: '' }, this.rackPlayRow, this.rackClockBox, this.seqBox, this.rackDelayBox, this.lfoBox, this.filterBox, this.reverbBox, this.rackCablesBox);
     // The keyboard, as on it: going to play at it, its keys, its sound, its drawbars, its percussion,
     // and its organ's knobs and its electric piano's.
     /** Play at the keys, or step away from them. */
@@ -1091,16 +1154,17 @@ export class Overlay {
 
   /** The LFO's knobs (lfo.js): their sliders and words. */
   setLfo(knobs) {
-    for (const [name, { input, out }] of this.lfoInputs) {
-      const places = lfoPlaces(name);
-      const value = String(places ? knobPlace(knobs[name], places) + 1 : Math.round(knobs[name] * 100));
-      if (input.value !== value) input.value = value;
-      const text = lfoText(name, knobs[name]);
-      if (out.textContent !== text) {
-        out.textContent = text;
-        input.setAttribute('aria-valuetext', text);
-      }
-    }
+    showKnobs(this.lfoInputs, knobs, lfoPlaces, lfoText);
+  }
+
+  /** The filter's knobs (filter.js): their sliders and words. */
+  setFilter(knobs) {
+    showKnobs(this.filterInputs, knobs, filterPlaces, filterText);
+  }
+
+  /** The reverb's knobs (reverb.js): their sliders and words. */
+  setReverb(knobs) {
+    showKnobs(this.reverbInputs, knobs, () => 0, reverbText);
   }
 
   /** The cables (patch.js's Patch): each input's choice, the output plugged into it or nothing. */

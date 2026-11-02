@@ -4,14 +4,19 @@
 // as the synth, so that their fronts are in line. On its top the sequencer's sixteen steps (seq.js),
 // in fours as the drums' step keys are: for each its number at the front edge, its key (a note, or a
 // rest), its accent's and its slide's keys, the name of its note and the knob that sets it, the rows
-// named in the margin at the left. On its panel the modules side by side, as in a case: the clock's
-// (the room's clock again, nearer the synth: RUN, the tempo's knob and its display, its outs ×1, ÷2
-// and ÷4 on a plate), the sequencer's (its display, its octave's buttons, its clock in and its notes
-// out), the delay's (delay.js: its time's knob over its feedback's and its level's, its in) and the
-// LFO's (lfo.js: its rate's knob over its shape's and its depth's, a light by its name, its out on a
-// plate), each of their knobs' settings under it. Pure functions with no three.js, as board.js's, so
-// the tests run them in Node: where it stands and what is on it (layoutRack), what a ray meets on it
-// (hitRack), and the key a stick's tip or a finger comes down on (rackStrike).
+// named in the margin at the left. On its panel the modules side by side in two rows, as in a case
+// of two: in the first the clock's (the room's clock again, nearer the synth: RUN, the tempo's knob
+// and its display, its outs ×1, ÷2 and ÷4 on a plate), the sequencer's (its display, its octave's
+// buttons, its clock in and its notes out), the delay's (delay.js: its time's knob over its
+// feedback's and its level's, its in) and the LFO's (lfo.js: its rate's knob over its shape's and its
+// depth's, a light by its name, its out on a plate); over it a shorter row, a blank plate at its left,
+// then the filter's (filter.js: its mode's knob, its cutoff's, its resonance's and how far its CUTOFF
+// in moves it, in a row; its in, its CUTOFF in and its out) and the reverb's (reverb.js: its size's,
+// its damping's and its level's knobs, its in), each of their knobs' settings under it. The panel is
+// as much taller as the second row, its back nearer the wall, its first row where it was. Pure
+// functions with no three.js, as board.js's, so the tests run them in Node: where it stands and what
+// is on it (layoutRack), what a ray meets on it (hitRack), and the key a stick's tip or a finger
+// comes down on (rackStrike).
 //
 // Coordinates as board.js's: on the top `a` from its left edge (world +x), `b` from its front edge
 // up the slope; on the panel `a` likewise, `b` from its foot up its face.
@@ -19,6 +24,8 @@ import { areaAt, heightOver, jackAt, meetDesk, writeHit } from './board.js';
 import { RACK_CLOCK_OUTS } from './clock.js';
 import { DELAY_KNOBS } from './delay.js';
 import { LFO_KNOBS } from './lfo.js';
+import { FILTER_KNOBS } from './filter.js';
+import { REVERB_KNOBS } from './reverb.js';
 import { STEPS } from './pattern.js';
 
 /**
@@ -29,14 +36,14 @@ export const RACK = Object.freeze({
   step: Object.freeze({ pitch: 0.037, group: 0.012, left: 0.065, right: 0.025 }),
   /** Its keys: `width` across, a step's `deep` and an accent's or a slide's `small`, their caps `rise` over the top. */
   key: Object.freeze({ width: 0.031, deep: 0.064, small: 0.038, rise: 0.01 }),
-  /** The notes' knobs (`r`, `h`), and on the panel the tempo's (`tempo` its radius) and the delay's and the LFO's (`module`). */
-  knob: Object.freeze({ r: 0.0145, h: 0.018, tempo: 0.022, module: 0.015 }),
+  /** The notes' knobs (`r`, `h`), and on the panel the tempo's (`tempo` its radius) and the other modules' (`module`), those in a row `pitch` apart. */
+  knob: Object.freeze({ r: 0.0145, h: 0.018, tempo: 0.022, module: 0.015, pitch: 0.047 }),
   /** Where a module's knob's setting is written, under it: `w` across, `h` high, its middle `below` the knob's edge. */
   setting: Object.freeze({ w: 0.044, h: 0.011, below: 0.0115 }),
-  /** The panel: `height` up its face, leaning back `lean`, `thick`; its buttons standing `button` out of it. */
-  panel: Object.freeze({ height: 0.28, lean: 0.35, thick: 0.04, button: 0.007 }),
-  /** The top's front edge `front` high, leaning back by `tilt`, `thick`; the panel's back `wall` from the wall; `gap` right of the synth. */
-  front: 0.9, tilt: 0.12, thick: 0.05, wall: 0.08, gap: 0.06,
+  /** The panel: `height` up its face, its first row `row` of it, the second over it; leaning back `lean`, `thick`; its buttons standing `button` out of it. */
+  panel: Object.freeze({ height: 0.46, row: 0.28, lean: 0.35, thick: 0.04, button: 0.007 }),
+  /** The top's front edge `front` high, leaning back by `tilt`, `thick`; the panel's back at least `wall` from the wall; `gap` right of the synth. */
+  front: 0.9, tilt: 0.12, thick: 0.05, wall: 0.015, gap: 0.06,
   /** The sign over it on the wall, as wide as it: from `bottom` to `top` high, `out` from the wall. */
   sign: Object.freeze({ bottom: 1.42, top: 1.74, out: 0.012 }),
 });
@@ -48,12 +55,16 @@ export const SEQ_ROWS = Object.freeze(/** @type {const} */ (['seq', 'accent', 's
 
 /**
  * A knob on the rack: a step's note on the top, or on the panel the clock's tempo, or one of the
- * delay's or the LFO's (`name` which); where it is.
+ * delay's, the LFO's, the filter's or the reverb's (`name` which); where it is.
  * @typedef {{ part: 'note', step: number, on: 'top', a: number, b: number }
  *   | { part: 'tempo', step: -1, on: 'panel', a: number, b: number }
  *   | { part: 'delay', name: import('./delay.js').DelayKnob, step: -1, on: 'panel', a: number, b: number }
- *   | { part: 'lfo', name: import('./lfo.js').LfoKnob, step: -1, on: 'panel', a: number, b: number }} RackKnob
+ *   | { part: 'lfo', name: import('./lfo.js').LfoKnob, step: -1, on: 'panel', a: number, b: number }
+ *   | { part: 'filter', name: import('./filter.js').FilterKnob, step: -1, on: 'panel', a: number, b: number }
+ *   | { part: 'reverb', name: import('./reverb.js').ReverbKnob, step: -1, on: 'panel', a: number, b: number }} RackKnob
  */
+
+/** A knob of a module on the panel (not the notes' or the tempo's). @typedef {Extract<RackKnob, { name: string }>} ModuleKnob */
 
 /**
  * A button on the panel: 'run' (the clock's), 'octave.down' or 'octave.up' (the sequencer's); what
@@ -62,9 +73,13 @@ export const SEQ_ROWS = Object.freeze(/** @type {const} */ (['seq', 'accent', 's
  */
 
 /**
- * A module in the case: its id, its name over it, and its span across the panel.
- * @typedef {{ id: 'clock' | 'seq' | 'delay' | 'lfo', name: string, a0: number, a1: number }} RackModule
+ * A module in the case: its id, its name over it, and its plate's span across the panel and up it
+ * (its row's).
+ * @typedef {{ id: 'clock' | 'seq' | 'delay' | 'lfo' | 'filter' | 'reverb', name: string, a0: number, a1: number, b0: number, b1: number }} RackModule
  */
+
+/** Whether a knob on the rack is a module's on the panel (the delay's, the LFO's, the filter's, the reverb's). @param {RackKnob} n @returns {n is ModuleKnob} */
+export const isModuleKnob = (n) => n.part === 'delay' || n.part === 'lfo' || n.part === 'filter' || n.part === 'reverb';
 
 /** A knob's radius: a step's note's, the tempo's, or a module's on the panel. @param {RackKnob} n */
 export const knobRadius = (n) => (n.part === 'note' ? RACK.knob.r : n.part === 'tempo' ? RACK.knob.tempo : RACK.knob.module);
@@ -74,15 +89,16 @@ export const knobRadius = (n) => (n.part === 'note' ? RACK.knob.r : n.part === '
  * and its top and panel as a Desk (board.js), as deep as the synth; on its top the steps' keys, row
  * by row (SEQ_ROWS: `keys`, a row's sixteen after the one before's), the band of their numbers at the
  * front, the band of their notes' names behind the keys, the rows' names at the left, and the knobs
- * (each step's note, then on the panel the tempo's, the delay's and the LFO's); on the panel its
- * modules, their displays, its buttons, its jacks (as the board's, in patch.js JACKS's order; in the
- * room's list of jacks after the synth's, from `jackBase`), where the modules' knobs' settings are
- * written, the LFO's light, and what else is written on it; and its sign.
+ * (each step's note, then on the panel the tempo's, the delay's, the LFO's, the filter's and the
+ * reverb's); on the panel its modules in their rows, a blank plate, their displays, its buttons, its
+ * jacks (as the board's, in patch.js JACKS's order; in the room's list of jacks after the synth's,
+ * from `jackBase`), where the modules' knobs' settings are written, the LFO's light, and what else is
+ * written on it; and its sign.
  * @param {{ z1: number }} L the room's layout (room.js layoutRoom)
- * @param {{ x1: number, length: number, panel: { jackBase: number, jacks: readonly unknown[] } }} S the synth's (synthboard.js layoutSynth)
+ * @param {{ x1: number, length: number, zFront: number, panel: { jackBase: number, jacks: readonly unknown[] } }} S the synth's (synthboard.js layoutSynth)
  */
 export function layoutRack(L, S) {
-  const { step: C, key: K, knob: N, panel, tilt, front, wall } = RACK;
+  const { step: C, key: K, knob: N, panel, tilt, front } = RACK;
   /** Where step s's key starts across the top. @param {number} s */
   const across = (s) => C.left + s * C.pitch + Math.floor(s / 4) * C.group;
   const width = across(STEPS - 1) + K.width + C.right;
@@ -100,34 +116,46 @@ export function layoutRack(L, S) {
   const knobs = Array.from({ length: STEPS }, (_, s) => /** @type {RackKnob} */ ({ part: 'note', step: s, on: 'top', a: across(s) + K.width / 2, b: knobB }));
   knobs.push({ part: 'tempo', step: -1, on: 'panel', a: 0.062, b: 0.122 });
   const cos = Math.cos(tilt), sin = Math.sin(tilt), lc = Math.cos(panel.lean), ls = Math.sin(panel.lean);
-  // From the wall: the panel's back, its foot at the top's back edge, and the top's front edge.
-  const zBack = L.z1 + wall, zFoot = zBack + panel.thick * lc + panel.height * ls, zFront = zFoot + length * cos;
+  // From the front, in line with the synth's: the top's front edge, its back edge at the panel's
+  // foot, and the panel's back.
+  const zFront = S.zFront, zFoot = zFront - length * cos, zBack = zFoot - panel.thick * lc - panel.height * ls;
   const x0 = S.x1 + RACK.gap, top = front + length * sin;
-  // The panel: the clock's module at the left, nearest the synth, then the sequencer's, the delay's
-  // and the LFO's; along their feet the jacks, the outs on plates.
+  // The panel's rows: the first from its foot, the second over it to its top edge; a plate a little
+  // in from its row's edges.
+  const R1 = { b0: 0.006, b1: panel.row - 0.006 }, R2 = { b0: panel.row + 0.006, b1: panel.height - 0.006 };
+  // In the first, the clock's module at the left, nearest the synth, then the sequencer's, the
+  // delay's and the LFO's; in the second, a blank plate, the filter's and the reverb's. Along their
+  // feet the jacks, the outs on plates.
   /** @type {RackModule[]} */
   const modules = [
-    { id: 'clock', name: 'CLOCK', a0: 0.01, a1: 0.198 },
-    { id: 'seq', name: 'SEQUENCER', a0: 0.204, a1: 0.5 },
-    { id: 'delay', name: 'DELAY', a0: 0.506, a1: 0.603 },
-    { id: 'lfo', name: 'LFO', a0: 0.609, a1: width - 0.01 },
+    { id: 'clock', name: 'CLOCK', a0: 0.01, a1: 0.198, ...R1 },
+    { id: 'seq', name: 'SEQUENCER', a0: 0.204, a1: 0.5, ...R1 },
+    { id: 'delay', name: 'DELAY', a0: 0.506, a1: 0.603, ...R1 },
+    { id: 'lfo', name: 'LFO', a0: 0.609, a1: width - 0.01, ...R1 },
+    { id: 'filter', name: 'FILTER', a0: 0.336, a1: 0.536, ...R2 },
+    { id: 'reverb', name: 'REVERB', a0: 0.542, a1: width - 0.01, ...R2 },
   ];
+  const blanks = [{ a0: 0.01, a1: 0.33, ...R2 }];
   // The delay's and the LFO's knobs: the first in the middle of its module, the other two side by
-  // side under it.
+  // side under it. The filter's and the reverb's, in the shorter row, side by side.
   const mid = (/** @type {number} */ m) => (modules[m].a0 + modules[m].a1) / 2;
-  const delayA = mid(2), lfoA = mid(3), SIDE = 0.0235;
+  const delayA = mid(2), lfoA = mid(3), filterA = mid(4), reverbA = mid(5), SIDE = 0.0235;
   /** @param {number} a @param {number} k */
   const place = (a, k) => ({ a: a + (k === 0 ? 0 : k === 1 ? -SIDE : SIDE), b: k === 0 ? 0.196 : 0.118 });
+  /** @param {number} a @param {number} k @param {number} count */
+  const inRow = (a, k, count) => ({ a: a + (k - (count - 1) / 2) * N.pitch, b: panel.row + 0.104 });
   for (const [k, name] of DELAY_KNOBS.entries()) knobs.push({ part: 'delay', name, step: -1, on: 'panel', ...place(delayA, k) });
   for (const [k, name] of LFO_KNOBS.entries()) knobs.push({ part: 'lfo', name, step: -1, on: 'panel', ...place(lfoA, k) });
+  for (const [k, name] of FILTER_KNOBS.entries()) knobs.push({ part: 'filter', name, step: -1, on: 'panel', ...inRow(filterA, k, FILTER_KNOBS.length) });
+  for (const [k, name] of REVERB_KNOBS.entries()) knobs.push({ part: 'reverb', name, step: -1, on: 'panel', ...inRow(reverbA, k, REVERB_KNOBS.length) });
   // Under each of them, where its setting is written.
   const { w: SW, h: SH, below } = RACK.setting;
   const settings = knobs.flatMap((n, k) => {
-    if (n.part !== 'delay' && n.part !== 'lfo') return [];
+    if (!isModuleKnob(n)) return [];
     const b = n.b - RACK.knob.module - below;
     return [{ k, a0: n.a - SW / 2, a1: n.a + SW / 2, b0: b - SH / 2, b1: b + SH / 2 }];
   });
-  const J = 0.042;
+  const J = 0.042, J2 = panel.row + J, F = modules[4];
   /** @type {import('./board.js').BoardJack[]} */
   const jacks = [
     ...RACK_CLOCK_OUTS.map((o, k) => ({ id: o.id, a: 0.042 + k * 0.062, b: J, out: true, color: null })),
@@ -135,6 +163,10 @@ export function layoutRack(L, S) {
     { id: 'seq.notes', a: 0.458, b: J, out: true, color: null },
     { id: 'rackdelay.in', a: delayA, b: J, out: false, color: null },
     { id: 'lfo.out', a: lfoA, b: J, out: true, color: null },
+    { id: 'filter.in', a: F.a0 + 0.038, b: J2, out: false, color: null },
+    { id: 'filter.cutoff', a: filterA, b: J2, out: false, color: null },
+    { id: 'filter.out', a: F.a1 - 0.038, b: J2, out: true, color: null },
+    { id: 'reverb.in', a: reverbA, b: J2, out: false, color: null },
   ];
   /** @type {RackButton[]} */
   const buttons = [
@@ -171,6 +203,8 @@ export function layoutRack(L, S) {
       normal: [0, ls, lc],
       height: panel.height, lean: panel.lean, top: top + panel.height * lc,
       modules,
+      /** the plates where no module is yet */
+      blanks,
       /** the clock's display (its tempo) and the sequencer's (its step, its octave, the note set last) */
       displays: {
         clock: { a0: 0.024, a1: 0.184, b0: 0.178, b1: 0.232 },
@@ -180,13 +214,13 @@ export function layoutRack(L, S) {
       jacks,
       /** where its jacks start in the room's list of them (the board's, then the synth's, first) */
       jackBase: S.panel.jackBase + S.panel.jacks.length,
-      /** where each of the delay's and the LFO's knobs' settings is written (`k` the knob's index in knobs) */
+      /** where each of the modules' knobs' settings is written (`k` the knob's index in knobs) */
       settings,
       /** the LFO's light, by its name: where its middle is */
-      light: { a: lfoA + 0.028, b: 0.254 },
-      /** what is written on it besides: the modules' names, the tempo's knob's and the octave's buttons' @type {import('./synthboard.js').PanelTitle[]} */
+      light: { a: lfoA + 0.028, b: R1.b1 - 0.02 },
+      /** what is written on it besides: the modules' names (near the top of each), the tempo's knob's and the octave's buttons' @type {import('./synthboard.js').PanelTitle[]} */
       titles: [
-        ...modules.map((m) => ({ text: m.name, a: (m.a0 + m.a1) / 2, b: 0.254 })),
+        ...modules.map((m) => ({ text: m.name, a: (m.a0 + m.a1) / 2, b: m.b1 - 0.02 })),
         { text: 'TEMPO', a: 0.062, b: 0.088 },
         { text: 'OCTAVE', a: 0.266, b: 0.152 },
       ],
@@ -239,7 +273,7 @@ const MET = { on: '', t: 0, a: 0, b: 0, nx: 0, ny: 0, nz: 0 };
  * What a ray meets on the rack, if nearer than `within` (what it meets in the room otherwise): a key
  * (its row's kind, SEQ_ROWS, and `seq` its step; u, v where on it, from its front left), a knob
  * ('rackknob', `rack` its index in R.knobs), on the panel a jack (as the board's are, its index in the
- * room's list of them: R.panel.jackBase on), a knob (the tempo's, the delay's, the LFO's) or a button
+ * room's list of them: R.panel.jackBase on), a knob (the tempo's or a module's) or a button
  * ('rackbutton', `rack` its index in R.panel.buttons), or the rest of the rack ('rack': its top, its
  * panel, its front, its sides, its sign), written into out as room.js castRay writes a hit (the
  * board's and the synth's pad, step key, knob, key, dial and button -1). Whether it met the rack.

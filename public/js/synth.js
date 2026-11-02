@@ -209,8 +209,8 @@ export function knobName(id) {
 
 /** @param {number} s seconds */
 const seconds = (s) => (s < 1 ? `${Math.round(s * 1000)} ms` : `${s.toFixed(1)} s`);
-/** @param {number} hz */
-const hertz = (hz) => (hz < 1000 ? `${hz < 1 ? hz.toFixed(2) : hz < 10 ? hz.toFixed(1) : Math.round(hz)} Hz` : `${(hz / 1000).toFixed(1)} kHz`);
+/** A frequency in words, as a panel prints it (the rack's filter's too). @param {number} hz */
+export const hertz = (hz) => (hz < 1000 ? `${hz < 1 ? hz.toFixed(2) : hz < 10 ? hz.toFixed(1) : Math.round(hz)} Hz` : `${(hz / 1000).toFixed(1)} kHz`);
 /** @param {number} k */
 const percent = (k) => `${Math.round(clamp(k, 0, 1) * 100)}%`;
 
