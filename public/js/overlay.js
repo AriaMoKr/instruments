@@ -21,8 +21,8 @@
 // button to go and play at it, its clock (the room's again: Start or Stop, the tempo), its
 // sequencer's sixteen steps a row each (whether the step plays, its note a choice, its accent and its
 // slide; the step playing marked), the octave the line plays in, its delay's knobs, its LFO's, its
-// filter's and its reverb's as sliders, and the cables into its inputs (one that would bring a sound
-// back round into itself refused, and said why). Keys is the keyboard: a button to go and play at it, its
+// envelope's, its mixer's, its filter's and its reverb's as sliders, and the cables into its inputs
+// (one that would bring a sound back round into itself refused, and said why). Keys is the keyboard: a button to go and play at it, its
 // keys as the synth's, its sound (the organ, the electric piano or both, Sustain, the octave the
 // computer's keys play in), its drawbars as sliders in eighths, its percussion's switches, its
 // organ's knobs and its electric piano's, a section each as on its top, and the cable into its input
@@ -40,6 +40,8 @@ import { DELAY_KNOBS, MAX_STEPS, delaySteps, delayText } from './delay.js';
 import { LFO_KNOBS, LFO_RATES, LFO_SHAPES, knobPlace, lfoText } from './lfo.js';
 import { FILTER_KNOBS, FILTER_MODES, filterText } from './filter.js';
 import { REVERB_KNOBS, reverbText } from './reverb.js';
+import { ENVELOPE_KNOBS, envelopeText } from './envelope.js';
+import { MIXER_KNOBS, mixerText } from './mixer.js';
 import { JACKS } from './patch.js';
 import { KEYS, LOWEST, NOTE_KEYS, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBlack, noteName, spokenNote, synthText } from './synth.js';
 import { ARP_MODES, ARP_RANGES } from './arp.js';
@@ -82,8 +84,8 @@ const lfoPlaces = (name) => (name === 'rate' ? LFO_RATES.length : name === 'shap
 const filterPlaces = (name) => (name === 'mode' ? FILTER_MODES.length : 0);
 
 /**
- * A module's knobs (the LFO's, the filter's, the reverb's) on their sliders, and in words: a knob that
- * turns in steps at its place (from 1), the rest in percent.
+ * A module's knobs (the LFO's, the envelope's, the mixer's, the filter's, the reverb's) on their
+ * sliders, and in words: a knob that turns in steps at its place (from 1), the rest in percent.
  * @param {Map<string, { input: HTMLInputElement, out: HTMLOutputElement }>} inputs
  * @param {Record<string, number>} knobs
  * @param {(name: string) => number} places
@@ -647,8 +649,38 @@ export class Overlay {
     this.resetLfo = el('button', { class: 'chip', type: 'button' }, 'LFO as it comes');
     this.resetLfo.addEventListener('click', () => this.onResetLfo());
     this.lfoBox = el('fieldset', { class: 'lfo' }, el('legend', {}, 'LFO'), ...lfoRows, el('div', { class: 'actions' }, this.resetLfo));
-    // In its second row: its filter, its mode a slider along its places, its cutoff, its resonance and
-    // how far its CUTOFF in moves it (Mod, as on it); and its reverb, its size, damping and level.
+    // Its envelope: its attack, decay, sustain and release, and how much of it goes out (Depth).
+    /** (name, value) a knob of the envelope set 0…1. @type {(name: import('./envelope.js').EnvelopeKnob, value: number) => void} */
+    this.onEnvelope = () => {};
+    /** The envelope's knobs as it comes. */
+    this.onResetEnvelope = () => {};
+    /** Each of the envelope's sliders and the words for its setting. @type {Map<import('./envelope.js').EnvelopeKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.envelopeInputs = new Map();
+    const envelopeRows = ENVELOPE_KNOBS.map((name) => {
+      const s = slider(name[0].toUpperCase() + name.slice(1), (v) => this.onEnvelope(name, v));
+      this.envelopeInputs.set(name, s);
+      return s.row;
+    });
+    this.resetEnvelope = el('button', { class: 'chip', type: 'button' }, 'Envelope as it comes');
+    this.resetEnvelope.addEventListener('click', () => this.onResetEnvelope());
+    this.envelopeBox = el('fieldset', { class: 'envelope' }, el('legend', {}, 'Envelope'), ...envelopeRows, el('div', { class: 'actions' }, this.resetEnvelope));
+    // In its second row: its mixer, a level for each of its ins; its filter, its mode a slider along
+    // its places, its cutoff, its resonance and how far its CUTOFF in moves it (Mod, as on it); and its
+    // reverb, its size, damping and level.
+    /** (name, value) a knob of the mixer set 0…1. @type {(name: import('./mixer.js').MixerKnob, value: number) => void} */
+    this.onMixer = () => {};
+    /** The mixer's knobs as it comes. */
+    this.onResetMixer = () => {};
+    /** Each of the mixer's sliders and the words for its setting. @type {Map<import('./mixer.js').MixerKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.mixerInputs = new Map();
+    const mixerRows = MIXER_KNOBS.map((name, i) => {
+      const s = slider(`In ${i + 1}`, (v) => this.onMixer(name, v));
+      this.mixerInputs.set(name, s);
+      return s.row;
+    });
+    this.resetMixer = el('button', { class: 'chip', type: 'button' }, 'Mixer as it comes');
+    this.resetMixer.addEventListener('click', () => this.onResetMixer());
+    this.mixerBox = el('fieldset', { class: 'mixer' }, el('legend', {}, 'Mixer'), ...mixerRows, el('div', { class: 'actions' }, this.resetMixer));
     /** (name, value) a knob of the filter set 0…1. @type {(name: import('./filter.js').FilterKnob, value: number) => void} */
     this.onFilter = () => {};
     /** The filter's knobs as it comes. */
@@ -680,9 +712,10 @@ export class Overlay {
     this.resetReverb = el('button', { class: 'chip', type: 'button' }, 'Reverb as it comes');
     this.resetReverb.addEventListener('click', () => this.onResetReverb());
     this.reverbBox = el('fieldset', { class: 'reverb' }, el('legend', {}, 'Reverb'), ...reverbRows, el('div', { class: 'actions' }, this.resetReverb));
-    this.rackCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['seq', 'rackdelay', 'filter', 'reverb']));
+    this.rackCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['seq', 'rackdelay', 'env', 'mixer', 'filter', 'reverb']));
     this.rackPlayRow = el('div', { class: 'actions' }, this.playRack);
-    this.rack = el('div', { class: 'part rack', id: 'rack', hidden: '' }, this.rackPlayRow, this.rackClockBox, this.seqBox, this.rackDelayBox, this.lfoBox, this.filterBox, this.reverbBox, this.rackCablesBox);
+    this.rack = el('div', { class: 'part rack', id: 'rack', hidden: '' },
+      this.rackPlayRow, this.rackClockBox, this.seqBox, this.rackDelayBox, this.lfoBox, this.envelopeBox, this.mixerBox, this.filterBox, this.reverbBox, this.rackCablesBox);
     // The keyboard, as on it: going to play at it, its keys, its sound, its drawbars, its percussion,
     // and its organ's knobs and its electric piano's.
     /** Play at the keys, or step away from them. */
@@ -1155,6 +1188,16 @@ export class Overlay {
   /** The LFO's knobs (lfo.js): their sliders and words. */
   setLfo(knobs) {
     showKnobs(this.lfoInputs, knobs, lfoPlaces, lfoText);
+  }
+
+  /** The envelope's knobs (envelope.js): their sliders and words. */
+  setEnvelope(knobs) {
+    showKnobs(this.envelopeInputs, knobs, () => 0, envelopeText);
+  }
+
+  /** The mixer's knobs (mixer.js): their sliders and words. */
+  setMixer(knobs) {
+    showKnobs(this.mixerInputs, knobs, () => 0, mixerText);
   }
 
   /** The filter's knobs (filter.js): their sliders and words. */

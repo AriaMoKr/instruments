@@ -2,26 +2,28 @@
 // drums' clock input and an output for each pad's sound, the delay's input; the synth's patch bay,
 // its sound out, its arpeggiator's clock in, its LFO and filter envelope out, its pitch, cutoff and
 // amp in and its notes in; in the rack beside it the clock's outputs again, the sequencer's clock in
-// and notes out, its delay's input, its LFO's output, its filter's in, cutoff in and out and its
-// reverb's in; and on the keyboard its sound out, its notes out and its rotary speaker's speed in)
-// and the cables between them. A cable runs from an output to an input of its kind, a clock's
-// pulses, sound, a modulation (a voltage that moves something, as an LFO's does) or notes (a
-// sequencer's or a keyboard's, to play); an input takes one cable at most, so plugging in another
-// pulls the first out, and an output may feed any number; no cable may bring a sound back round into
-// where it came from (the filter's out into its own in), as no sound can go round so. The page draws
+// and notes out, its delay's input, its LFO's output, its envelope's clock in, notes in and out, its
+// mixer's four ins and its out, its filter's in, cutoff in and out and its reverb's in; and on the
+// keyboard its sound out, its notes out and its rotary speaker's speed in) and the cables between
+// them. A cable runs from an output to an input of its kind, a clock's pulses, sound, a modulation (a
+// voltage that moves something, as an LFO's does) or notes (a sequencer's or a keyboard's, to play);
+// an input takes one cable at most, so plugging in another pulls the first out, and an output may
+// feed any number; no cable may bring a sound back round into where it came from (the filter's out
+// into its own in, or into the mixer that goes into it), as no sound can go round so. The page draws
 // the cables and connects the sound as they change (onChange). The patch is kept for the next visit
 // (localStorage) at every change, an input left empty on purpose too; an input added since comes as
 // the patch comes.
 import { PADS } from './drums.js';
+import { MIXER_KNOBS } from './mixer.js';
 import { pageStorage } from './sound.js';
 
 /** @typedef {import('./sound.js').Store} Store */
 
 /**
  * A jack: its id, the module it is on ('clock', 'drums', 'delay', 'synth', the rack's 'rackclock',
- * 'seq', 'rackdelay', 'lfo', 'filter' and 'reverb', and 'keys'), its name in words (the page's list of cables, screen
- * readers), its label (short, printed by it on the board, the synth, the rack or the keyboard),
- * whether signals come out of it or go in, and what kind they are.
+ * 'seq', 'rackdelay', 'lfo', 'env', 'mixer', 'filter' and 'reverb', and 'keys'), its name in words
+ * (the page's list of cables, screen readers), its label (short, printed by it on the board, the
+ * synth, the rack or the keyboard), whether signals come out of it or go in, and what kind they are.
  * @typedef {{ id: string, module: string, name: string, label: string, dir: 'in' | 'out', kind: JackKind }} Jack
  */
 
@@ -43,11 +45,12 @@ const padJack = (p) => ({ id: `pad.${p.id}`, module: 'drums', name: `${p.name} o
  * Every jack in the room: the clock's outputs, the drums' clock input and pads' outputs, the delay's
  * input; then the synth's patch bay, its sound out, its arpeggiator's clock in, its two modulations
  * out (the LFO, and each voice's filter envelope), the three places they can go in (the pitch, the
- * filter's cutoff, the amp) and its notes in; then the rack's, the clock's outputs (the room's clock
- * again, nearer the synth), the sequencer's clock in and notes out, its delay's input, its LFO's
- * output, its filter's in, its cutoff in (a modulation) and its out, and its reverb's in; then the
- * keyboard's, its sound out, its notes out (to play the synth with it) and its rotary speaker's speed
- * in.
+ * filter's cutoff, the amp) and its notes in; then the rack's, as its panel has them, its first row
+ * and then its second, left to right: the clock's outputs (the room's clock again, nearer the synth),
+ * the sequencer's clock in and notes out, its delay's input, its LFO's output, its envelope's clock in,
+ * notes in and output (a modulation), its mixer's four ins and its out, its filter's in, its cutoff in
+ * (a modulation) and its out, and its reverb's in; then the keyboard's, its sound out, its notes out
+ * (to play the synth with it) and its rotary speaker's speed in.
  * @type {readonly Jack[]}
  */
 export const JACKS = Object.freeze([
@@ -72,6 +75,11 @@ export const JACKS = Object.freeze([
   { id: 'seq.notes', module: 'seq', name: 'Sequencer notes out', label: 'NOTES', dir: 'out', kind: 'notes' },
   { id: 'rackdelay.in', module: 'rackdelay', name: 'Rack delay in', label: 'IN', dir: 'in', kind: 'audio' },
   { id: 'lfo.out', module: 'lfo', name: 'Rack LFO out', label: 'OUT', dir: 'out', kind: 'mod' },
+  { id: 'env.clock', module: 'env', name: 'Envelope clock in', label: 'CLOCK', dir: 'in', kind: 'clock' },
+  { id: 'env.notes', module: 'env', name: 'Envelope notes in', label: 'NOTES', dir: 'in', kind: 'notes' },
+  { id: 'env.out', module: 'env', name: 'Envelope out', label: 'OUT', dir: 'out', kind: 'mod' },
+  ...MIXER_KNOBS.map((k, i) => /** @type {Jack} */ ({ id: `mixer.${k}`, module: 'mixer', name: `Mixer in ${i + 1}`, label: `IN ${i + 1}`, dir: 'in', kind: 'audio' })),
+  { id: 'mixer.out', module: 'mixer', name: 'Mixer out', label: 'OUT', dir: 'out', kind: 'audio' },
   { id: 'filter.in', module: 'filter', name: 'Filter in', label: 'IN', dir: 'in', kind: 'audio' },
   { id: 'filter.cutoff', module: 'filter', name: 'Filter cutoff in', label: 'CUTOFF', dir: 'in', kind: 'mod' },
   { id: 'filter.out', module: 'filter', name: 'Filter out', label: 'OUT', dir: 'out', kind: 'audio' },

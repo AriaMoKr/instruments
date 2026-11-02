@@ -3,16 +3,17 @@
 // one instanced mesh, each step's lit in the room's glow where it plays and its accent's and slide's
 // where they are set, the step playing lit up as the clock goes round, a key a little lighter pointed
 // at (or chosen with a TV's arrows); the knobs, each step's turned to its note, the tempo's, the
-// delay's, the LFO's, the filter's and the reverb's; on one canvas, drawn once, what is written on the
-// top (the steps' numbers, the rows' names) over the panel's face (its modules' plates and names in
-// their two rows, the blank plate, the displays' frames, the knobs' names, the jacks as the board's
-// are, kit.js: its outs on plates, the cables kit.js's too, and the buttons' caps); on another,
-// redrawn when it changes, at most ten times a second, the names of the steps' notes behind their
-// keys, the two displays (the tempo; the octave and what was set last) and the modules' knobs'
-// settings under them; two lights, one mesh: RUN's, lit while the clock runs and brighter on each
-// beat, as the board's, and the LFO's, as bright as its wave is high; and its sign on the wall over
-// it. In VR a stick's tip (kit.js's sticks, which show near it too) or a forefinger coming down on a
-// key presses it. Per frame nothing is allocated.
+// delay's, the LFO's, the envelope's, the mixer's, the filter's and the reverb's; on one canvas, drawn
+// once, what is written on the top (the steps' numbers, the rows' names) over the panel's face (its
+// modules' plates and names in their two rows, the blank plate, the displays' frames, the knobs'
+// names, the jacks as the board's are, kit.js: its outs on plates, the cables kit.js's too, and the
+// buttons' caps); on another, redrawn when it changes, at most ten times a second, the names of the
+// steps' notes behind their keys, the two displays (the tempo; the octave and what was set last) and
+// the modules' knobs' settings under them; three lights, one mesh: RUN's, lit while the clock runs and
+// brighter on each beat, as the board's, the LFO's, as bright as its wave is high, and the
+// envelope's, as bright as it is; and its sign on the wall over it. In VR a stick's tip (kit.js's
+// sticks, which show near it too) or a forefinger coming down on a key presses it. Per frame nothing
+// is allocated.
 import * as THREE from 'three';
 import { Builder } from './builder.js';
 import { BOARD, REARM, boardPoint, heightOver, panelPoint } from './board.js';
@@ -23,6 +24,8 @@ import { cutoffHz, hertz, noteName } from './synth.js';
 import { TEMPO } from './clock.js';
 import { DEFAULT_DELAY, MAX_STEPS, delaySteps } from './delay.js';
 import { DEFAULT_LFO, LFO_RATES, LFO_SHAPES, knobPlace, lfoRate, lfoShape } from './lfo.js';
+import { DEFAULT_ENVELOPE, envelopeText } from './envelope.js';
+import { DEFAULT_MIXER, mixerText } from './mixer.js';
 import { DEFAULT_FILTER, FILTER_MODES, MOD_OCTAVES, filterMode } from './filter.js';
 import { DEFAULT_REVERB, reverbSeconds } from './reverb.js';
 import { JACKS } from './patch.js';
@@ -37,8 +40,8 @@ import { GOLD, SANS } from './textures.js';
 const WOOD = lin('#3b2a1d'), RIM = lin('#151413');
 /** A key's cap: dark; a step's lit in the room's glow where it plays, an accent's and a slide's in theirs where set (linear). */
 const CAP = lin('#3a3632'), GLOW = lin('#5cc8a8'), ACCENT = lin('#e8703c'), SLIDE = lin('#f2b648');
-/** RUN's light: off, lit while the clock runs, and as bright as a beat makes it (linear), as the board's; the LFO's, as bright as its wave is high. */
-const LED = { off: lin('#2a1d18'), on: lin('#36c766'), beat: lin('#dcffe6'), lfo: lin('#ff6aa8') };
+/** RUN's light: off, lit while the clock runs, and as bright as a beat makes it (linear), as the board's; the LFO's and the envelope's, as bright as each is high, in a modulation's pink. */
+const LED = { off: lin('#2a1d18'), on: lin('#36c766'), beat: lin('#dcffe6'), mod: lin('#ff6aa8') };
 /** The canvas drawn once: this many pixels across the rack. */
 const ATLAS = 1536;
 /**
@@ -51,7 +54,7 @@ const VALUES = { w: 1024, band: 32, display: 512, cell: 128, cellH: 32 };
 const PER_ROW = VALUES.w / VALUES.cell;
 /** A module's plate. */
 const PLATE = '#2b2824';
-/** A light's radius (RUN's, the LFO's). */
+/** A light's radius (RUN's, the LFO's, the envelope's). */
 const LIGHT = 0.0048;
 
 /**
@@ -67,8 +70,16 @@ function placesOf(n) {
   return 0;
 }
 
-/** What a module's knob is called over it: its name, short where it is long. @param {import('./rackboard.js').ModuleKnob} n */
-const knobLabel = (n) => (n.name === 'resonance' ? 'RES' : n.name.toUpperCase());
+/**
+ * What a module's knob is called over it: its name, short where it is long; the envelope's first
+ * four by their first letters, as a synth's are, and the mixer's by their ins' numbers.
+ * @param {import('./rackboard.js').ModuleKnob} n
+ */
+function knobLabel(n) {
+  if (n.part === 'mixer') return n.name.slice(2);
+  if (n.part === 'envelope' && n.name !== 'depth') return n.name[0].toUpperCase();
+  return n.name === 'resonance' ? 'RES' : n.name.toUpperCase();
+}
 
 /**
  * Where a knob on the panel points, turned to `v` (0…1): at its place, where it has them, so on a
@@ -83,12 +94,15 @@ function pointsAt(n, v) {
 
 /**
  * A setting of a module's under its knob, in a word or two: the delay's time in steps, the LFO's rate
- * as a note value, its shape, the filter's mode, its cutoff in Hz and how far its CUTOFF in moves it,
- * how long the reverb rings, the rest in percent.
+ * as a note value, its shape, the envelope's times, the mixer's levels in decibels, the filter's
+ * mode, its cutoff in Hz and how far its CUTOFF in moves it, how long the reverb rings, the rest in
+ * percent.
  * @param {import('./rackboard.js').RackKnob} n
  * @param {number} v
  */
 function setting(n, v) {
+  if (n.part === 'envelope') return envelopeText(n.name, v);
+  if (n.part === 'mixer') return mixerText(n.name, v);
   if (n.part === 'delay' && n.name === 'time') {
     const s = delaySteps(v);
     return `${s} step${s === 1 ? '' : 's'}`;
@@ -107,8 +121,9 @@ function setting(n, v) {
  * each four in gold, a line between the fours, the rows' names in the margin) over the panel's face
  * (the case between its modules, each module's plate in its row with a screw at each corner and its
  * name, the blank plate likewise, the displays' frames, a ring and a scale round each of its knobs,
- * the LFO's light's bezel, the outs' plates, the jacks with what each is under it, the buttons' caps
- * with their names, the names of the tempo's knob, the octave's buttons and the modules' knobs).
+ * the LFO's and the envelope's lights' bezels, the outs' plates, the jacks with what each is under it,
+ * the buttons' caps with their names, the names of the tempo's knob, the octave's buttons and the
+ * modules' knobs).
  * `top` and `panel`: how many of its rows each takes.
  * @param {RackDesk} R
  */
@@ -182,7 +197,8 @@ function faces(R) {
     g.fillText(t.text, x(t.a), panelY(t.b));
   }
   // Round each knob on the panel a dark ring, so that it stands off its plate, and a scale over the
-  // way it turns, a mark at each of its places where it has them; the LFO's light in a dark bezel.
+  // way it turns, a mark at each of its places where it has them; the LFO's and the envelope's lights
+  // in dark bezels.
   g.lineWidth = 3;
   g.strokeStyle = 'rgba(239,229,207,0.5)';
   for (const n of R.knobs) {
@@ -201,9 +217,11 @@ function faces(R) {
     }
   }
   g.fillStyle = '#100f0e';
-  g.beginPath();
-  g.arc(x(P.light.a), panelY(P.light.b), (LIGHT + 0.0013) * k, 0, 2 * Math.PI);
-  g.fill();
+  for (const l of [P.lights.lfo, P.lights.envelope]) {
+    g.beginPath();
+    g.arc(x(l.a), panelY(l.b), (LIGHT + 0.0013) * k, 0, 2 * Math.PI);
+    g.fill();
+  }
   // The modules' knobs' names, over them.
   for (const n of R.knobs) {
     if (!isModuleKnob(n)) continue;
@@ -212,8 +230,9 @@ function faces(R) {
     fit(g, name, RACK.setting.w * k, Math.round(0.0095 * k));
     g.fillText(name, x(n.a), panelY(n.b + RACK.knob.module + 0.0125));
   }
-  // The outs on plates: the clock's, the sequencer's notes, the LFO's and the filter's.
-  for (const prefix of ['rack.', 'seq.notes', 'lfo.out', 'filter.out']) drawPlate(g, P.jacks.filter((j) => j.id.startsWith(prefix)), x, panelY, k);
+  // The outs on plates: the clock's, the sequencer's notes, the LFO's, the envelope's, the mixer's and
+  // the filter's.
+  for (const prefix of ['rack.', 'seq.notes', 'lfo.out', 'env.out', 'mixer.out', 'filter.out']) drawPlate(g, P.jacks.filter((j) => j.id.startsWith(prefix)), x, panelY, k);
   const r = BOARD.panel.jack * k;
   g.font = `600 ${Math.round(0.0105 * k)}px ${SANS}`;
   for (const j of P.jacks) {
@@ -410,12 +429,12 @@ export class RackKit {
     /** @private a mark's way out from its knob's middle, in its own (scaled) frame */
     this._offset = new THREE.Matrix4().makeTranslation(0, 0, -0.6);
 
-    // RUN's light, on the button, and the LFO's, by its name: one mesh, a colour each.
-    const run = R.panel.buttons.find((b) => b.id === 'run') ?? R.panel.buttons[0];
+    // RUN's light, on the button, the LFO's and the envelope's, each by its name: one mesh, a colour each.
+    const run = R.panel.buttons.find((b) => b.id === 'run') ?? R.panel.buttons[0], { lfo, envelope } = R.panel.lights;
     /** @private */
-    this._leds = new THREE.InstancedMesh(new THREE.CircleGeometry(LIGHT, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial(), 2);
+    this._leds = new THREE.InstancedMesh(new THREE.CircleGeometry(LIGHT, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial(), 3);
     this._leds.name = 'rack lights';
-    for (const [i, [a, h, b]] of [[run.a0 + 0.009, BT + 0.0004, run.b1 - 0.009], [R.panel.light.a, 0.0006, R.panel.light.b]].entries()) {
+    for (const [i, [a, h, b]] of [[run.a0 + 0.009, BT + 0.0004, run.b1 - 0.009], [lfo.a, 0.0006, lfo.b], [envelope.a, 0.0006, envelope.b]].entries()) {
       o.position.set(a, h, -b);
       o.rotation.set(0, 0, 0);
       o.scale.set(1, 1, 1);
@@ -427,7 +446,7 @@ export class RackKit {
 
     // The sign on the wall, as wide as the rack.
     const G = R.sign, sw = G.x1 - G.x0, sgh = G.y1 - G.y0, mid = [(G.x0 + G.x1) / 2, (G.y0 + G.y1) / 2, G.z];
-    const plate = signPlate(1024, Math.round((1024 * sgh) / sw), 'Rack', 'a clock, a sequencer, a delay, an LFO, a filter and a reverb');
+    const plate = signPlate(1024, Math.round((1024 * sgh) / sw), 'Rack', 'a clock, a sequencer, a delay, an LFO, an envelope, a mixer, a filter and a reverb');
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(sw, sgh), new THREE.MeshBasicMaterial({ map: texture(plate, anisotropy), color: lightColor(mid, [0, 0, 1]) }));
     sign.position.set(mid[0], mid[1], mid[2]);
     this._add(sign, 'rack sign');
@@ -452,12 +471,20 @@ export class RackKit {
     this._ledShown = -1;
     /** The LFO's wave as heard now (-1…1), its light as bright as it is high; NaN: none, its light off. */
     this.lfo = NaN;
-    /** @private what the LFO's light was last set to (-1 off, else its brightness) */
+    /** The envelope as heard now (0…1), its light as bright as it is high; NaN: none, its light off. */
+    this.env = NaN;
+    /** @private what the LFO's light and the envelope's were last set to (-1 off, else its brightness) */
     this._lfoShown = -1;
-    /** @private the delay's knobs, the LFO's, the filter's and the reverb's, for their settings @type {import('./delay.js').DelayKnobs} */
+    /** @private */
+    this._envShown = -1;
+    /** @private the delay's knobs, the LFO's, the envelope's, the mixer's, the filter's and the reverb's, for their settings @type {import('./delay.js').DelayKnobs} */
     this._delay = { ...DEFAULT_DELAY };
     /** @private @type {import('./lfo.js').LfoKnobs} */
     this._lfo = { ...DEFAULT_LFO };
+    /** @private @type {import('./envelope.js').EnvelopeKnobs} */
+    this._envelope = { ...DEFAULT_ENVELOPE };
+    /** @private @type {import('./mixer.js').MixerKnobs} */
+    this._mixer = { ...DEFAULT_MIXER };
     /** @private @type {import('./filter.js').FilterKnobs} */
     this._filter = { ...DEFAULT_FILTER };
     /** @private @type {import('./reverb.js').ReverbKnobs} */
@@ -469,6 +496,8 @@ export class RackKit {
     this.setTempo(this._tempo);
     this.setDelay(this._delay);
     this.setLfo(this._lfo);
+    this.setEnvelope(this._envelope);
+    this.setMixer(this._mixer);
     this.setFilter(this._filter);
     this.setReverb(this._reverb);
     for (let i = 0; i < n; i++) this._writeKey(i);
@@ -566,6 +595,32 @@ export class RackKit {
   }
 
   /**
+   * The envelope's knobs (envelope.js): turned to them, and their settings under them.
+   * @param {import('./envelope.js').EnvelopeKnobs} knobs
+   */
+  setEnvelope(knobs) {
+    this._envelope = knobs;
+    for (let k = 0; k < this.rack.knobs.length; k++) {
+      const n = this.rack.knobs[k];
+      if (n.part === 'envelope') this._turn(k, knobs[n.name]);
+    }
+    this._valuesDirty = true;
+  }
+
+  /**
+   * The mixer's knobs (mixer.js): turned to them, and their settings under them.
+   * @param {import('./mixer.js').MixerKnobs} knobs
+   */
+  setMixer(knobs) {
+    this._mixer = knobs;
+    for (let k = 0; k < this.rack.knobs.length; k++) {
+      const n = this.rack.knobs[k];
+      if (n.part === 'mixer') this._turn(k, knobs[n.name]);
+    }
+    this._valuesDirty = true;
+  }
+
+  /**
    * The filter's knobs (filter.js): turned to them (its mode to its place), and their settings under them.
    * @param {import('./filter.js').FilterKnobs} knobs
    */
@@ -643,6 +698,17 @@ export class RackKit {
   }
 
   /**
+   * A modulation's light's colour (the LFO's, the envelope's), as bright as `k` (0…1, -1 off), in
+   * this._color.
+   * @private
+   * @param {number} k
+   */
+  _mod(k) {
+    const t = Math.max(0, k);
+    return this._color.setRGB(LED.off[0] + (LED.mod[0] - LED.off[0]) * t, LED.off[1] + (LED.mod[1] - LED.off[1]) * t, LED.off[2] + (LED.mod[2] - LED.off[2]) * t);
+  }
+
+  /**
    * Per frame: the keys written where they changed (set, the step playing, pointed at), the lights,
    * and the names, the displays and the settings redrawn when they changed (at most ten times a second).
    * @param {number} dt
@@ -666,9 +732,13 @@ export class RackKit {
     const lfo = Number.isFinite(this.lfo) ? Math.round((Math.min(1, Math.max(-1, this.lfo)) + 1) * 16) / 32 : -1;
     if (lfo !== this._lfoShown) {
       this._lfoShown = lfo;
-      const k = Math.max(0, lfo);
-      c.setRGB(LED.off[0] + (LED.lfo[0] - LED.off[0]) * k, LED.off[1] + (LED.lfo[1] - LED.off[1]) * k, LED.off[2] + (LED.lfo[2] - LED.off[2]) * k);
-      this._leds.setColorAt(1, c);
+      this._leds.setColorAt(1, this._mod(lfo));
+      lights = true;
+    }
+    const env = Number.isFinite(this.env) ? Math.round(Math.min(1, Math.max(0, this.env)) * 32) / 32 : -1;
+    if (env !== this._envShown) {
+      this._envShown = env;
+      this._leds.setColorAt(2, this._mod(env));
       lights = true;
     }
     if (lights && this._leds.instanceColor) this._leds.instanceColor.needsUpdate = true;
@@ -728,8 +798,10 @@ export class RackKit {
       g.fillRect(x, y, w, h);
       const text = n.part === 'delay' ? setting(n, this._delay[n.name])
         : n.part === 'lfo' ? setting(n, this._lfo[n.name])
-          : n.part === 'filter' ? setting(n, this._filter[n.name])
-            : n.part === 'reverb' ? setting(n, this._reverb[n.name]) : '';
+          : n.part === 'envelope' ? setting(n, this._envelope[n.name])
+            : n.part === 'mixer' ? setting(n, this._mixer[n.name])
+              : n.part === 'filter' ? setting(n, this._filter[n.name])
+                : n.part === 'reverb' ? setting(n, this._reverb[n.name]) : '';
       g.fillStyle = '#efe5cf';
       fit(g, text, w - 8, 23, '500');
       g.fillText(text, x + w / 2, y + h / 2 + 1);

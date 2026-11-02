@@ -1,14 +1,14 @@
-// Just enough of Web Audio for sound.js, drums.js, delay.js, synth.js, keys.js, filter.js and
-// reverb.js in Node: nodes that keep what they are connected to (and let go of one, refusing one they
-// aren't connected to, or of all), params that keep their automation and refuse what a browser would
-// (a time, a value or a time constant that isn't finite, an exponential ramp to 0, a negative time
-// constant), sources that keep when they start and stop (and refuse a second start, or a stop before
-// one), delays that refuse a longest time a browser wouldn't make, a merger that refuses an input it
-// hasn't, periodic waves that refuse terms a browser would (of two lengths, fewer than two, or not
-// finite), IIR filters that keep their coefficients and refuse those a browser would (none or more
-// than 20, not finite, a feedforward all 0, a first feedback of 0), and convolvers that refuse a
-// response a browser would (not at the context's rate, or of a number of channels other than 1, 2 or
-// 4). A test sets the context's currentTime itself.
+// Just enough of Web Audio for sound.js, drums.js, delay.js, synth.js, keys.js, lfo.js, filter.js,
+// reverb.js, mixer.js and envelope.js in Node: nodes that keep what they are connected to (and let go
+// of one, refusing one they aren't connected to, or of all), params that keep their automation and
+// refuse what a browser would (a time, a value or a time constant that isn't finite, an exponential
+// ramp to 0, a negative time constant), sources that keep when they start and stop (and refuse a
+// second start, or a stop before one), delays that refuse a longest time a browser wouldn't make, a
+// merger that refuses an input it hasn't, periodic waves that refuse terms a browser would (of two
+// lengths, fewer than two, or not finite), IIR filters that keep their coefficients and refuse those
+// a browser would (none or more than 20, not finite, a feedforward all 0, a first feedback of 0), and
+// convolvers that refuse a response a browser would (not at the context's rate, or of a number of
+// channels other than 1, 2 or 4). A test sets the context's currentTime itself.
 
 class Param {
   constructor(value) {

@@ -207,8 +207,8 @@ export function knobName(id) {
   return id === 'rate' ? 'LFO rate' : k.name;
 }
 
-/** @param {number} s seconds */
-const seconds = (s) => (s < 1 ? `${Math.round(s * 1000)} ms` : `${s.toFixed(1)} s`);
+/** A time in words, as a panel prints it (the rack's envelope's too). @param {number} s seconds */
+export const seconds =(s) => (s < 1 ? `${Math.round(s * 1000)} ms` : `${s.toFixed(1)} s`);
 /** A frequency in words, as a panel prints it (the rack's filter's too). @param {number} hz */
 export const hertz = (hz) => (hz < 1000 ? `${hz < 1 ? hz.toFixed(2) : hz < 10 ? hz.toFixed(1) : Math.round(hz)} Hz` : `${(hz / 1000).toFixed(1)} kHz`);
 /** @param {number} k */

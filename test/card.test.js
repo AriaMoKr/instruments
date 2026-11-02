@@ -5,8 +5,8 @@
 // each sounding while pressed, one stop among them; its sounds (the presets, Mono, the octave), its
 // arpeggiator, its knobs, a section each, and its cables. The rack: its clock (the room's again),
 // its sequencer's steps a row each (whether it plays, its note, its accent, its slide), its octave,
-// its delay's knobs, its LFO's, its filter's and its reverb's as sliders, and its cables (never a
-// sound into its own module). The keys: its keys as the synth's, its
+// its delay's knobs, its LFO's, its envelope's, its mixer's, its filter's and its reverb's as
+// sliders, and its cables (never a sound into its own module). The keys: its keys as the synth's, its
 // sound (the organ, the electric piano or both, Sustain, the computer's keys' octave), its drawbars in
 // eighths, its percussion, its knobs, and its cables. Sound: the volume, Mute, and MIDI where there is
 // Web MIDI.
@@ -26,6 +26,8 @@ import { DEFAULT_LINE, SEQ_LOWEST, SEQ_OCTAVES, SEQ_RANGE, Seq } from '../public
 import { LFO_RATES, LFO_SHAPES } from '../public/js/lfo.js';
 import { FILTER_KNOBS, FILTER_MODES, filterText } from '../public/js/filter.js';
 import { REVERB_KNOBS, reverbText } from '../public/js/reverb.js';
+import { ENVELOPE_KNOBS, envelopeText } from '../public/js/envelope.js';
+import { MIXER_KNOBS, UNITY, mixerText } from '../public/js/mixer.js';
 import { DEFAULT_KEYS, DEFAULT_SWITCHES, DRAWBARS, KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_OCTAVES, KEYS_SECTIONS, KEYS_SOUNDS, KEYS_SWITCHES, keysText } from '../public/js/keys.js';
 import { installDom } from './helpers/dom.js';
 
@@ -39,7 +41,7 @@ async function card(options = {}) {
   for (const name of ['onPad', 'onPlay', 'onKnob', 'onResetKnobs', 'onVolume', 'onMute', 'onMidi', 'onRun', 'onTempo', 'onStep', 'onClearSteps', 'onResetPattern', 'onDelay', 'onResetDelay', 'onPlug',
     'onPlaySynth', 'onKeyDown', 'onKeyUp', 'onKeyTap', 'onPreset', 'onMono', 'onOctave', 'onSynthKnob', 'onResetSynth', 'onArp', 'onHold', 'onRange',
     'onPlayRack', 'onSeqKey', 'onSeqNote', 'onSeqOctave', 'onClearSeq', 'onResetSeq', 'onRackDelay', 'onResetRackDelay', 'onLfo', 'onResetLfo',
-    'onFilter', 'onResetFilter', 'onReverb', 'onResetReverb',
+    'onEnvelope', 'onResetEnvelope', 'onMixer', 'onResetMixer', 'onFilter', 'onResetFilter', 'onReverb', 'onResetReverb',
     'onPlayKeys', 'onKeysDown', 'onKeysUp', 'onKeysTap', 'onKeysSound', 'onSustain', 'onKeysOctave', 'onKeysKnob', 'onKeysSwitch', 'onResetKeys']) o[name] = (...args) => calls.push([name, ...args]);
   return { o, calls };
 }
@@ -242,12 +244,48 @@ test("the rack's delay, as the board's but its own, and its LFO: its rate and sh
   }
 });
 
-test("the rack's filter, its mode a slider along its three, its cutoff in hertz, how far its CUTOFF in moves it in octaves; its reverb, its size in seconds; after the LFO, set in words and reset", async () => {
+test("the rack's envelope, its times in seconds, its sustain and depth in percent; its mixer, a level an in, in decibels; after the LFO, set in words and reset", async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.deepEqual([o.envelopeBox, o.mixerBox].map((box) => box.findAll((c) => c.tagName === 'LEGEND')[0].textContent), ['Envelope', 'Mixer']);
+    assert.deepEqual(o.rack.children.slice(-6), [o.lfoBox, o.envelopeBox, o.mixerBox, o.filterBox, o.reverbBox, o.rackCablesBox], 'as on the rack, its first row, then its second');
+    const label = (s) => s.row.children[0].textContent;
+    assert.deepEqual(ENVELOPE_KNOBS.map((name) => label(o.envelopeInputs.get(name))), ['Attack', 'Decay', 'Sustain', 'Release', 'Depth']);
+    assert.deepEqual(MIXER_KNOBS.map((name) => label(o.mixerInputs.get(name))), ['In 1', 'In 2', 'In 3', 'In 4']);
+    const knobs = { attack: 0.5, decay: 0.2, sustain: 0.6, release: 1, depth: 0.35 };
+    o.setEnvelope(knobs);
+    assert.deepEqual(ENVELOPE_KNOBS.map((name) => o.envelopeInputs.get(name).input.value), ['50', '20', '60', '100', '35']);
+    assert.deepEqual(ENVELOPE_KNOBS.map((name) => o.envelopeInputs.get(name).out.textContent), ENVELOPE_KNOBS.map((name) => envelopeText(name, knobs[name])));
+    assert.deepEqual(['sustain', 'depth'].map((name) => o.envelopeInputs.get(name).out.textContent), ['60%', '35%']);
+    assert.match(o.envelopeInputs.get('attack').out.textContent, /^\d+ ms$/);
+    assert.match(o.envelopeInputs.get('release').out.textContent, /^\d+\.\d s$/);
+    for (const [name, { input, out }] of o.envelopeInputs) assert.equal(input.getAttribute('aria-valuetext'), out.textContent, name);
+    o.envelopeInputs.get('decay').input.value = '70';
+    o.envelopeInputs.get('decay').input.fire('input');
+    o.resetEnvelope.fire('click');
+    assert.equal(o.resetEnvelope.textContent, 'Envelope as it comes');
+    o.setMixer({ in1: UNITY, in2: 0, in3: 1, in4: UNITY / 2 });
+    assert.deepEqual(MIXER_KNOBS.map((name) => o.mixerInputs.get(name).input.value), ['75', '0', '100', '38']);
+    assert.deepEqual(MIXER_KNOBS.map((name) => o.mixerInputs.get(name).out.textContent), ['0 dB', 'off', '+5 dB', '−12 dB']);
+    assert.equal(mixerText('in4', UNITY / 2), '−12 dB');
+    for (const [name, { input, out }] of o.mixerInputs) assert.equal(input.getAttribute('aria-valuetext'), out.textContent, name);
+    o.mixerInputs.get('in3').input.value = '40';
+    o.mixerInputs.get('in3').input.fire('input');
+    o.resetMixer.fire('click');
+    assert.equal(o.resetMixer.textContent, 'Mixer as it comes');
+    assert.deepEqual(calls, [['onEnvelope', 'decay', 0.7], ['onResetEnvelope'], ['onMixer', 'in3', 0.4], ['onResetMixer']]);
+  } finally {
+    remove();
+  }
+});
+
+test("the rack's filter, its mode a slider along its three, its cutoff in hertz, how far its CUTOFF in moves it in octaves; its reverb, its size in seconds; after the mixer, set in words and reset", async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
     assert.deepEqual([o.filterBox, o.reverbBox].map((box) => box.findAll((c) => c.tagName === 'LEGEND')[0].textContent), ['Filter', 'Reverb']);
-    assert.deepEqual(o.rack.children.slice(-4), [o.lfoBox, o.filterBox, o.reverbBox, o.rackCablesBox]);
+    assert.deepEqual(o.rack.children.slice(-4), [o.mixerBox, o.filterBox, o.reverbBox, o.rackCablesBox]);
     const label = (s) => s.row.children[0].textContent;
     assert.deepEqual(FILTER_KNOBS.map((name) => label(o.filterInputs.get(name))), ['Mode', 'Cutoff', 'Resonance', 'Mod']);
     assert.deepEqual(REVERB_KNOBS.map((name) => label(o.reverbInputs.get(name))), ['Size', 'Damp', 'Level']);
@@ -286,7 +324,7 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
     const ins = JACKS.filter((j) => j.dir === 'in');
     assert.deepEqual([...o.plugs.keys()], ins.map((j) => j.id));
     const boxes = [o.cablesBox, o.synthCablesBox, o.rackCablesBox, o.keysCablesBox];
-    const rack = ['seq', 'rackdelay', 'filter', 'reverb'];
+    const rack = ['seq', 'rackdelay', 'env', 'mixer', 'filter', 'reverb'];
     for (const j of ins) {
       const select = o.plugs.get(j.id);
       assert.equal(select.parentNode.children[0].textContent, j.name, 'its label');
@@ -295,24 +333,28 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
       const here = j.module === 'synth' ? o.synthCablesBox : rack.includes(j.module) ? o.rackCablesBox : j.module === 'keys' ? o.keysCablesBox : o.cablesBox;
       assert.deepEqual(boxes.map((box) => box.findAll((c) => c === select).length), boxes.map((box) => (box === here ? 1 : 0)), j.id);
     }
-    assert.deepEqual(o.rackCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), ['seq.clock', 'rackdelay.in', 'filter.in', 'filter.cutoff', 'reverb.in'],
-      "the sequencer's clock in, the delay's in, the filter's ins and the reverb's, the rack's");
-    // The filter's out into anything that takes sound but its own in.
-    for (const id of ['delay.in', 'rackdelay.in', 'reverb.in', 'filter.in']) {
+    assert.deepEqual(o.rackCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), [
+      'seq.clock', 'rackdelay.in', 'env.clock', 'env.notes', 'mixer.in1', 'mixer.in2', 'mixer.in3', 'mixer.in4', 'filter.in', 'filter.cutoff', 'reverb.in',
+    ], "the sequencer's clock in, the delay's in, the envelope's ins, the mixer's, the filter's and the reverb's, the rack's");
+    // The mixer's out and the filter's into anything that takes sound but their own ins.
+    const sounds = ['delay.in', 'rackdelay.in', 'reverb.in', 'filter.in', ...MIXER_KNOBS.map((k) => `mixer.${k}`)];
+    for (const id of sounds) {
       const outs = o.plugs.get(id).children.map((c) => c.getAttribute('value'));
       assert.equal(outs.includes('filter.out'), id !== 'filter.in', id);
+      assert.equal(outs.includes('mixer.out'), !id.startsWith('mixer.'), id);
       assert.ok(['pad.kick', 'synth.out', 'keys.out'].every((x) => outs.includes(x)), `the drums', the synth's and the keyboard's sound into ${id}`);
     }
     assert.deepEqual(o.keysCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), ['keys.rotary'], "the rotary speaker's speed in, the keyboard's");
     assert.equal(o.keysPart.children.at(-1), o.keysCablesBox, 'last in Keys');
     assert.deepEqual(o.plugs.get('rackdelay.in').parentNode.children[0].textContent, 'Rack delay in');
-    const mods = ['Nothing', 'Synth LFO out', 'Synth filter envelope out', 'Rack LFO out'];
+    assert.deepEqual(['mixer.in1', 'mixer.in4'].map((id) => o.plugs.get(id).parentNode.children[0].textContent), ['Mixer in 1', 'Mixer in 4']);
+    const mods = ['Nothing', 'Synth LFO out', 'Synth filter envelope out', 'Rack LFO out', 'Envelope out'];
     assert.deepEqual(o.plugs.get('synth.pitch').children.map((c) => c.textContent), mods);
     assert.deepEqual(o.plugs.get('keys.rotary').children.map((c) => c.textContent), mods, 'whose each is, said');
     assert.deepEqual(o.plugs.get('filter.cutoff').children.map((c) => c.textContent), mods);
     assert.deepEqual(o.plugs.get('keys.rotary').parentNode.children[0].textContent, 'Rotary speed in');
-    assert.deepEqual(o.plugs.get('synth.notes').children.map((c) => c.textContent), ['Nothing', 'Sequencer notes out', 'Keyboard notes out']);
-    assert.deepEqual(o.plugs.get('seq.clock').children.map((c) => c.getAttribute('value')), ['', 'clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d2', 'rack.d4'], "the board's clock or the rack's");
+    for (const id of ['synth.notes', 'env.notes']) assert.deepEqual(o.plugs.get(id).children.map((c) => c.textContent), ['Nothing', 'Sequencer notes out', 'Keyboard notes out'], id);
+    for (const id of ['seq.clock', 'env.clock']) assert.deepEqual(o.plugs.get(id).children.map((c) => c.getAttribute('value')), ['', 'clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d2', 'rack.d4'], `${id}: the board's clock or the rack's`);
     const patch = new Patch({ storage: null });
     patch.plug('pad.snare', 'delay.in');
     patch.plug('synth.lfo', 'synth.cutoff');

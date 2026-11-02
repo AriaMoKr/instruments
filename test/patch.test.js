@@ -1,15 +1,17 @@
 // The patch (patch.js): the jacks (the clock's outputs, the drums' clock input and an output for
 // each pad, the delay's input, the synth's patch bay, the rack's clock outputs, its sequencer's
-// clock in and notes out, its delay's in, its LFO's out, its filter's in, cutoff in and out and its
-// reverb's in, the keyboard's sound out, notes out and rotary speed in), the patch the room comes
-// with, what a cable can join (never a sound back round into itself), plugging and unplugging (an
-// input takes one cable, an output feeds any number), onChange, and the patch kept for the next visit
-// (what was kept but can't be plugged, as it comes).
+// clock in and notes out, its delay's in, its LFO's out, its envelope's clock in, notes in and out,
+// its mixer's four ins and its out, its filter's in, cutoff in and out and its reverb's in, the
+// keyboard's sound out, notes out and rotary speed in), the patch the room comes with, what a cable
+// can join (never a sound back round into itself), plugging and unplugging (an input takes one
+// cable, an output feeds any number), onChange, and the patch kept for the next visit (what was kept
+// but can't be plugged, as it comes).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_PATCH, JACKS, Patch, padForJack } from '../public/js/patch.js';
 import { CLOCK_OUTS, RACK_CLOCK_OUTS } from '../public/js/clock.js';
 import { PADS } from '../public/js/drums.js';
+import { MIXER_KNOBS } from '../public/js/mixer.js';
 import { memoryStorage } from './helpers/audio.js';
 
 /** The rack's cables as it comes: the sequencer's notes into the synth, the rack's clock into the sequencer. */
@@ -25,23 +27,28 @@ const SYNTH_JACKS = [
 ];
 /**
  * The rack's jacks: its clock's outputs, the sequencer's clock in and notes out, the delay's in, the
- * LFO's out, the filter's in, cutoff in and out, the reverb's in.
+ * LFO's out, the envelope's clock in, notes in and out, the mixer's four ins and its out, the
+ * filter's in, cutoff in and out, the reverb's in.
  */
 const RACK_JACKS = [
   ['rack.x1', '×1', 'out', 'clock'], ['rack.d2', '÷2', 'out', 'clock'], ['rack.d4', '÷4', 'out', 'clock'],
   ['seq.clock', 'CLOCK', 'in', 'clock'], ['seq.notes', 'NOTES', 'out', 'notes'],
   ['rackdelay.in', 'IN', 'in', 'audio'], ['lfo.out', 'OUT', 'out', 'mod'],
+  ['env.clock', 'CLOCK', 'in', 'clock'], ['env.notes', 'NOTES', 'in', 'notes'], ['env.out', 'OUT', 'out', 'mod'],
+  ['mixer.in1', 'IN 1', 'in', 'audio'], ['mixer.in2', 'IN 2', 'in', 'audio'], ['mixer.in3', 'IN 3', 'in', 'audio'], ['mixer.in4', 'IN 4', 'in', 'audio'],
+  ['mixer.out', 'OUT', 'out', 'audio'],
   ['filter.in', 'IN', 'in', 'audio'], ['filter.cutoff', 'CUTOFF', 'in', 'mod'], ['filter.out', 'OUT', 'out', 'audio'],
   ['reverb.in', 'IN', 'in', 'audio'],
 ];
 /** The rack's modules. */
-const RACK_MODULES = new Set(['rackclock', 'seq', 'rackdelay', 'lfo', 'filter', 'reverb']);
+const RACK_MODULES = new Set(['rackclock', 'seq', 'rackdelay', 'lfo', 'env', 'mixer', 'filter', 'reverb']);
 /** The keyboard's jacks: its sound out, its notes out, its rotary speaker's speed in. */
 const KEYS_JACKS = [['keys.out', 'OUT', 'out', 'audio'], ['keys.notes', 'NOTES', 'out', 'notes'], ['keys.rotary', 'ROTARY', 'in', 'mod']];
 /** Every input as kept with the patch as it comes, and `o` changed. */
 const kept = (o = {}) => ({
   'drums.clock': 'clock.x1', 'delay.in': null, 'synth.clock': 'clock.x1', 'synth.pitch': null, 'synth.cutoff': null, 'synth.amp': null,
-  'synth.notes': 'seq.notes', 'seq.clock': 'rack.x1', 'rackdelay.in': null, 'filter.in': null, 'filter.cutoff': null, 'reverb.in': null,
+  'synth.notes': 'seq.notes', 'seq.clock': 'rack.x1', 'rackdelay.in': null, 'env.clock': null, 'env.notes': null,
+  'mixer.in1': null, 'mixer.in2': null, 'mixer.in3': null, 'mixer.in4': null, 'filter.in': null, 'filter.cutoff': null, 'reverb.in': null,
   'keys.rotary': null, ...o,
 });
 
@@ -73,6 +80,7 @@ test("the jacks: the clock's three outputs, the drums' clock input, an output fo
     ['drums.clock', 'drums', 'clock'], ['delay.in', 'delay', 'audio'],
     ['synth.clock', 'synth', 'clock'], ['synth.pitch', 'synth', 'mod'], ['synth.cutoff', 'synth', 'mod'], ['synth.amp', 'synth', 'mod'],
     ['synth.notes', 'synth', 'notes'], ['seq.clock', 'seq', 'clock'], ['rackdelay.in', 'rackdelay', 'audio'],
+    ['env.clock', 'env', 'clock'], ['env.notes', 'env', 'notes'], ...MIXER_KNOBS.map((k) => [`mixer.${k}`, 'mixer', 'audio']),
     ['filter.in', 'filter', 'audio'], ['filter.cutoff', 'filter', 'mod'], ['reverb.in', 'reverb', 'audio'], ['keys.rotary', 'keys', 'mod'],
   ]);
   for (const j of JACKS) {
@@ -247,6 +255,45 @@ test('the patch: kept at every change for the next visit, every input (one left 
   const noFilter = new Patch({ storage: memoryStorage({ patch: JSON.stringify({ ...kept({ 'rackdelay.in': 'keys.out' }), 'filter.in': undefined, 'filter.cutoff': undefined, 'reverb.in': undefined }) }) });
   assert.deepEqual(noFilter.cables(), [...AS_IT_COMES, { from: 'keys.out', to: 'rackdelay.in' }]);
   assert.deepEqual(['filter.in', 'filter.cutoff', 'reverb.in'].map((id) => noFilter.source(id)), [null, null, null]);
+  // One kept before the rack's envelope and mixer: their ins as they come (nothing), the rest as kept.
+  const newer = ['env.clock', 'env.notes', ...MIXER_KNOBS.map((k) => `mixer.${k}`)];
+  const noMixer = new Patch({ storage: memoryStorage({ patch: JSON.stringify({ ...kept({ 'filter.in': 'synth.out' }), ...Object.fromEntries(newer.map((id) => [id, undefined])) }) }) });
+  assert.deepEqual(noMixer.cables(), [...AS_IT_COMES, { from: 'synth.out', to: 'filter.in' }]);
+  assert.deepEqual(newer.map((id) => noMixer.source(id)), newer.map(() => null));
+});
+
+test("the rack's envelope: a clock's pulses or notes into it, its out into any modulation in; its mixer: up to four sounds into it, its out wherever a sound goes, never back round into it", () => {
+  const { patch, changes } = noted();
+  for (const c of ['clock.x1', 'clock.d4', 'rack.x1', 'rack.d2']) assert.ok(patch.canPlug(c, 'env.clock'), c);
+  for (const n of ['seq.notes', 'keys.notes']) assert.ok(patch.canPlug(n, 'env.notes'), n);
+  for (const m of ['synth.pitch', 'synth.cutoff', 'synth.amp', 'keys.rotary', 'filter.cutoff']) assert.ok(patch.canPlug('env.out', m), m);
+  for (const s of ['pad.kick', 'synth.out', 'keys.out', 'filter.out']) for (const k of MIXER_KNOBS) assert.ok(patch.canPlug(s, `mixer.${k}`), `${s} into ${k}`);
+  for (const i of ['delay.in', 'rackdelay.in', 'filter.in', 'reverb.in']) assert.ok(patch.canPlug('mixer.out', i), i);
+  const never = [
+    ['env.out', 'env.clock'], ['env.out', 'env.notes'], ['env.out', 'delay.in'], ['env.out', 'mixer.in1'], ['env.clock', 'env.notes'],
+    ['seq.notes', 'env.clock'], ['clock.x1', 'env.notes'], ['lfo.out', 'env.clock'], ['synth.out', 'env.notes'],
+    ['mixer.out', 'mixer.in1'], ['mixer.out', 'mixer.in4'], ['mixer.out', 'filter.cutoff'], ['mixer.out', 'synth.notes'], ['mixer.in1', 'mixer.in2'],
+    ['lfo.out', 'mixer.in2'], ['seq.notes', 'mixer.in3'], ['clock.x1', 'mixer.in4'],
+  ];
+  for (const [a, b] of never) assert.ok(!patch.canPlug(a, b) && !patch.canPlug(b, a), `${a}, ${b}`);
+  // The sequencer's notes into the envelope as well as the synth; the envelope into the filter's
+  // cutoff and the synth's.
+  assert.ok(patch.plug('seq.notes', 'env.notes') && patch.plug('env.out', 'filter.cutoff') && patch.plug('synth.cutoff', 'env.out'));
+  assert.deepEqual(patch.targets('seq.notes'), ['synth.notes', 'env.notes']);
+  assert.deepEqual(patch.targets('env.out'), ['synth.cutoff', 'filter.cutoff']);
+  // A pad, the synth and the keyboard into the mixer, and it through the filter: the filter's out
+  // back into the mixer would go round; into the reverb it may go.
+  assert.ok(patch.plug('pad.kick', 'mixer.in1') && patch.plug('synth.out', 'mixer.in2') && patch.plug('mixer.in3', 'keys.out') && patch.plug('mixer.out', 'filter.in'));
+  assert.equal(patch.loops('filter.out', 'mixer.in4'), true);
+  assert.equal(patch.plug('filter.out', 'mixer.in4'), false, 'the filter back into the mixer');
+  assert.ok(patch.plug('filter.out', 'reverb.in'));
+  assert.deepEqual(changes.slice(3), [
+    ['mixer.in1', 'pad.kick', null], ['mixer.in2', 'synth.out', null], ['mixer.in3', 'keys.out', null], ['filter.in', 'mixer.out', null], ['reverb.in', 'filter.out', null],
+  ]);
+  // The filter's out into the mixer once the mixer no longer goes through it.
+  assert.ok(patch.plug('keys.out', 'filter.in'));
+  assert.ok(patch.plug('filter.out', 'mixer.in4'), 'the keyboard through the filter, into the mixer');
+  assert.equal(patch.canPlug('mixer.out', 'filter.in'), false, 'and now the mixer into the filter would go round');
 });
 
 test("the rack's filter: any sound through it, its out into a delay or the reverb, a modulation into its cutoff; never its out back into its own in", () => {
