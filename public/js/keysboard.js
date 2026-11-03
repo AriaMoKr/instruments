@@ -309,7 +309,7 @@ export function hitKeys(K, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
     v = clamp((MET.b - q.b0) / (q.b1 - q.b0), 0, 1);
   } else if (kind === 'drawbar') v = drawbarValue(K, MET.b);
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
-  out.pad = out.step = out.knob = out.key = out.dial = out.button = out.seq = out.rack = -1;
+  out.pad = out.step = out.knob = out.key = out.dial = out.button = out.seq = out.rack = out.guitar = -1;
   out.jack = jack;
   out.keys = index;
   return true;

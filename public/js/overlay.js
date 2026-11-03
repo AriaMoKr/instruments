@@ -2,7 +2,7 @@
 // the page's <nav>: the room's name, the way back to the hallway as a real link (for keyboards,
 // screen readers and browsers without WebGL), its description, what hangs on its walls (each one
 // that leads somewhere a link there, the rest buttons that walk up to them), Start / Leave shared session (and,
-// in one, how it's going), Drums, Synth, Rack, Keys, Sound, and Settings, the control panel's choices: motion
+// in one, how it's going), Drums, Synth, Rack, Keys, Guitar, Sound, and Settings, the control panel's choices: motion
 // (common/access.js, for a screen too), how to move and turn in VR, the comfort vignette and seated
 // mode. The view is the page's <main>, with a hint on how to move, the Wave, Copy invite link,
 // Fullscreen and Enter VR buttons, the dot a gamepad aims with, and short messages, said politely. So
@@ -26,13 +26,16 @@
 // keys as the synth's, its sound (the organ, the electric piano or both, Sustain, the octave the
 // computer's keys play in), its drawbars as sliders in eighths, its percussion's switches, its
 // organ's knobs and its electric piano's, a section each as on its top, and the cable into its input
-// (ROTARY).
+// (ROTARY). Guitar is the guitar: a button to go and play at it, its chords (a choice, or the strings
+// open) with buttons that strum them down or up and mute them, its strings a row each with a button
+// for each fret (pressing the string there and plucking it while it is pressed; one stop among them,
+// the arrows going along and across), its pickup, and its knobs and its amp's as sliders.
 // Sound is the volume and mute over the room's sound, and a MIDI device to play from, where the
 // browser has Web MIDI.
 // On a TV (common's tv.js) the remote reaches only the card, so Wave is in it, and there is nothing
 // to copy a link to: the invite link is shown to type on another device. Fullscreen and Enter VR
-// are not offered there (main.js), nor the synth's keys or the keyboard's (its remote plays them
-// there).
+// are not offered there (main.js), nor the synth's keys, the keyboard's or the guitar's frets (its
+// remote plays them there).
 import { KNOBS, PADS, ROWS, keyLabel, knobText } from './drums.js';
 import { TEMPO } from './clock.js';
 import { STEPS } from './pattern.js';
@@ -47,6 +50,7 @@ import { KEYS, LOWEST, NOTE_KEYS, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBla
 import { ARP_MODES, ARP_RANGES } from './arp.js';
 import { SEQ_OCTAVES, SEQ_RANGE } from './seq.js';
 import { KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_OCTAVES, KEYS_SECTIONS, KEYS_SOUNDS, KEYS_SWITCHES, drawbarStep, isDrawbar, keysText, registration } from './keys.js';
+import { CHORDS, CHORD_KEYS, GUITAR_KNOBS, GUITAR_SECTIONS, GUITAR_STRINGS, PICKUPS, guitarText } from './guitar.js';
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -188,13 +192,78 @@ function markKeys(keys, lowest, notes) {
   }
 }
 
+/** The frets the card's strings have a button for, after the open string's (0): an octave each. */
+const CARD_FRETS = 12;
+
+/**
+ * The guitar's strings, a row each, the high E's at the top (as tablature writes them, and as they lie
+ * seen from where it is played), a button for each fret from the open string's: each pressing its
+ * string there and plucking it while it is pressed (on.down(s, fret, velocity), then on.up(s)), as on
+ * the neck; for a key's Enter or Space, or a screen reader, a moment (on.tap(s, fret)). One stop among
+ * them: the arrows go along a string and across them, Home and End to its ends. Each is named by its
+ * fret, and its note for a screen reader ('3, G 2'), in a group named by its string.
+ * @param {{ down: (s: number, fret: number, velocity: number) => void, up: (s: number) => void, tap: (s: number, fret: number) => void }} on
+ */
+function fretGrid(on) {
+  /** the presses on the frets: which (s × 32 + fret) each pointer holds @type {Map<number, number>} */
+  const held = new Map();
+  /** frets pressed by a pointer whose click (which ends the press) is still to come @type {Set<number>} */
+  const pressed = new Set();
+  const n = GUITAR_STRINGS.length;
+  /** each string's buttons, the low E's first, from the open string's */
+  const frets = GUITAR_STRINGS.map((string, s) => Array.from({ length: CARD_FRETS + 1 }, (_, f) => {
+    const code = s * 32 + f;
+    const b = el('button', { class: 'fret', type: 'button', tabindex: s === n - 1 && !f ? '0' : '-1' },
+      String(f), el('span', { class: 'sr-only' }, `, ${spokenNote(string.note + f)}`));
+    b.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      held.set(e.pointerId, code);
+      pressed.add(code);
+      b.setPointerCapture?.(e.pointerId);
+      on.down(s, f, 0.85);
+    });
+    const up = (/** @type {PointerEvent} */ e) => {
+      if (held.get(e.pointerId) !== code) return;
+      held.delete(e.pointerId);
+      if (e.type !== 'pointerup') pressed.delete(code); // no click to come
+      on.up(s);
+    };
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+    b.addEventListener('lostpointercapture', up);
+    b.addEventListener('click', () => {
+      if (pressed.delete(code)) return;
+      on.tap(s, f);
+    });
+    return b;
+  }));
+  const rows = GUITAR_STRINGS.map((string, s) => el('div', { class: 'fret-row', role: 'group', 'aria-label': `${string.name} string` },
+    el('span', { class: 'string-name', 'aria-hidden': 'true' }, string.label), ...frets[s]));
+  const box = el('div', { class: 'fretboard' }, ...[...rows].reverse());
+  box.addEventListener('keydown', (e) => {
+    const s = frets.findIndex((row) => row.includes(e.target)), key = e.key;
+    if (s < 0) return;
+    const f = frets[s].indexOf(e.target);
+    const to = key === 'ArrowLeft' ? [s, f - 1] : key === 'ArrowRight' ? [s, f + 1] : key === 'ArrowUp' ? [s + 1, f] : key === 'ArrowDown' ? [s - 1, f]
+      : key === 'Home' ? [s, 0] : key === 'End' ? [s, CARD_FRETS] : null;
+    if (!to) return;
+    e.preventDefault();
+    e.stopPropagation(); // not walking's
+    const b = frets[Math.min(n - 1, Math.max(0, to[0]))][Math.min(CARD_FRETS, Math.max(0, to[1]))];
+    for (const row of frets) for (const x of row) if (x !== b && x.getAttribute('tabindex') !== '-1') x.setAttribute('tabindex', '-1');
+    b.setAttribute('tabindex', '0');
+    b.focus();
+  });
+  return { frets, rows, box };
+}
+
 // tv: walking with a remote, and a line for TalkBack, which keeps the arrows (the view is described
 // by the hint); tv-card: in the card. The hallway's.
 const HINTS = {
-  touch: 'Drag to look · tap the floor to walk there, or the drums, the synth, the rack or the keys to play them · tap the doorway to go back',
-  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, or the drums, the synth, the rack or the keys to play them',
-  gamepad: 'Right stick to look · left stick to walk · A on the drums, the synth, the rack or the keys plays them, on the doorway goes back',
-  tv: 'Arrows: walk and turn · OK: the drums, the synth, the rack, the keys, the doorway or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
+  touch: 'Drag to look · tap the floor to walk there, or the drums, the synth, the rack, the keys or the guitar to play them · tap the doorway to go back',
+  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, or the drums, the synth, the rack, the keys or the guitar to play them',
+  gamepad: 'Right stick to look · left stick to walk · A on the drums, the synth, the rack, the keys or the guitar plays them, on the doorway goes back',
+  tv: 'Arrows: walk and turn · OK: the drums, the synth, the rack, the keys, the guitar, the doorway or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
   'tv-card': 'Up, down: from control to control · left, right: a choice · OK: choose · Back: walk again',
 };
 // At the drum board, playing it (controls.js at).
@@ -225,13 +294,20 @@ const KEYS_HINTS = {
   gamepad: 'Right stick to aim · A plays the key in the middle, sets a drawbar, presses a button · B steps away',
   tv: 'Arrows: choose a key, up and down an octave · OK: play it · Back: step away · Menu: its sounds, drawbars and knobs',
 };
+// At the guitar, playing it.
+const GUITAR_HINTS = {
+  touch: 'Swipe across the strings over the body · press a string on the neck at a fret, slide along it, bend it across · tap a chord · tap the floor to step away',
+  mouse: 'Press 1–8 and Q–I for a chord, Z–N to pluck a string, the down and up arrows to strum, M to mute · drag across the strings, or press one on the neck · Esc steps away',
+  gamepad: 'Right stick to aim · A plucks the string in the middle, presses it at its fret, chooses a chord · B steps away',
+  tv: 'Left, right: choose a chord · OK or down: strum down · up: strum up · Back: step away · Menu: its chords and knobs',
+};
 // With something on the walls (config.js's pieces), each names the pictures too.
 const PIECE_HINTS = {
   ...HINTS,
-  touch: 'Drag to look · tap the floor to walk there, a picture, or the drums, the synth, the rack or the keys to play them · tap the doorway to go back',
-  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, a picture, or the drums, the synth, the rack or the keys to play them',
-  gamepad: 'Right stick to look · left stick to walk · A on a picture goes to it, on the drums, the synth, the rack or the keys plays them, on the doorway goes back',
-  tv: 'Arrows: walk and turn · OK: the drums, the synth, the rack, the keys, the doorway, a picture or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
+  touch: 'Drag to look · tap the floor to walk there, a picture, or the drums, the synth, the rack, the keys or the guitar to play them · tap the doorway to go back',
+  mouse: 'Drag to look around · WASD or arrows to walk · click the floor to walk there, a picture, or the drums, the synth, the rack, the keys or the guitar to play them',
+  gamepad: 'Right stick to look · left stick to walk · A on a picture goes to it, on the drums, the synth, the rack, the keys or the guitar plays them, on the doorway goes back',
+  tv: 'Arrows: walk and turn · OK: the drums, the synth, the rack, the keys, the guitar, the doorway, a picture or the panel in the middle · Menu or hold Back: the instruments, settings and the shared session\nWith TalkBack: channel up and down walk, rewind and fast-forward turn',
 };
 
 export class Overlay {
@@ -797,6 +873,102 @@ export class Overlay {
     this.keysPlayRow = el('div', { class: 'actions' }, this.playKeys);
     this.keysPart = el('div', { class: 'part keys', id: 'keys', hidden: '' }, this.keysPlayRow, this.keysRow, this.keysSoundBox, drawbarsBox, this.percBox, ...soundBoxes,
       this.keysCablesBox);
+    // The guitar, as on it: going to play at it, its chords (strummed down or up, muted), its strings'
+    // frets, its pickup, and its knobs and its amp's.
+    /** Play at the guitar, or step away from it. */
+    this.onPlayGuitar = () => {};
+    /** (id) a chord fretted (guitar.js CHORDS' id), or none (null): the strings open. @type {(id: string | null) => void} */
+    this.onChord = () => {};
+    /** (down) the strings strummed, down (the low E first) or up. @type {(down: boolean) => void} */
+    this.onStrum = () => {};
+    /** The strings muted. */
+    this.onMuteStrings = () => {};
+    /** (s, fret, velocity) string s (the low E 0) pressed at a fret and plucked, until onFretUp(s). @type {(s: number, fret: number, velocity: number) => void} */
+    this.onFretDown = () => {};
+    /** (s) that string let go. @type {(s: number) => void} */
+    this.onFretUp = () => {};
+    /** (s, fret) string s pressed at a fret a moment and plucked: a key's Enter or Space, a screen reader. @type {(s: number, fret: number) => void} */
+    this.onFretTap = () => {};
+    /** (id) its pickup (guitar.js PICKUPS). @type {(id: string) => void} */
+    this.onPickup = () => {};
+    /** (id, value) a knob of the guitar's or its amp's set 0…1. @type {(id: import('./guitar.js').GuitarKnob, value: number) => void} */
+    this.onGuitarKnob = () => {};
+    /** The guitar as it comes. */
+    this.onResetGuitar = () => {};
+    this.guitarToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'guitar' }, 'Guitar');
+    this.guitarToggle.addEventListener('click', () => this.openGuitar(this.guitarPart.hidden));
+    this.playGuitar = el('button', { class: 'chip', type: 'button' }, 'Play at the guitar');
+    this.playGuitar.addEventListener('click', () => this.onPlayGuitar());
+    // Its chords, four to a row as the two rows of eight are on it, each with the key that frets it
+    // ('E (E major), key 1', the words in brackets and ', key ' for a screen reader only); the strings
+    // open; strumming them and muting them, each as it is pressed, as a pad plays (a key, a screen
+    // reader or the TV's OK gives only the click, which plays it).
+    this.chordName = el('span', {}, 'Open strings');
+    /** Each chord's choice, '' for the strings open. @type {Map<string, HTMLInputElement>} */
+    this.chordInputs = new Map();
+    const chordChoice = (/** @type {string} */ id, /** @type {(string | HTMLElement)[]} */ ...words) => {
+      const input = el('input', { type: 'radio', name: 'guitar-chord', value: id });
+      input.addEventListener('change', () => {
+        if (input.checked) this.onChord(id || null);
+      });
+      this.chordInputs.set(id, input);
+      return el('label', id ? {} : { class: 'open' }, input, ...words);
+    };
+    const chords = [chordChoice('', 'Open strings'),
+      ...CHORDS.map((c, i) => chordChoice(c.id, c.label, el('span', { class: 'sr-only' }, ` (${c.name}), key `), el('kbd', {}, keyLabel(CHORD_KEYS[i]))))];
+    /** @type {(label: string, play: () => void) => HTMLElement} */
+    const playButton = (label, play) => {
+      let at = -Infinity;
+      const b = el('button', { class: 'chip', type: 'button' }, label);
+      b.addEventListener('pointerdown', (e) => {
+        if (e.button > 0) return;
+        at = e.timeStamp;
+        play();
+      });
+      b.addEventListener('click', (e) => {
+        const pressed = e.timeStamp - at < 1500;
+        at = -Infinity;
+        if (!pressed) play();
+      });
+      return b;
+    };
+    this.chordsBox = el('fieldset', { class: 'presets' }, el('legend', {}, 'Chord: ', this.chordName),
+      el('div', { class: 'choices chords' }, ...chords),
+      el('div', { class: 'actions' }, playButton('Strum down', () => this.onStrum(true)), playButton('Strum up', () => this.onStrum(false)), playButton('Mute strings', () => this.onMuteStrings())));
+    // Its strings, a row of frets each (the one each plays at marked), as on its neck.
+    const grid = fretGrid({ down: (s, f, v) => this.onFretDown(s, f, v), up: (s) => this.onFretUp(s), tap: (s, f) => this.onFretTap(s, f) });
+    /** Each string's fret buttons (the low E's first), and its row. */
+    this.frets = grid.frets;
+    this.fretRows = grid.rows;
+    /** @private each string's fret marked, and whether a finger's (setStrings): fret × 2 + finger, NaN none yet */
+    this._fretsShown = GUITAR_STRINGS.map(() => NaN);
+    this.fretsBox = el('fieldset', { class: 'frets' }, el('legend', {}, 'Strings'), grid.box);
+    // Its pickup, and its knobs and its amp's, a section each, as on it.
+    this.pickupName = el('span', {}, PICKUPS[1].name);
+    /** Each pickup's choice. @type {Map<string, HTMLInputElement>} */
+    this.pickupInputs = new Map();
+    const pickups = PICKUPS.map((p) => {
+      const input = el('input', { type: 'radio', name: 'guitar-pickup', value: p.id });
+      input.addEventListener('change', () => {
+        if (input.checked) this.onPickup(p.id);
+      });
+      this.pickupInputs.set(p.id, input);
+      return el('label', {}, input, p.label[0] + p.label.slice(1).toLowerCase());
+    });
+    this.pickupBox = el('fieldset', { class: 'pickup' }, el('legend', {}, 'Pickup: ', this.pickupName), el('div', { class: 'choices three' }, ...pickups));
+    /** Each of the guitar's sliders and the words for its setting. @type {Map<import('./guitar.js').GuitarKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
+    this.guitarInputs = new Map();
+    const guitarBoxes = GUITAR_SECTIONS.map((s) => el('fieldset', { class: 'section' }, el('legend', {}, s.name),
+      ...GUITAR_KNOBS.filter((k) => k.section === s.id).map((k) => {
+        const row = slider(k.name, (v) => this.onGuitarKnob(k.id, v));
+        this.guitarInputs.set(k.id, row);
+        return row.row;
+      })));
+    this.resetGuitar = el('button', { class: 'chip', type: 'button' }, 'As it comes');
+    this.resetGuitar.addEventListener('click', () => this.onResetGuitar());
+    this.guitarPlayRow = el('div', { class: 'actions' }, this.playGuitar);
+    this.guitarPart = el('div', { class: 'part guitar', id: 'guitar', hidden: '' }, this.guitarPlayRow, this.chordsBox, this.fretsBox, this.pickupBox, ...guitarBoxes,
+      el('div', { class: 'actions' }, this.resetGuitar));
     // The room's sound: its volume and Mute, and a MIDI device to play from.
     this.soundToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'sound' }, 'Sound');
     this.soundToggle.addEventListener('click', () => this.openSound(this.sound.hidden));
@@ -811,7 +983,7 @@ export class Overlay {
     this.midiStatus = el('p', { class: 'midi-status', role: 'status' });
     this.midiBox = el('div', { class: 'midi', hidden: '' }, this.midi, this.midiStatus);
     this.sound = el('div', { class: 'part sound', id: 'sound', hidden: '' }, volume.row, el('label', { class: 'check' }, this.mute, 'Mute'), this.midiBox);
-    /** @private where the visitor plays (controls.js at): 'board', 'synth', 'rack', 'keys', or null @type {'board' | 'synth' | 'rack' | 'keys' | null} */
+    /** @private where the visitor plays (controls.js at): 'board', 'synth', 'rack', 'keys', 'guitar', or null @type {'board' | 'synth' | 'rack' | 'keys' | 'guitar' | null} */
     this._at = null;
     // In a shared session: how it's going, the visitor's name in it, and on a TV the invite link.
     this.status = el('p', { class: 'together-status' });
@@ -832,12 +1004,13 @@ export class Overlay {
       el('p', { class: 'tagline' }, room.description),
       ...(this.walls ? [this.walls] : []),
       this.inRoom = el('section', { class: 'in-room', 'aria-label': 'In the room' },
-        el('div', { class: 'actions' }, this.session, ...(tv ? [this.wave] : []), this.drumsToggle, this.synthToggle, this.rackToggle, this.keysToggle, this.soundToggle, this.settingsToggle),
+        el('div', { class: 'actions' }, this.session, ...(tv ? [this.wave] : []), this.drumsToggle, this.synthToggle, this.rackToggle, this.keysToggle, this.guitarToggle, this.soundToggle, this.settingsToggle),
         this.together,
         this.drums,
         this.synth,
         this.rack,
         this.keysPart,
+        this.guitarPart,
         this.sound,
         this.settings));
     this.hint = el('p', { class: 'hint', id: 'hint' });
@@ -882,7 +1055,7 @@ export class Overlay {
    * OK does there, as music's does on the gramophone.
    */
   _hintText() {
-    const playing = this._at === 'board' ? BOARD_HINTS : this._at === 'synth' ? SYNTH_HINTS : this._at === 'rack' ? RACK_HINTS : this._at === 'keys' ? KEYS_HINTS : null;
+    const playing = this._at === 'board' ? BOARD_HINTS : this._at === 'synth' ? SYNTH_HINTS : this._at === 'rack' ? RACK_HINTS : this._at === 'keys' ? KEYS_HINTS : this._at === 'guitar' ? GUITAR_HINTS : null;
     if (playing && this._how in playing) return playing[this._how];
     const text = this._hints[this._how];
     if (this._how !== 'tv' || this._aimed < 0) return text;
@@ -948,11 +1121,11 @@ export class Overlay {
   }
 
   /**
-   * Playing at the drum board, the synth, the rack or the keyboard (controls.js at: 'board', 'synth',
-   * 'rack', 'keys'), or not (null): the card's button there steps away, the others go to play, and the
-   * hint says how to play there, shown again; stepping away, the hint changes back where it is still
-   * shown.
-   * @param {'board' | 'synth' | 'rack' | 'keys' | null} at
+   * Playing at the drum board, the synth, the rack, the keyboard or the guitar (controls.js at:
+   * 'board', 'synth', 'rack', 'keys', 'guitar'), or not (null): the card's button there steps away,
+   * the others go to play, and the hint says how to play there, shown again; stepping away, the hint
+   * changes back where it is still shown.
+   * @param {'board' | 'synth' | 'rack' | 'keys' | 'guitar' | null} at
    */
   setPlaying(at) {
     if (at === this._at) return;
@@ -961,6 +1134,7 @@ export class Overlay {
     this.playSynth.textContent = at === 'synth' ? 'Step away from the synth' : 'Play at the synth';
     this.playRack.textContent = at === 'rack' ? 'Step away from the rack' : 'Play at the rack';
     this.playKeys.textContent = at === 'keys' ? 'Step away from the keys' : 'Play at the keys';
+    this.playGuitar.textContent = at === 'guitar' ? 'Step away from the guitar' : 'Play at the guitar';
     if (at && this._how !== 'tv-card') this.setHint(this._how);
     else {
       this.hint.textContent = this._hintText();
@@ -990,6 +1164,12 @@ export class Overlay {
   openKeys(open) {
     this.keysPart.hidden = !open;
     this.keysToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  /** Guitar open in the card, or closed. */
+  openGuitar(open) {
+    this.guitarPart.hidden = !open;
+    this.guitarToggle.setAttribute('aria-expanded', String(open));
   }
 
   /** Sound open in the card, or closed. */
@@ -1086,6 +1266,55 @@ export class Overlay {
   /** The notes sounding from the keyboard's keys held down (keys.js Keys down): those keys marked. @param {ReadonlySet<number>} notes */
   setKeysNotes(notes) {
     markKeys(this.keysKeys, KEYS_LOWEST, notes);
+  }
+
+  /**
+   * The guitar as it is (guitar.js Guitar): its chord (its name over the choice, else the strings
+   * open) and its pickup.
+   * @param {{ chord: string | null, chordName: string, pickup: string }} guitar
+   */
+  setGuitar({ chord, chordName, pickup }) {
+    if (this.chordName.textContent !== chordName) this.chordName.textContent = chordName;
+    const id = chord ?? '';
+    for (const [c, input] of this.chordInputs) if (input.checked !== (c === id)) input.checked = c === id;
+    const name = PICKUPS.find((p) => p.id === pickup)?.name ?? '';
+    if (this.pickupName.textContent !== name) this.pickupName.textContent = name;
+    for (const [p, input] of this.pickupInputs) if (input.checked !== (p === pickup)) input.checked = p === pickup;
+  }
+
+  /** The guitar's knobs and its amp's (guitar.js): their sliders and words. @param {Readonly<Record<import('./guitar.js').GuitarKnob, number>>} knobs */
+  setGuitarKnobs(knobs) {
+    for (const [id, { input, out }] of this.guitarInputs) {
+      const value = String(Math.round(knobs[id] * 100));
+      if (input.value !== value) input.value = value;
+      const text = guitarText(id, knobs[id]);
+      if (out.textContent !== text) {
+        out.textContent = text;
+        input.setAttribute('aria-valuetext', text);
+      }
+    }
+  }
+
+  /**
+   * Where each string is fretted now (guitar.js fretOf: -1 muted, 0 open), and whether a finger
+   * presses it there (else the chord frets it): that fret's button marked, the chord's or a finger's
+   * (an open string's only where a finger presses it), a muted string's open one struck through. Seen,
+   * not said, as the step playing.
+   * @param {readonly number[]} frets
+   * @param {readonly boolean[]} fingers
+   */
+  setStrings(frets, fingers) {
+    for (const [s, row] of this.frets.entries()) {
+      const shown = frets[s] * 2 + (fingers[s] ? 1 : 0);
+      if (shown === this._fretsShown[s]) continue;
+      this._fretsShown[s] = shown;
+      for (const [f, b] of row.entries()) {
+        const at = frets[s] === f && (f > 0 || fingers[s]), finger = at && fingers[s], chord = at && !fingers[s], muted = !f && frets[s] < 0;
+        if (b.classList.contains('finger') !== finger) b.classList.toggle('finger', finger);
+        if (b.classList.contains('chord') !== chord) b.classList.toggle('chord', chord);
+        if (b.classList.contains('muted') !== muted) b.classList.toggle('muted', muted);
+      }
+    }
   }
 
   /** Pad i's knobs (drums.js), i the pad last played: its name over the sliders, their places and their words. */
@@ -1336,8 +1565,8 @@ export class Overlay {
 
   /**
    * No 3D view: the way back, where the pieces lead (the rest are just named), and the drums, the
-   * synth, the rack, the keys and the sound, which play without one (open, each under its name, with
-   * nothing to walk up to).
+   * synth, the rack, the keys, the guitar and the sound, which play without one (open, each under its
+   * name, with nothing to walk up to).
    */
   noWebGL(message) {
     this.card.classList.add('alone');
@@ -1348,7 +1577,8 @@ export class Overlay {
     this.synthPlayRow.remove();
     this.rackPlayRow.remove();
     this.keysPlayRow.remove();
-    for (const [name, part] of [['Drums', this.drums], ['Synth', this.synth], ['Rack', this.rack], ['Keys', this.keysPart], ['Sound', this.sound]]) {
+    this.guitarPlayRow.remove();
+    for (const [name, part] of [['Drums', this.drums], ['Synth', this.synth], ['Rack', this.rack], ['Keys', this.keysPart], ['Guitar', this.guitarPart], ['Sound', this.sound]]) {
       part.hidden = false;
       this.card.append(el('section', { class: 'in-room' }, el('h2', { class: 'part-title' }, name), part));
     }

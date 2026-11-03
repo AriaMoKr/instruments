@@ -56,10 +56,10 @@ const CELL = 256;
 const BUTTON = 0.008;
 /**
  * What a hand's reticle shows on near the board (or the synth: its dials and buttons; or the rack: its
- * keys, knobs and buttons; or the keyboard: its drawbars, knobs and buttons), where its laser is a
- * stick.
+ * keys, knobs and buttons; or the keyboard: its drawbars, knobs and buttons; or the guitar: its chord
+ * buttons, its knobs and its pickup switch), where its laser is a stick.
  */
-const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton', 'drawbar', 'keysknob', 'keysbutton']);
+const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton', 'drawbar', 'keysknob', 'keysbutton', 'chord', 'guitarknob', 'pickup']);
 /**
  * A cable: its radius, its plug's length out of the panel and radius, how far it hangs (`sag`, and
  * `sagPer` metre between its ends, to `sagMax`), and how much farther the one carried reaches from
@@ -1215,8 +1215,10 @@ export class Kit {
   /**
    * In VR, per frame, after the controls' update (the rig's matrices are this frame's): each stick
    * shows while its hand holds a controller near the board, or where `nearAlso` says (the synth's
-   * keys, the rack's), and that hand's laser hides, its reticle too but on a knob, a jack, RUN, a
-   * step key, a dial, a button or the rack's keys, knobs and buttons; and each stick's tip, or
+   * keys, the rack's, the keyboard's, the guitar), and that hand's laser hides, its reticle too but on
+   * a knob, a jack, RUN, a step key, a dial, a button, the rack's keys, knobs and buttons, the
+   * keyboard's drawbars, knobs and buttons, or the guitar's chord buttons, knobs and switch; and each
+   * stick's tip, or
    * forefinger of a hand without one, plays a pad, or sets a step, it comes down on.
    * @param {Hand[]} hands
    * @param {THREE.XRHandSpace[]} fingers the hands' joints (renderer.xr.getHand)

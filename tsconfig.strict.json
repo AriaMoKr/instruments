@@ -13,6 +13,7 @@
     "public/js/synth.js", "public/js/synthboard.js", "public/js/arp.js", "public/js/seq.js",
     "public/js/rackboard.js", "public/js/lfo.js", "public/js/keys.js", "public/js/keysboard.js",
     "public/js/filter.js", "public/js/reverb.js", "public/js/mixer.js", "public/js/envelope.js",
+    "public/js/strings.js", "public/js/strings-worklet.js", "public/js/guitar.js", "public/js/guitarboard.js",
     "types/*.d.ts"
   ]
 }

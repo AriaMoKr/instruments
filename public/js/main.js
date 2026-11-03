@@ -36,6 +36,11 @@
 // drawbars, percussion and rotary speaker, and an electric piano, or both at once (keys.js), played
 // with its sixty-one keys on every device as the synth's are, from a computer's keys and a MIDI
 // keyboard, and in the card.
+// By the right wall, beside the rack, the electric guitar on its desk (guitarboard.js lays it out,
+// guitarkit.js draws it): six strings modelled as they are plucked (strings.js, on the audio thread)
+// through its pickups and its amp (guitar.js), played as a guitarist plays, a chord fretted, a string
+// plucked or all strummed, a string pressed at a fret, slid and bent, on every device, from a
+// computer's keys and a MIDI keyboard, and in the card.
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -66,6 +71,9 @@ import { RackKit } from './rackkit.js';
 import { KEYS_COUNT, KEYS_LOWEST, KEYS_SWITCHES, Keys, isDrawbar, keysText, switchWords } from './keys.js';
 import { KEYBOARD, layoutKeyboard } from './keysboard.js';
 import { KeysKit } from './keyskit.js';
+import { CHORDS, Guitar, PICKUPS, guitarText } from './guitar.js';
+import { layoutGuitar } from './guitarboard.js';
+import { GuitarKit } from './guitarkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { setAnisotropy } from './textures.js';
@@ -996,6 +1004,130 @@ overlay.onResetKeys = resetKeys;
 showKeys();
 showKeysKnobs();
 
+// ── The guitar ───────────────────────────────────────────────────────────────
+// Its six strings, modelled as they are plucked (strings.js, on the audio thread once the sound is
+// made), through its pickups, its knobs and its amp into the same sound; its knobs, its pickup and its
+// chord kept for the next visit (guitar.js). A string plucked: its key at the guitar (Z to N), a
+// press on it over the body or a sweep across them, in VR a stick or a forefinger across them (which
+// the controller feels). All strummed: the arrows down and up at it, the card's buttons, on a TV OK.
+// A string pressed at a fret and plucked, held until let go: a press on it over the neck (slid along
+// it, bent across it), in VR a tip down on it, a fret's button in the card; a click, A, OK or a
+// trigger on one presses it a moment. A chord fretted: its button, its key (1–8, Q–I), the arrows left
+// and right; the one lit pressed again, the strings open. Muted: M, its bridge, the card's button.
+// Where each string is fretted shows on it and in the card, and its chord on its display.
+
+const guitar = new Guitar(sound, { key: `${ROOM.id}.guitar` });
+/** The guitar in 3D (guitarkit.js), once the scene is made. @type {GuitarKit | null} */
+let guitarKit = null;
+let toldNoStrings = false;
+/** The guitar not heard: no Web Audio (noSound), or no AudioWorklet for its strings, said once. */
+function unheard() {
+  if (!sound.ctx) noSound();
+  else if (guitar.broken && !toldNoStrings) {
+    overlay.toast("This browser can't play the guitar's strings", 4);
+    toldNoStrings = true;
+  }
+}
+/** String s plucked, `velocity` 0…1, `pick` of its length from the bridge (strings.js PICK), `delay` seconds from now. */
+function pluckString(s, velocity, pick, delay = 0) {
+  const now = sound.wake()?.currentTime ?? 0;
+  if (!guitar.pluck(s, velocity, { at: now + delay, pick })) unheard();
+}
+/** Every string strummed, down (the low E first) or up. */
+function strum(down, velocity = 0.85) {
+  if (!guitar.strum(down, velocity)) unheard();
+}
+/** String s pressed at `fret` and plucked, held there until releaseString(s). */
+function pressFret(s, fret, velocity = 0.85) {
+  if (!guitar.press(s, fret, velocity)) unheard();
+}
+/** String s pressed at `fret` a moment and plucked (a click, OK, A, a trigger). */
+function tapFret(s, fret, velocity = 0.85) {
+  if (!guitar.tapFret(s, fret, velocity)) unheard();
+}
+/** The string pressed slid along the neck to `fret`. */
+const slideFret = (s, fret) => guitar.slide(s, fret);
+/** The string pressed bent `semitones` up. */
+const bendString = (s, semitones) => guitar.bend(s, semitones);
+/** The string pressed let go. */
+const releaseString = (s) => guitar.release(s);
+/** Every string muted: a palm laid on them. */
+const muteStrings = () => guitar.damp();
+/** A chord fretted (guitar.js CHORDS' id), or none (null: the strings open): on it and in the card. */
+function chooseChord(id) {
+  if (guitar.choose(id)) showGuitar();
+}
+/** Chord button i (or its key) pressed: its chord, or the strings open if it was lit, said. */
+function pressChord(i) {
+  const c = CHORDS[i];
+  if (!c) return;
+  chooseChord(guitar.chord === c.id ? null : c.id);
+  overlay.toast(guitar.chordName, 2);
+}
+/** The chord before or after the one fretted (the strings open before the first and after the last), said. */
+function pickChord(by) {
+  const n = CHORDS.length + 1, i = CHORDS.findIndex((c) => c.id === guitar.chord) + 1;
+  const next = (((i + by) % n) + n) % n;
+  chooseChord(next ? CHORDS[next - 1].id : null);
+  overlay.toast(guitar.chordName, 2);
+}
+/** A knob of the guitar's or its amp's set 0…1: heard at once, on it and its display, and in the card. */
+function setGuitarKnob(id, value) {
+  if (!Number.isFinite(value)) return;
+  guitar.setKnob(id, value);
+  const v = guitar.knobs[id];
+  guitarKit?.setKnob(id, v, guitarText(id, v));
+  overlay.setGuitarKnobs(guitar.knobs);
+  showGuitar(); // its display's lines: the pickup, the volume, the tone and the amp
+}
+/** A knob of the guitar's or its amp's turned by this much of its whole turn. */
+const turnGuitarKnob = (id, by) => setGuitarKnob(id, guitar.knobs[id] + by);
+/** The pickup switched (guitar.js PICKUPS' id). */
+function setPickup(id) {
+  if (guitar.setPickup(id)) showGuitar();
+}
+/** The guitar as it comes: its knobs, its pickup, the strings open. */
+function resetGuitar() {
+  guitar.reset();
+  showGuitarKnobs();
+  showGuitar();
+}
+/** The guitar as it is (its chord, its pickup, its knobs), on it (its display, its lights, its switch) and in the card. */
+function showGuitar() {
+  const state = { chord: guitar.chord, chordName: guitar.chordName, pickup: guitar.pickup, knobs: guitar.knobs };
+  guitarKit?.setState(state);
+  overlay.setGuitar(state);
+}
+/** Every knob at once (as it comes): on the guitar and in the card. */
+function showGuitarKnobs() {
+  guitarKit?.setKnobs(guitar.knobs);
+  overlay.setGuitarKnobs(guitar.knobs);
+}
+/** Where each string is fretted (-1 muted, 0 open), and whether a finger presses it there rather than the chord. */
+const stringFrets = guitar.pressed.map(() => 0), fingered = guitar.pressed.map(() => false);
+/** Where each string is fretted now, and how far it is bent: on the guitar and in the card. */
+function showStrings() {
+  for (let s = 0; s < stringFrets.length; s++) {
+    stringFrets[s] = guitar.fretOf(s);
+    fingered[s] = guitar.pressed[s] >= 0;
+  }
+  guitarKit?.setStrings(stringFrets, fingered, guitar.bends);
+  overlay.setStrings(stringFrets, fingered);
+}
+guitar.onStrings = showStrings;
+overlay.onChord = chooseChord;
+overlay.onStrum = (down) => strum(down);
+overlay.onMuteStrings = muteStrings;
+overlay.onFretDown = (s, fret, velocity) => pressFret(s, fret, velocity);
+overlay.onFretUp = releaseString;
+overlay.onFretTap = (s, fret) => tapFret(s, fret);
+overlay.onPickup = setPickup;
+overlay.onGuitarKnob = setGuitarKnob;
+overlay.onResetGuitar = resetGuitar;
+showGuitar();
+showGuitarKnobs();
+showStrings();
+
 for (const type of ['pointerup', 'touchend', 'keydown']) {
   addEventListener(type, () => {
     if (sound.ctx) sound.wake();
@@ -1005,27 +1137,30 @@ for (const type of ['pointerup', 'touchend', 'keydown']) {
 addEventListener('pagehide', () => {
   keys.allOff();
   synth.allOff();
+  guitar.allOff();
   sound.sleep();
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) return;
   keys.allOff();
   synth.allOff();
+  guitar.allOff();
   sound.sleep();
 });
 
 // From a MIDI device (midi.js): asked for with the card's button, or at once when the visitor has
 // let this site use MIDI before. Its notes on channel 10 are the General MIDI drums' (drums.js
 // padForNote); on another they are the synth's, or the drums' while the visitor plays at the board,
-// or the keyboard's while at it (each let go where it was played); its sustain pedal the synth's, or
-// the keyboard's while at it (let go where it went down); its mod wheel and pitch bend the synth's. A
-// note isn't a press: until the page has had one, the browser keeps it quiet, and says so.
+// or the keyboard's or the guitar's while at it (each let go where it was played: the guitar's on a
+// string where it falls under the hand); its sustain pedal the synth's, or the keyboard's while at it
+// (let go where it went down); its mod wheel and pitch bend the synth's. A note isn't a press: until
+// the page has had one, the browser keeps it quiet, and says so.
 let midi = null;
 let toldQuiet = false;
-/** Where the visitor plays (controls.js at): at the board a MIDI keyboard's notes are the drums', at the keyboard its. @type {'board' | 'synth' | 'rack' | 'keys' | null} */
+/** Where the visitor plays (controls.js at): at the board a MIDI keyboard's notes are the drums', at the keyboard or the guitar its. @type {'board' | 'synth' | 'rack' | 'keys' | 'guitar' | null} */
 let playingAt = null;
-/** The MIDI notes held on the keyboard (the rest held are the synth's). */
-const midiKeys = new Set();
+/** The MIDI notes held on the keyboard, and on the guitar (the rest held are the synth's). */
+const midiKeys = new Set(), midiGuitar = new Set();
 /** Where a MIDI keyboard's sustain pedal went down: on the keyboard, else on the synth. */
 let pedalOnKeys = false;
 async function listen() {
@@ -1045,9 +1180,13 @@ async function listen() {
         } else if (playingAt === 'keys') {
           midiKeys.add(m.note);
           keysOn(m.note, m.velocity);
+        } else if (playingAt === 'guitar') {
+          midiGuitar.add(m.note);
+          if (!guitar.noteOn(m.note, m.velocity)) unheard();
         } else noteOn(m.note, m.velocity);
       } else if (m.type === 'off') {
         if (midiKeys.delete(m.note)) keysOff(m.note);
+        else if (midiGuitar.delete(m.note)) guitar.noteOff(m.note);
         else noteOff(m.note);
       } else if (m.type === 'sustain') {
         if (m.on) pedalOnKeys = playingAt === 'keys';
@@ -1058,7 +1197,9 @@ async function listen() {
       else {
         keys.allOff();
         synth.allOff();
+        guitar.allOff();
         midiKeys.clear();
+        midiGuitar.clear();
       }
     }, (names) => overlay.setMidi(names.length ? `Playing from ${names.join(', ')}` : 'No MIDI device is plugged in: plug one in to play from it'));
   } catch (err) {
@@ -1077,7 +1218,7 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ antialias: true });
 } catch (err) {
-  overlay.noWebGL('This browser cannot show the room in 3D, but its drums, its synth, its sequencer and its keys play here in the card. The way back to the Hallway is above.');
+  overlay.noWebGL('This browser cannot show the room in 3D, but its drums, its synth, its sequencer, its keys and its guitar play here in the card. The way back to the Hallway is above.');
   throw err;
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -1087,7 +1228,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a keyboard to its left (sixty-one keys, nine drawbars, and the knobs and buttons of an organ and an electric piano), a synth to its right (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), a rack beside that (a clock, a sequencer of sixteen steps with a knob for each note, a delay, an LFO, an envelope, a mixer, a filter and a reverb), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a keyboard to its left (sixty-one keys, nine drawbars, and the knobs and buttons of an organ and an electric piano), a synth to its right (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), a rack beside that (a clock, a sequencer of sixteen steps with a knob for each note, a delay, an LFO, an envelope, a mixer, a filter and a reverb), an electric guitar on a desk by the right wall (six strings over fifteen frets, sixteen chord buttons, its knobs and pickup switch, and an amp's knobs), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -1112,12 +1253,14 @@ const L = layoutRoom(ROOM, { doorWidth, doorHeight });
 const room = buildRoom(L, { colors: ROOM.colors, skyYaw: ROOM.skyYaw, glow, name: leadsTo, anisotropy });
 scene.add(room.group);
 // The drum board against the far wall, in the room's light, and the synth beside it, likewise, and
-// the rack beside that; the keyboard on the board's other side; the cables between their jacks, the
-// board's kit's (its own, then the synth's, the rack's and the keyboard's).
+// the rack beside that; the keyboard on the board's other side; the guitar by the right wall, past
+// the rack; the cables between their jacks, the board's kit's (its own, then the synth's, the rack's
+// and the keyboard's).
 const board = layoutBoard(L);
 const synthDesk = layoutSynth(L, board);
 const rackDesk = layoutRack(L, synthDesk);
 const keysDesk = layoutKeyboard(L, board, rackDesk);
+const guitarDesk = layoutGuitar(L, rackDesk);
 kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 kit.addJacks(synthDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise));
 kit.addJacks(rackDesk, RACK.knob.h);
@@ -1139,6 +1282,8 @@ showReverb();
 scene.add(rackKit.group);
 keysKit = new KeysKit(keysDesk, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 scene.add(keysKit.group);
+guitarKit = new GuitarKit(guitarDesk, { lit: room.lit, lightColor: room.lightColor, anisotropy });
+scene.add(guitarKit.group);
 showPatch();
 showSynth();
 showSynthKnobs();
@@ -1147,6 +1292,9 @@ showSeq();
 showKeys();
 showKeysKnobs();
 showKeysNotes();
+showGuitar();
+showGuitarKnobs();
+showStrings();
 // Through the doorway, the view the Hallway publishes from its door to here (its views.json); until
 // it has loaded, or when there is none (a Hallway without this door yet), its glow and name.
 const views = hallwayViews(way, ROOM.id);
@@ -1157,19 +1305,24 @@ room.loadPictures().then(() => {
   pictured = true;
 });
 
-const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board, synth: synthDesk, rack: rackDesk, keyboard: keysDesk });
+const controls = new Controls({ renderer, camera, rig, scene, dom: renderer.domElement, layout: L, board, synth: synthDesk, rack: rackDesk, keyboard: keysDesk, guitar: guitarDesk });
 controls.lowest = () => synth.lowest;
 controls.keysOctave = () => keys.octave;
 controls.pulled = (id) => keys.knobs[id];
 // In VR: a stick in each hand that holds a controller, and the hands' joints, for a forefinger to
-// play with (kit.js, and the synth's keys: synthkit.js, the rack's: rackkit.js, and the keyboard's:
-// keyskit.js), moving with the rig as the controllers do.
+// play with (kit.js, and the synth's keys: synthkit.js, the rack's: rackkit.js, the keyboard's:
+// keyskit.js, and the guitar: guitarkit.js), moving with the rig as the controllers do.
 kit.holdSticks(controls.hands);
 const fingers = [renderer.xr.getHand(0), renderer.xr.getHand(1)];
 rig.add(...fingers);
-/** In VR, whether a hand at (x, y, z) is near the synth's keys or the rack's, or the keyboard's, for its stick to show there too. */
+/**
+ * In VR, whether a hand at (x, y, z) is near the synth's keys or the rack's, the keyboard's, or the
+ * guitar (its desk turned: its front faces −x, its left end at its place's z), for its stick to show
+ * there too.
+ */
 const nearKeys = (x, y, z) => y > 0.3 && ((x > synthDesk.x0 - 0.5 && x < rackDesk.x1 + 0.5 && z > synthDesk.zBack - 0.2 && z < synthDesk.zFront + 0.9)
-  || (x > keysDesk.x0 - 0.5 && x < keysDesk.x1 + 0.5 && z > keysDesk.zBack - 0.2 && z < keysDesk.zFront + 0.9));
+  || (x > keysDesk.x0 - 0.5 && x < keysDesk.x1 + 0.5 && z > keysDesk.zBack - 0.2 && z < keysDesk.zFront + 0.9)
+  || (x > guitarDesk.place.x - guitarDesk.zFront - 0.9 && z > guitarDesk.place.z - 0.5 && z < guitarDesk.place.z + guitarDesk.width + 0.5));
 const nav = loadNav();
 controls.setNav(nav);
 // The accessibility settings every site on the origin shares (common/access.js, hallway.access):
@@ -1280,7 +1433,8 @@ if (tv) {
   // Playing at the board, OK plays the pad the arrows chose, and Menu goes to its steps; at the
   // synth, the key they chose, and Menu goes to its sounds; at the rack, OK plays or rests the step
   // they chose, and Menu goes to the sequencer's steps; at the keyboard, the key they chose, and Menu
-  // goes to its sound.
+  // goes to its sound; at the guitar OK strums down the chord the arrows chose (up and down strum
+  // too), and Menu goes to its chords.
   remote = new Remote({
     root: overlay.root,
     view: renderer.domElement,
@@ -1289,10 +1443,11 @@ if (tv) {
       else if (controls.at === 'synth') tapNote(synth.lowest + chosenKey);
       else if (controls.at === 'rack') toggleSeqKey('seq', chosenStep);
       else if (controls.at === 'keys') tapKeys(chosenNote);
+      else if (controls.at === 'guitar') strum(true);
       else controls.useMiddle();
     },
     step: stepBack,
-    first: () => (controls.at === 'board' ? overlay.stepsBox : controls.at === 'synth' ? overlay.presetsBox : controls.at === 'rack' ? overlay.seqBox : controls.at === 'keys' ? overlay.keysSoundBox : null),
+    first: () => (controls.at === 'board' ? overlay.stepsBox : controls.at === 'synth' ? overlay.presetsBox : controls.at === 'rack' ? overlay.seqBox : controls.at === 'keys' ? overlay.keysSoundBox : controls.at === 'guitar' ? overlay.chordsBox : null),
   });
   remote.onMode = (inCard) => overlay.setHint(inCard ? 'tv-card' : 'tv');
   remote.answerApp(tv);
@@ -1392,10 +1547,12 @@ controls.onPlaying = (at) => {
   overlay.setPlaying(at);
   if (!at && !controls.goingTo) putDown(); // stepped away; walking to another desk, it comes too
   if (at) sound.wake(); // ready for the first pad or key: the walk here began with a press
+  if (at === 'guitar') void guitar.prepare(); // its strings made now, ready for the first pluck
   if (at && remote) {
     if (at === 'board') overlay.openDrums(true);
     else if (at === 'synth') overlay.openSynth(true);
     else if (at === 'rack') overlay.openRack(true);
+    else if (at === 'guitar') overlay.openGuitar(true);
     else overlay.openKeys(true);
     remote.forget(); // Menu goes to its steps, or its sounds, now
   }
@@ -1568,6 +1725,56 @@ keysKit.onKeyDown = (k, velocity, source) => {
 };
 keysKit.onKeyUp = (k) => keysOff(KEYS_LOWEST + k);
 
+// ── The guitar's strings, chords, knobs and pickup switch ────────────────────
+// A string plucked, pressed at a fret, slid, bent and let go; strummed; muted; a chord fretted (and
+// said); a knob turned (a drag, the wheel, a stick); the pickup switched, said. In VR the controller
+// feels a string plucked, one pressed, a chord's button and the bridge. Walking up to it to play it,
+// and stepping away; on a TV the arrows choose a chord and strum.
+
+controls.onChord = pressChord;
+controls.onChordPick = pickChord;
+controls.onPluck = pluckString;
+controls.onStrum = strum;
+controls.onMuteStrings = muteStrings;
+controls.onFretDown = pressFret;
+controls.onFretSlide = slideFret;
+controls.onFretBend = bendString;
+controls.onFretUp = releaseString;
+controls.onFretTap = tapFret;
+controls.onPickup = (i) => {
+  const p = PICKUPS[i];
+  if (!p) return;
+  setPickup(p.id);
+  overlay.toast(p.name, 2);
+};
+controls.onGuitarKnob = turnGuitarKnob;
+overlay.onPlayGuitar = () => {
+  if (controls.at === 'guitar') controls.stepAway();
+  else {
+    remote?.walk(); // as the board's: the arrows choose a chord there and strum, OK strums, Menu goes to its chords
+    controls.walkToGuitar();
+  }
+};
+guitarKit.onPluck = (s, velocity, pick, delay, source) => {
+  pluckString(s, velocity, pick, delay);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.1 + 0.4 * velocity, 10);
+};
+guitarKit.onPress = (s, fret, velocity, source) => {
+  pressFret(s, fret, velocity);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.15 + 0.5 * velocity, 14);
+};
+guitarKit.onSlide = slideFret;
+guitarKit.onBend = bendString;
+guitarKit.onRelease = releaseString;
+guitarKit.onChord = (i, source) => {
+  pressChord(i);
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.35, 14);
+};
+guitarKit.onMute = (source) => {
+  muteStrings();
+  source?.gamepad?.hapticActuators?.[0]?.pulse?.(0.35, 20);
+};
+
 // ── Fullscreen, and the gamepad ──────────────────────────────────────────────
 
 const root = document.documentElement;
@@ -1636,6 +1843,7 @@ renderer.xr.addEventListener('sessionend', () => {
   synthKit.endXR();
   rackKit.endXR();
   keysKit.endXR();
+  guitarKit.endXR();
   putDown();
 });
 // Not on a TV, which has no headset (nor, so far, a WebXR in its WebView): the panel says so.
@@ -1811,6 +2019,7 @@ function step(dt) {
     synthKit.updateXR(controls.hands, fingers, kit.sticks, dt);
     rackKit.updateXR(controls.hands, fingers, kit.sticks);
     keysKit.updateXR(controls.hands, fingers, kit.sticks, dt);
+    guitarKit.updateXR(controls.hands, fingers, kit.sticks, dt);
   }
   kit.hover(controls.hoverPad);
   kit.hoveredStep = controls.hoverStep;
@@ -1836,6 +2045,13 @@ function step(dt) {
   // The keyboard: its keys down and the one pointed at (on a TV at it, the one the arrows chose).
   keysKit.hovered = remote && controls.at === 'keys' && !remote.inCard ? chosenNote - KEYS_LOWEST : controls.hoverNote;
   keysKit.update(dt);
+  // The guitar: each string as it rings (with less motion lit, not blurred), the one pointed at and
+  // where a press would fret it.
+  for (let s = 0; s < guitarKit.levels.length; s++) guitarKit.levels[s] = ctx ? guitar.level(s, heard) : 0;
+  guitarKit.still = reduce;
+  guitarKit.hoverString = controls.hoverString;
+  guitarKit.hoverFret = controls.hoverFret;
+  guitarKit.update(dt);
   // The dot: a gamepad's aim, or on a TV the remote's OK while walking (playing, the arrows choose a pad).
   overlay.setAim((controls.padActive || (remote !== null && !remote.inCard && !controls.playing)) && !renderer.xr.isPresenting, !!controls.hover);
   // On a TV, walking, the hint says what OK does with the dot on something on the walls.
@@ -1867,6 +2083,8 @@ window.__room = {
   seq, rackDesk, rackKit, toggleSeqKey, setSeqNote, setSeqOctave, clearSeq, resetSeq, rackDelay, setRackDelayKnob, lfo, setLfoKnob,
   envelope, setEnvelopeKnob, mixer, setMixerKnob, filter, setFilterKnob, reverb, setReverbKnob, route,
   keys, keysDesk, keysKit, keysOn, keysOff, tapKeys, chooseKeys, setKeysKnob, setKeysSwitch, setSustain, setKeysOctave, resetKeys,
+  guitar, guitarDesk, guitarKit, pluckString, strum, pressFret, tapFret, slideFret, bendString, releaseString, muteStrings, chooseChord, pressChord, pickChord,
+  setGuitarKnob, setPickup, resetGuitar,
   /** On a TV at the synth, the key the arrows chose. */
   get chosenKey() {
     return chosenKey;

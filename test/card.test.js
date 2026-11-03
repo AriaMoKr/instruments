@@ -8,10 +8,11 @@
 // its delay's knobs, its LFO's, its envelope's, its mixer's, its filter's and its reverb's as
 // sliders, and its cables (never a sound into its own module). The keys: its keys as the synth's, its
 // sound (the organ, the electric piano or both, Sustain, the computer's keys' octave), its drawbars in
-// eighths, its percussion, its knobs, and its cables. Sound: the volume, Mute, and MIDI where there is
-// Web MIDI.
-// Playing at the board, the synth, the rack or the keys and stepping away, with its hint; and all
-// five kept, open, where there is no 3D view.
+// eighths, its percussion, its knobs, and its cables. The guitar: its chords (with strumming and
+// muting them), its strings a row of frets each, one stop among them, its pickup and its knobs and
+// its amp's. Sound: the volume, Mute, and MIDI where there is Web MIDI.
+// Playing at the board, the synth, the rack, the keys or the guitar and stepping away, with its hint;
+// and all six kept, open, where there is no 3D view.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
@@ -29,6 +30,7 @@ import { REVERB_KNOBS, reverbText } from '../public/js/reverb.js';
 import { ENVELOPE_KNOBS, envelopeText } from '../public/js/envelope.js';
 import { MIXER_KNOBS, UNITY, mixerText } from '../public/js/mixer.js';
 import { DEFAULT_KEYS, DEFAULT_SWITCHES, DRAWBARS, KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_OCTAVES, KEYS_SECTIONS, KEYS_SOUNDS, KEYS_SWITCHES, keysText } from '../public/js/keys.js';
+import { CHORDS, CHORD_KEYS, DEFAULT_GUITAR, GUITAR_KNOBS, GUITAR_SECTIONS, GUITAR_STRINGS, PICKUPS, guitarText } from '../public/js/guitar.js';
 import { installDom } from './helpers/dom.js';
 
 const way = { url: 'https://ariamokr.github.io/hallway/?from=instruments', label: '← Hallway', title: 'Back to the Hallway' };
@@ -42,7 +44,8 @@ async function card(options = {}) {
     'onPlaySynth', 'onKeyDown', 'onKeyUp', 'onKeyTap', 'onPreset', 'onMono', 'onOctave', 'onSynthKnob', 'onResetSynth', 'onArp', 'onHold', 'onRange',
     'onPlayRack', 'onSeqKey', 'onSeqNote', 'onSeqOctave', 'onClearSeq', 'onResetSeq', 'onRackDelay', 'onResetRackDelay', 'onLfo', 'onResetLfo',
     'onEnvelope', 'onResetEnvelope', 'onMixer', 'onResetMixer', 'onFilter', 'onResetFilter', 'onReverb', 'onResetReverb',
-    'onPlayKeys', 'onKeysDown', 'onKeysUp', 'onKeysTap', 'onKeysSound', 'onSustain', 'onKeysOctave', 'onKeysKnob', 'onKeysSwitch', 'onResetKeys']) o[name] = (...args) => calls.push([name, ...args]);
+    'onPlayKeys', 'onKeysDown', 'onKeysUp', 'onKeysTap', 'onKeysSound', 'onSustain', 'onKeysOctave', 'onKeysKnob', 'onKeysSwitch', 'onResetKeys',
+    'onPlayGuitar', 'onChord', 'onStrum', 'onMuteStrings', 'onFretDown', 'onFretUp', 'onFretTap', 'onPickup', 'onGuitarKnob', 'onResetGuitar']) o[name] = (...args) => calls.push([name, ...args]);
   return { o, calls };
 }
 
@@ -385,12 +388,13 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
   }
 });
 
-test('Synth, Rack, Keys and Sound open and close in the card, beside Drums', async () => {
+test('Synth, Rack, Keys, Guitar and Sound open and close in the card, beside Drums', async () => {
   const remove = installDom();
   try {
     const { o } = await card();
-    assert.deepEqual(o.drumsToggle.parentNode.children.map((c) => c.textContent), ['Start shared session', 'Drums', 'Synth', 'Rack', 'Keys', 'Sound', 'Settings']);
-    for (const [toggle, part, id, open] of [[o.synthToggle, o.synth, 'synth', 'openSynth'], [o.rackToggle, o.rack, 'rack', 'openRack'], [o.keysToggle, o.keysPart, 'keys', 'openKeys'], [o.soundToggle, o.sound, 'sound', 'openSound']]) {
+    assert.deepEqual(o.drumsToggle.parentNode.children.map((c) => c.textContent), ['Start shared session', 'Drums', 'Synth', 'Rack', 'Keys', 'Guitar', 'Sound', 'Settings']);
+    for (const [toggle, part, id, open] of [[o.synthToggle, o.synth, 'synth', 'openSynth'], [o.rackToggle, o.rack, 'rack', 'openRack'], [o.keysToggle, o.keysPart, 'keys', 'openKeys'],
+      [o.guitarToggle, o.guitarPart, 'guitar', 'openGuitar'], [o.soundToggle, o.sound, 'sound', 'openSound']]) {
       assert.deepEqual([toggle.getAttribute('aria-controls'), part.getAttribute('id'), part.hidden], [id, id, true]);
       toggle.fire('click');
       assert.deepEqual([part.hidden, toggle.getAttribute('aria-expanded')], [false, 'true']);
@@ -675,13 +679,13 @@ test('playing at the board: the button steps away, and the hint says how to play
   }
 });
 
-test('with no 3D view, the drums, the synth, the rack, the keys and the sound stay in the card, open, each under its name, with nothing to go to', async () => {
+test('with no 3D view, the drums, the synth, the rack, the keys, the guitar and the sound stay in the card, open, each under its name, with nothing to go to', async () => {
   const remove = installDom();
   try {
     const { o } = await card();
-    o.noWebGL('This browser cannot show the room in 3D, but its drums, its synth, its sequencer and its keys play here in the card.');
+    o.noWebGL('This browser cannot show the room in 3D, but its drums, its synth, its sequencer, its keys and its guitar play here in the card.');
     assert.equal(o.inRoom.parentNode, null, 'the session and the settings are gone');
-    for (const [name, part] of [['Drums', o.drums], ['Synth', o.synth], ['Rack', o.rack], ['Keys', o.keysPart], ['Sound', o.sound]]) {
+    for (const [name, part] of [['Drums', o.drums], ['Synth', o.synth], ['Rack', o.rack], ['Keys', o.keysPart], ['Guitar', o.guitarPart], ['Sound', o.sound]]) {
       assert.equal(part.hidden, false, name);
       assert.equal(o.card.findAll((c) => c === part).length, 1, name);
       const title = part.parentNode.children[0];
@@ -696,6 +700,178 @@ test('with no 3D view, the drums, the synth, the rack, the keys and the sound st
     for (const box of [o.rackClockBox, o.seqBox, o.rackDelayBox, o.lfoBox, o.filterBox, o.reverbBox, o.rackCablesBox]) assert.equal(o.rack.findAll((c) => c === box).length, 1, 'its clock, the sequencer, the delay, the LFO, the filter, the reverb and the cables');
     assert.equal(o.keysPart.findAll((c) => c === o.playKeys).length, 0);
     for (const box of [o.keysRow, o.keysSoundBox, o.percBox, ...o.keysSectionBoxes, o.keysCablesBox]) assert.equal(o.keysPart.findAll((c) => c === box).length, 1, 'the keys, the sound, the percussion, the drawbars, the knobs and the cables');
+    assert.equal(o.guitarPart.findAll((c) => c === o.playGuitar).length, 0);
+    for (const box of [o.chordsBox, o.fretsBox, o.pickupBox]) assert.equal(o.guitarPart.findAll((c) => c === box).length, 1, 'the chords, the strings and the pickup');
+  } finally {
+    remove();
+  }
+});
+
+test('the guitar\'s chords: the strings open, then a choice each, four to a row as its two rows of eight, each with its key; strummed and muted as pressed', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.equal(o.guitarPart.children.indexOf(o.chordsBox), 1, 'after going to play at it');
+    assert.deepEqual([...o.chordInputs.keys()], ['', ...CHORDS.map((c) => c.id)]);
+    const grid = o.chordsBox.findAll((c) => c.className === 'choices chords')[0];
+    assert.deepEqual(grid.children.map((l) => l.className), ['open', ...CHORDS.map(() => '')], 'the strings open a row of their own');
+    assert.equal(o.chordInputs.get('').parentNode.textContent, 'Open strings');
+    for (const [i, c] of CHORDS.entries()) {
+      const input = o.chordInputs.get(c.id), label = input.parentNode;
+      assert.deepEqual([input.getAttribute('type'), input.getAttribute('name')], ['radio', 'guitar-chord']);
+      // Its name: what is on it (label in name), its chord in words and ', key ' out of sight.
+      assert.equal(label.textContent, `${c.label} (${c.name}), key ${keyLabel(CHORD_KEYS[i])}`);
+      assert.deepEqual(label.children.slice(1).map((x) => [x.tagName, x.className]), [['SPAN', 'sr-only'], ['KBD', '']]);
+    }
+    assert.deepEqual(CHORDS.map((c, i) => keyLabel(CHORD_KEYS[i])).join(''), '12345678QWERTYUI');
+    o.setGuitar({ chord: 'Am', chordName: 'A minor', pickup: 'both' });
+    assert.equal(o.chordsBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Chord: A minor');
+    assert.deepEqual([...o.chordInputs].filter(([, i]) => i.checked).map(([id]) => id), ['Am']);
+    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'both' });
+    assert.deepEqual([...o.chordInputs].filter(([, i]) => i.checked).map(([id]) => id), ['']);
+    const g = o.chordInputs.get('G');
+    g.checked = true;
+    g.fire('change');
+    const open = o.chordInputs.get('');
+    open.checked = true;
+    open.fire('change');
+    // Strum down, strum up, mute: each as it is pressed, once; a key or a screen reader's click alone.
+    const [down, up, mute] = o.chordsBox.findAll((c) => c.tagName === 'BUTTON');
+    assert.deepEqual([down, up, mute].map((b) => b.textContent), ['Strum down', 'Strum up', 'Mute strings']);
+    down.fire('pointerdown', { button: 0, timeStamp: 1000 });
+    down.fire('click', { timeStamp: 1100 });
+    up.fire('click', { timeStamp: 3000 });
+    mute.fire('pointerdown', { button: 2, timeStamp: 4000 });
+    mute.fire('click', { timeStamp: 9000 });
+    assert.deepEqual(calls, [['onChord', 'G'], ['onChord', null], ['onStrum', true], ['onStrum', false], ['onMuteStrings']]);
+  } finally {
+    remove();
+  }
+});
+
+test('the guitar\'s strings: a row each, the high E\'s at the top, a button for each fret named by it and its note, pressing it there while pressed, a moment for a key; one stop, the arrows along and across', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.equal(o.fretsBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Strings');
+    const board = o.fretsBox.findAll((c) => c.className === 'fretboard')[0];
+    assert.deepEqual(board.children.map((r) => r.getAttribute('aria-label')), ['High E string', 'B string', 'G string', 'D string', 'A string', 'Low E string']);
+    assert.deepEqual(board.children.map((r) => r.getAttribute('role')), GUITAR_STRINGS.map(() => 'group'));
+    assert.deepEqual(board.children.map((r) => [r.children[0].textContent, r.children[0].getAttribute('aria-hidden')]), [['e', 'true'], ['B', 'true'], ['G', 'true'], ['D', 'true'], ['A', 'true'], ['E', 'true']]);
+    assert.equal(o.frets.length, GUITAR_STRINGS.length);
+    for (const [s, row] of o.frets.entries()) {
+      assert.equal(row.length, 13, 'the open string and twelve frets');
+      for (const [f, b] of row.entries()) {
+        assert.deepEqual([b.tagName, b.getAttribute('type'), b.getAttribute('aria-label')], ['BUTTON', 'button', null]);
+        assert.equal(b.textContent, `${f}, ${spokenNote(GUITAR_STRINGS[s].note + f)}`);
+        assert.equal(b.getAttribute('tabindex'), s === 5 && f === 0 ? '0' : '-1', 'one stop: the high E open');
+      }
+    }
+    assert.equal(o.frets[0][3].textContent, '3, G 2');
+    // Pressed: at its fret while it is down (the click that ends it nothing more); a key's click a moment.
+    const b = o.frets[1][2];
+    b.fire('pointerdown', { button: 0, pointerId: 4 });
+    b.fire('pointerup', { pointerId: 4 });
+    b.fire('click');
+    o.frets[5][0].fire('click');
+    // A press the browser takes over (a swipe along them): let go, with no click to come, so a key's
+    // click on it later is a moment of its own.
+    o.frets[3][5].fire('pointerdown', { button: 0, pointerId: 5 });
+    o.frets[3][5].fire('pointercancel', { pointerId: 5 });
+    o.frets[3][5].fire('click');
+    assert.deepEqual(calls, [['onFretDown', 1, 2, 0.85], ['onFretUp', 1], ['onFretTap', 5, 0], ['onFretDown', 3, 5, 0.85], ['onFretUp', 3], ['onFretTap', 3, 5]]);
+    // One stop: the arrows along a string and across them (up the higher), Home and End its ends.
+    const key = (k, target) => board.fire('keydown', { key: k, target, preventDefault() {}, stopPropagation() {} });
+    key('ArrowRight', o.frets[5][0]);
+    assert.equal(document.activeElement, o.frets[5][1]);
+    key('ArrowDown', o.frets[5][1]);
+    assert.equal(document.activeElement, o.frets[4][1]);
+    key('ArrowUp', o.frets[5][1]);
+    assert.equal(document.activeElement, o.frets[5][1], 'no string over the high E');
+    key('End', o.frets[2][4]);
+    assert.equal(document.activeElement, o.frets[2][12]);
+    key('ArrowRight', o.frets[2][12]);
+    assert.equal(document.activeElement, o.frets[2][12]);
+    key('Home', o.frets[2][12]);
+    assert.equal(document.activeElement, o.frets[2][0]);
+    assert.deepEqual(o.frets.flatMap((row, s) => row.flatMap((x, f) => (x.getAttribute('tabindex') === '0' ? [[s, f]] : []))), [[2, 0]], 'the stop with the focus');
+    // Where each plays now: the chord's frets, a finger's, a muted string's open one struck through.
+    o.setStrings([-1, 3, 2, 0, 1, 0], [false, false, false, false, true, false]);
+    const shown = (c) => o.frets.flatMap((row, s) => marked(row, c).map((f) => [s, f]));
+    assert.deepEqual([shown('chord'), shown('finger'), shown('muted')], [[[1, 3], [2, 2]], [[4, 1]], [[0, 0]]]);
+    o.setStrings([0, 0, 0, 0, 0, 0], [false, false, false, false, false, true]);
+    assert.deepEqual([shown('chord'), shown('finger'), shown('muted')], [[], [[5, 0]], []], 'an open string marked only where a finger presses it');
+  } finally {
+    remove();
+  }
+});
+
+test('the guitar\'s pickup, three to a row, and its knobs and its amp\'s: a section each, sliders set in words, turned, and As it comes', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.deepEqual([...o.pickupInputs.keys()], PICKUPS.map((p) => p.id));
+    assert.deepEqual([...o.pickupInputs.values()].map((i) => [i.getAttribute('type'), i.getAttribute('name'), i.parentNode.textContent]),
+      [['radio', 'guitar-pickup', 'Neck'], ['radio', 'guitar-pickup', 'Both'], ['radio', 'guitar-pickup', 'Bridge']]);
+    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'bridge' });
+    assert.equal(o.pickupBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Pickup: Bridge pickup');
+    assert.deepEqual([...o.pickupInputs].filter(([, i]) => i.checked).map(([id]) => id), ['bridge']);
+    const sections = o.guitarPart.children.filter((c) => c.className === 'section');
+    assert.deepEqual(sections.map((b) => b.findAll((c) => c.tagName === 'LEGEND')[0].textContent), GUITAR_SECTIONS.map((s) => s.name));
+    assert.deepEqual([...o.guitarInputs.keys()], GUITAR_KNOBS.map((k) => k.id));
+    for (const [i, s] of GUITAR_SECTIONS.entries()) {
+      const sliders = sections[i].findAll((c) => c.tagName === 'INPUT' && c.getAttribute('type') === 'range');
+      assert.deepEqual(sliders, GUITAR_KNOBS.filter((k) => k.section === s.id).map((k) => o.guitarInputs.get(k.id).input), s.name);
+    }
+    o.setGuitarKnobs({ ...DEFAULT_GUITAR, gain: 0.8, treble: 0.25 });
+    for (const k of GUITAR_KNOBS) {
+      const { input, out } = o.guitarInputs.get(k.id);
+      const v = k.id === 'gain' ? 0.8 : k.id === 'treble' ? 0.25 : DEFAULT_GUITAR[k.id];
+      assert.equal(input.parentNode.children[0].textContent, k.name, 'its label');
+      assert.equal(input.value, String(Math.round(v * 100)), k.id);
+      assert.deepEqual([out.textContent, input.getAttribute('aria-valuetext')], [guitarText(k.id, v), guitarText(k.id, v)], k.id);
+    }
+    assert.deepEqual([o.guitarInputs.get('gain').out.textContent, o.guitarInputs.get('treble').out.textContent], ['80%, lead', '−6 dB']);
+    const neck = o.pickupInputs.get('neck');
+    neck.checked = true;
+    neck.fire('change');
+    const master = o.guitarInputs.get('master').input;
+    master.value = '45';
+    master.fire('input');
+    o.resetGuitar.fire('click');
+    assert.deepEqual(calls, [['onPickup', 'neck'], ['onGuitarKnob', 'master', 0.45], ['onResetGuitar']]);
+  } finally {
+    remove();
+  }
+});
+
+test('playing at the guitar: its button steps away, the others go there, and the hint says how to play it', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    o.playGuitar.fire('click');
+    assert.deepEqual(calls, [['onPlayGuitar']]);
+    assert.equal(o.playGuitar.textContent, 'Play at the guitar');
+    assert.equal(o.guitarPart.children.indexOf(o.playGuitar.parentNode), 0);
+    for (const how of ['mouse', 'touch', 'gamepad', 'tv']) {
+      o.setHint(how, 0);
+      assert.match(o.hint.textContent, /the keys,? or the guitar|the keys, the guitar/, `${how}: walking, the guitar named`);
+    }
+    o.setHint('mouse', 0);
+    o.hideHint();
+    o.setPlaying('guitar');
+    assert.deepEqual([o.playGuitar.textContent, o.playKeys.textContent, o.play.textContent], ['Step away from the guitar', 'Play at the keys', 'Play at the board']);
+    assert.match(o.hint.textContent, /^Press 1–8 and Q–I for a chord, Z–N to pluck a string, the down and up arrows to strum, M to mute · .* · Esc steps away$/);
+    assert.ok(!o.hint.classList.contains('gone'), 'shown again');
+    for (const [how, words] of [['touch', /^Swipe across the strings over the body · press a string on the neck at a fret/], ['gamepad', /A plucks the string in the middle, presses it at its fret, chooses a chord/],
+      ['tv', /^Left, right: choose a chord · OK or down: strum down · up: strum up · Back: step away · Menu: its chords and knobs$/]]) {
+      o.setHint(how, 0);
+      assert.match(o.hint.textContent, words, how);
+    }
+    o.setPlaying('keys');
+    assert.deepEqual([o.playGuitar.textContent, o.playKeys.textContent], ['Play at the guitar', 'Step away from the keys']);
+    o.setPlaying(null);
+    assert.equal(o.playGuitar.textContent, 'Play at the guitar');
   } finally {
     remove();
   }

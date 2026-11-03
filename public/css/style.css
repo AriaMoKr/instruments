@@ -97,7 +97,7 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 .settings label, .choices label { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; font-size: 13px; cursor: pointer; }
 .settings input, .choices input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
-/* The instruments, each a part of the card (Drums, Synth, Rack, Keys) and the room's Sound: each fieldset a
+/* The instruments, each a part of the card (Drums, Synth, Rack, Keys, Guitar) and the room's Sound: each fieldset a
    legend over its rows, each knob a slider with what it is set to above it. */
 .part { display: grid; gap: 10px; margin-top: 8px; }
 /* Without WebGL: each part under its name. */
@@ -189,6 +189,29 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
   background: #2c2a27; color: var(--text); font: inherit; font-size: 13px;
 }
 
+/* Guitar: going to play at the guitar (or stepping away); its chords four to a row (as its two rows
+   of eight), each with its key, under the strings open; strumming and muting; its strings a row each,
+   the high E's at the top, a button for each fret (where each plays lit, the chord's in gold, a
+   finger's in the room's glow; a muted string's open one struck through), a swipe along them scrolls
+   them; its pickup, three to a row; its knobs and its amp's, two to a row. */
+.chords { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.chords .open { grid-column: 1 / -1; }
+.chords kbd { font: 600 12px/1 var(--font); color: var(--muted); }
+.choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fretboard { display: grid; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 4px; scrollbar-width: thin; }
+.fret-row { display: grid; grid-template-columns: 14px repeat(13, 30px); align-items: center; gap: 3px; width: max-content; }
+.string-name { color: var(--muted); font-size: 12px; font-weight: 600; text-align: center; }
+.fret {
+  min-width: 24px; min-height: 28px; padding: 0; border-radius: 6px; border: 1px solid rgba(224, 187, 114, 0.3);
+  background: #2c2a27; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums;
+  touch-action: pan-x; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.fret:hover { border-color: var(--accent); }
+.fret:active { background: #45403a; }
+.fret.chord { background: #e9c46a; color: #1a1208; font-weight: 700; }
+.fret.finger { background: #5cc8a8; color: #1a1208; font-weight: 700; }
+.fret.muted { border-color: #e0664a; color: var(--text); text-decoration: line-through; }
+
 /* How to move. */
 .hint {
   position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -274,8 +297,10 @@ html.tv .pads { gap: 10px; }
 html.tv .pad { min-height: 64px; font-size: 15px; }
 html.tv .pad kbd { font-size: 18px; }
 html.tv .part legend, html.tv .slider, html.tv .check, html.tv .midi-status, html.tv .plug, html.tv .choices label { font-size: 16px; }
-/* The synth's keys are its own on a TV (the arrows choose one, OK plays it): not 37 more stops here. */
-html.tv .keyboard { display: none; }
+/* The synth's keys are its own on a TV (the arrows choose one, OK plays it): not 37 more stops here.
+   Nor the guitar's frets (its arrows choose a chord, OK strums it). */
+html.tv .keyboard, html.tv .frets { display: none; }
+html.tv .chords kbd { font-size: 15px; }
 html.tv .choices { gap: 4px 18px; }
 html.tv .choices label { gap: 8px; }
 html.tv .choices input { width: 20px; height: 20px; }
@@ -301,7 +326,10 @@ html.tv .aim { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-width:
 
 @media (forced-colors: active) {
   .card, .hint, .toast, .chip, .pill, .way-back, .piece, .my-name, .pad, .step, .plug select, .key,
-  .seq-on, .seq-accent, .seq-slide, .seq-note { border: 1px solid CanvasText; }
+  .seq-on, .seq-accent, .seq-slide, .seq-note, .fret { border: 1px solid CanvasText; }
+  .fret.chord, .fret.finger { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
+  .fret.finger { box-shadow: inset 0 0 0 2px HighlightText; } /* a finger's, apart from the chord's */
+  .fret.muted { border: 2px dashed CanvasText; }
   .pad { border-bottom-width: 3px; }
   .key.black { forced-color-adjust: none; background: CanvasText; }
   .key.down, .key.black.down { forced-color-adjust: none; background: Highlight; color: HighlightText; }

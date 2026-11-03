@@ -23,10 +23,17 @@ through (low-, band- or high-pass, its CUTOFF in moved by a modulation), a plate
 plate over the envelope. Left of the board the keyboard: sixty-one keys, an organ (nine drawbars, percussion, key click, its scanner's
 chorus, a drive and a rotary speaker) and an electric piano (FM tines that bark played harder, and a
 tremolo), or both, played live on every device, and its jacks (its sound out into the delays, a
-NOTES out into the synth's NOTES in, a ROTARY in for its rotary speaker's speed). The plan the user
+NOTES out into the synth's NOTES in, a ROTARY in for its rotary speaker's speed). Along the right
+wall, beside the rack, the electric guitar on a desk turned to face into the room: six strings
+modelled as they are plucked (Karplus–Strong as Jaffe and Smith extended it, in an AudioWorklet)
+through two pickups (NECK, BOTH, BRIDGE), VOLUME and TONE, into its amp (GAIN, BASS, MIDDLE, TREBLE,
+MASTER and a cabinet), played as a guitarist plays on every device: sixteen chord buttons, a string
+plucked, a sweep across them strummed, a string pressed at a fret, slid and bent. The plan the user
 agreed to ("patch the whole band"): the synth semi-modular, its rack (more modules to come), then
-the keyboard and an electric guitar, all patchable. Add an instrument, or a module, only once the
-user has agreed to it. What makes it this room is
+the keyboard and the electric guitar, all patchable. The guitar's next step, 6b, its four pedals
+(overdrive, chorus, tremolo, wah, on the blank plate on its panel) and its jacks (OUT, a NOTES out,
+a WAH in and a CLOCK in), waits for the user to start it. Add an instrument, or a module, only once
+the user has agreed to it. What makes it this room is
 `config.js` (id `instruments`, sign Band Room, 7 × 8 × 3.2 m, a dark wooden floor and clay walls,
 the window in the left wall, port 8100, glow `#5cc8a8`), and `index.html`, `package.json`,
 `.claude/launch.json` and the pictures to match. Like the template it follows the Hallway
@@ -107,7 +114,7 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   control of the desk played at or another desk, which `_walkTo`s there with it, `goingTo` set till
   it arrives; a walk taken over drops it), `deskOf(hit)` (a jack's by the desks' `jackBase`),
   `onPick(dc, dr)` (a TV's arrows, `arrowsPick`),
-  `onPlaying(at)` ('board', 'synth', 'rack', 'keys' or null),
+  `onPlaying(at)` ('board', 'synth', 'rack', 'keys', 'guitar' or null),
   `hoverPad`/`hoverStep`/`hoverKnob`/`hoverJack`, `aim` (the pointer's hit, for a cable carried)
   and `selectHand` (in VR, the hand that last chose: `_xrSelect`). The synth likewise: `castRay`
   adds synthboard.js `hitSynth` (`key`, `dial`, `button`, `jack`; kinds key, dial, button, jack and
@@ -134,12 +141,30 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   meets the tabs' tops), `onKeysKnob(id, by)` (a knob, and the wheel or a stick on a drawbar),
   `onKeysButton(i)`, `onKeysOctave(by)` (Z, X), `onKeysPick(by)` (a TV's arrows), `keysOctave()`
   and `pulled(id)` (main.js's), `hoverNote`/`hoverDrawbar`/`hoverKeysKnob`/`hoverKeysButton`.
+  The guitar likewise, its desk `guitar`, turned: `castRay` adds guitarboard.js `hitGuitar`
+  (`guitar`, the index for each kind, with `u` and `v`; kinds fret (the string; `u` its fret, `v`
+  how far across it, in spacings), strum (the string nearest; `u` where the pick meets it), mute
+  (the bridge), chord, guitarknob, pickup and guitar), `clampWalk` round it too, `walkToGuitar`
+  (`at` 'guitar'; on a screen `guitarFront`, in VR `guitarStand`, turned to face it (`_turnAboutHead`
+  in the teleport's blink); `stepAway` steps back from the
+  right wall), `onPluck(s, velocity, pick, delay)` (Z to N, Shift harder; a press over the strings
+  between the neck and the bridge, then each string a drag crosses, `_sweep`, `strummed`, as hard
+  as it goes fast, `sweepVelocity`, spread over its move), `onStrum(down, velocity)` (the arrows
+  down and up), `onMuteStrings()` (M, the bridge), `onFretDown(s, fret, velocity)`,
+  `onFretSlide(s, fret)`, `onFretBend(s, semitones)` and `onFretUp(s)` (a press on the neck held,
+  each pointer its own, `_fretDown`; dragged, `_overStrings`, where its ray meets the strings'
+  plane, `stringsAlong`, along to slide and across to bend, `bendFor`; `_fretUp`), `onFretTap`
+  (a click, A, OK, a trigger), `onChord(i)` (a button, 1–8 and Q–I), `onChordPick(by)` (the arrows
+  left and right), `onPickup(i)`, `onGuitarKnob(id, by)`, `hoverString`/`hoverFret`/`hoverChord`/
+  `hoverGuitarKnob`/`hoverPickup`.
   Common's hooks: `takeKey` (playing: the pads' keys, the synth's or the keyboard's (`_noteKey`),
-  or the steps' (1–8, Q–I; Shift an accent), Space for RUN, Escape a cable carried, else away),
-  `takeWheel` and `takeHand` (a knob, a dial, the rack's knob, the keyboard's knob or drawbar,
-  eased, the tempo more slowly), and presses on pads, step keys, jacks, RUN, keys, dials, buttons,
-  the rack's keys, knobs and buttons, and the keyboard's keys, drawbars, knobs and buttons as they
-  go down (`_bindBoard`); keys held let go on keyup, blur, VR and stepping away (`_letGo`).
+  the steps' (1–8, Q–I; Shift an accent), or the guitar's (`_guitarKey`), Space for RUN, Escape a
+  cable carried, else away), `takeWheel` and `takeHand` (a knob, a dial, the rack's knob, the
+  keyboard's knob or drawbar, the guitar's knob, eased, the tempo more slowly), and presses on
+  pads, step keys, jacks, RUN, keys, dials, buttons, the rack's keys, knobs and buttons, the
+  keyboard's keys, drawbars, knobs and buttons, and the guitar's strings, bridge, chords, switch and
+  knobs as they go down (`_bindBoard`); keys held let go on keyup, blur, VR and stepping away, and
+  strings pressed likewise (`_letGo`).
 - The drums: `sound.js` (one AudioContext, `latencyHint: 'interactive'`, made or woken only in a
   press's event, `onReady` once its graph is; a channel per instrument, volume and mute, a
   WaveShaper soft clipper; a note set for a time (`start`), `add(note, group)` cuts a group's last
@@ -179,8 +204,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   desk's top and in front of its panel; `setCables`, and the one carried, reaching as far as the
   farthest two jacks are apart and `CABLE.slack` more (`_reaches`) at most: `carry`, `aimAt`,
   `hoverJack`, its ring on any panel), the sign, the sticks and fingertips in VR (`onStrike`,
-  `onStep`; `updateXR`'s `nearAlso`, the synth's keys, the rack's or the keyboard's, shows the
-  sticks there too; `AIMED`, the controls whose kinds its reticle sits on);
+  `onStep`; `updateXR`'s `nearAlso`, the synth's keys, the rack's, the keyboard's or the guitar,
+  shows the sticks there too; `AIMED`, the controls whose kinds its reticle sits on);
   it imports builder.js and textures.js, so it is not in strict).
 - The synth: `synth.js` (`SECTIONS`; `SYNTH_KNOBS`, 25 knobs 0…1, `DEFAULT_SYNTH`, and their
   curves (`cutoffHz`, `glideSeconds`, …), `synthText` in words, `knobName`; `PRESETS`, four poly
@@ -327,6 +352,60 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   sign; `setKnobs`, `setKnob`, `setState`, `setDown`, `hovered`, `update`; in VR `updateXR(hands,
   fingers, sticks, dt)` and `endXR`, as the synth kit's; `onKeyDown(k, velocity, source)`,
   `onKeyUp(k)`; its cables are kit.js's; not in strict).
+- The guitar: `strings.js` (pure, strict: the six strings, Karplus–Strong as Jaffe and Smith
+  extended it, `TUNING` standard, `PICKUP_PLACES` neck 0.25 and bridge 0.065 of the length from the
+  bridge, `BRIDGE_BOOST`, `ringSeconds` (the low E 7 s, an octave up √2 less), `HIGH_RING`, `PLUCK`,
+  `pluckHz`, `PICK` (min, max, usual), `loopFilter` (the one-pole loss for a note's ring at it and at
+  3 kHz, and its phase delay); a `StringEvent` (pluck, pitch, damp, pickups); `Strings(rate)`:
+  `post(events)` kept in time's order, `render(out, frame)` a block: a pluck's push (a period, a
+  pulse `pick` of it long and `SCRAPE` of noise, darker softer, its mean out, so that each pluck's
+  harmonics are alike) put in as what rang fades out, each loop's Lagrange delay gliding
+  to its note, the pickups each the loop now less a part of a period ago, a string died away let
+  be, `active`), `strings-worklet.js` (strict: `guitar-strings`, the AudioWorkletProcessor round it, its
+  events through its port; Web Audio's delays can't loop shorter than a render quantum, the high E
+  at its 15th fret is 61 samples), `guitar.js` (strict: `FRETS` 15, `GUITAR_STRINGS` low E to high
+  E, `CHORDS` sixteen (frets from the low E, -1 muted; `chordName`), `CHORD_KEYS` 1–8 and Q–I,
+  `STRING_KEYS` Z to N, `MUTE_KEY` M; `GUITAR_SECTIONS` guitar and amp, `GUITAR_KNOBS` volume, tone,
+  gain, bass, middle, treble, master 0…1, `DEFAULT_GUITAR`, their curves (`volumeGain`, `toneHz`,
+  `toneQ`, `ampDrive`, `ampLevel`, `eqDb` ±12, `masterGain`, `ampWords` clean, crunch, lead),
+  `ampCurve` (a valve's, the tops clipped sooner, `AMP_SLOPE`), `guitarKnobName`, `guitarText`;
+  `PICKUPS` neck, both, bridge; `strumGap`, `upShare`, `MAX_BEND` 2, `FINGER`, `PALM`, `MUTED`;
+  `Guitar`: its strings in a worklet node (`prepare()`, the module loaded once there is sound, on
+  arriving at it or the first pluck; what is played meanwhile queued, `WAIT` at most; `broken`
+  without an AudioWorklet), then TONE (a resonant low-pass), VOLUME, the amp (a tight high-pass, its
+  drive into a WaveShaper at 4× oversampling, made up after; BASS, MIDDLE, TREBLE a shelf, a peak
+  and a shelf; MASTER) and a 12-inch cabinet's filters into the 'guitar' channel; `chord` (`choose(id
+  | null)`, the strings it fingers anew muted), `pressed` and `bends` (a string's fret and bend, -1
+  none; `onStrings` when they change), `fretOf`, `noteOf`, `level(s, t)` (for its look), `pluck(s,
+  velocity, { at, pick })` (one the chord mutes a thud), `strum(down, velocity)`, `press`,
+  `tapFret`, `slide`, `bend`, `release` (the finger lifting mutes it), `damp(s, ring)` (-1 all:
+  a palm), `noteOn`/`noteOff` (MIDI: the free string where it falls lowest), `allOff`, `setKnob`,
+  `setPickup`, `reset`, `output()` (its sound after the amp, for a cable, 6b's); kept in
+  `instruments.guitar`), `guitarboard.js` (pure, strict: `GUITAR`'s measures, `BODY` (a double
+  cutaway's outline), `BEND`; `layoutGuitar(L, rack)`, the first desk that is turned: laid out in a
+  frame of its own as if against a far wall and turned by its `place` (by the right wall, `gap` from
+  the rack's front, yaw −π/2: own x along it is the room's z, own z out from its wall the room's −x;
+  `deskXZ`, `roomXZ`, `guitarPoint`); a Desk as board.js's functions take: the guitar on the top
+  (`mid`, `nut`, `bridge`, `frets` spaced as a guitar's, `neckEnd`, `headEnd`, `body`, `pickups`),
+  `chords` (two rows of eight behind the neck, 1–8 the far row), `deck`, `dials` (VOLUME and TONE on
+  the body, the amp's on the panel), `switch`, the panel's display, `amp` and `titles`, sign;
+  `spacingAt`, `stringB`, `neckHalf`, `fretAt`, `fretPlace`, `stringAt`, `pickAt`, `bendFor`,
+  `strummed` (the strings a move crosses, and when), `onBody`, `partAt` (head, fret, strum, mute,
+  body), `switchAt`, `switchA`, `guitarDialAt`, `chordAt`, `stringsAlong` (a ray onto the strings'
+  plane, off the guitar too), `hitGuitar`, `guitarBlocks`, `clampGuitar`, `guitarFront`,
+  `guitarStand`), and `guitarkit.js` (the guitar in 3D, as the keyboard's, its lit parts laid out
+  in its own frame and turned before baking, the rest in a group turned as the desk is: the stand,
+  the guitar (a sunburst body, its pickguard, pickups and bridge; the neck, its frets and inlays; the
+  headstock), the strings one InstancedMesh (lit in the room's glow as each rings, `levels`, blurred
+  wider, or not with less motion, `still`), dots where they are fretted (the chord's gold, a
+  finger's in the glow, a cross where muted) and where a press would (`hoverString`, `hoverFret`),
+  the chord buttons and their light, the knobs and the switch's lever, one canvas drawn once for the
+  top and the panel's face (the amp's scales, a blank plate where the pedals will go), the display's
+  canvas (at most ten times a second), the sign; `setKnobs`, `setKnob`, `setPickup`, `setState`,
+  `setStrings(frets, fingers, bends)`, `update`; in VR `updateXR(hands, fingers, sticks, dt)`: a
+  tip over the body a pick, plucking each string it crosses as fast as it goes (`onPluck`), on the
+  neck a finger (`onPress`, `onSlide`, `onBend`, `onRelease` as it lifts), down on the bridge
+  `onMute`, on a chord button `onChord`; `endXR`; not in strict).
 - `midi.js` (Web MIDI: `readMidi`, a message from its bytes (on, off, sustain, mod, bend, alloff,
   with its channel), `listenMidi`, asked for only from the card's button, at once when `granted`).
 - `panel.js`: the control panel on the wall (outside's), redrawn only on a change. `overlay.js`: the
@@ -360,10 +439,19 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   Drawbars (sliders in eighths, the registration in the legend), Percussion (`percBox`;
   `switchInputs`, `onKeysSwitch`), the organ's knobs (with Rotary speaker fast) and the piano's
   (`keysInputs`, `onKeysKnob`), and its Cables (`keysCablesBox`); `setKeys`, `setKeysKnobs`,
-  `setKeysNotes`; and Sound: the volume
+  `setKeysNotes`; Guitar (`openGuitar`): Play at the guitar, Chord (`chordsBox`: Open strings and
+  the sixteen as a choice, each with its key, `chordInputs`, `onChord(id | null)`; Strum down, Strum
+  up and Mute strings played as they go down, `playButton`: `onStrum(down)`, `onMuteStrings`),
+  Strings (`fretGrid`: each string's frets 0 to `CARD_FRETS` as buttons, high E first, held while
+  pressed, `onFretDown(s, fret, v)`/`onFretUp(s)`, a click alone `onFretTap`; one stop, the arrows
+  along and across, Home and End; hidden on a TV), Pickup (`pickupInputs`, `onPickup`), Guitar and
+  Amp (`guitarInputs`, sliders, `onGuitarKnob`) and As it comes (`onResetGuitar`); `setGuitar`,
+  `setGuitarKnobs`, `setStrings(frets, fingers)` (a fret marked `chord`, `finger` or, open where
+  the chord mutes it, `muted`); and Sound: the volume
   and Mute, and Play from a MIDI device), the
   hint (`#hint`, kept clear of the buttons, `_placeHint`; at the board `BOARD_HINTS`, at the synth
-  `SYNTH_HINTS`, at the rack `RACK_HINTS`, at the keys `KEYS_HINTS`, `setPlaying(at)`), Wave,
+  `SYNTH_HINTS`, at the rack `RACK_HINTS`, at the keys `KEYS_HINTS`, at the guitar
+  `GUITAR_HINTS`, `setPlaying(at)`), Wave,
   Copy invite link, Fullscreen, Enter VR, the aiming dot, and toasts (`role="status"`, polite). With
   `tv`, Wave is in the card and the invite is text there (`inviteText`), and the hints are the
   remote's (`tv`, `tv-card`). With pieces, the hints name the pictures (`PIECE_HINTS`, else an
@@ -382,10 +470,11 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `access.js`: `applyAccess`, `setAccess`, re-read on `storage` and `pageshow`; the `reduce-motion`
   class on `<html>`), the TV (common's `tv.js`: `tvMode()`, the `tv` class on `<html>`, a `Remote`
   over the card and the canvas with `use` = `controls.useMiddle()`, or the selected pad, or the
-  chosen key (`chosenKey`, from the arrows), the chosen step (`chosenStep`) or the keyboard's chosen
-  note (`chosenNote`) while playing, `step` = `stepBack`, the room's own step back for Back (away
-  from an instrument), and `first`, the steps, the synth's sounds, the sequencer's steps or the
-  keyboard's sounds while playing; the card's play buttons leave the card
+  chosen key (`chosenKey`, from the arrows), the chosen step (`chosenStep`), the keyboard's chosen
+  note (`chosenNote`) or a strum down at the guitar while playing, `step` = `stepBack`, the room's
+  own step back for Back (away from an instrument), and `first`, the steps, the synth's sounds, the
+  sequencer's steps, the keyboard's sounds or the guitar's chords while playing; the card's play
+  buttons leave the card
   before walking, so arriving (at once with less
   motion) forgets it; `answerApp`; no fullscreen or XR), the drums (`play(i,
   velocity)`, `select(i)`, `setKnob`, the overlay's and the controls' callbacks, the kit's strikes
@@ -435,12 +524,22 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   (`keysPlays`, set in `patchedClock`; `keys.onNoteOut`, the notes kept in `keysOnSynth` and let go
   by `keysOffSynth` when the cable comes out; a tap `synth.tap` while the arpeggiator's HOLD keeps
   its chord), and into the envelope while patched into its NOTES (`envKeys`; `envelope.allOff()`
-  when the cable comes out)), MIDI (channel 10 the drums', the others the synth's, or the drums'
-  while `playingAt` the board, or the keyboard's while at the keys (`midiKeys`: a note's off goes
-  where its on went); the sustain pedal where it went down (`pedalOnKeys`); mod and bend the
-  synth's; all off both), and the frame loop.
+  when the cable comes out)), the guitar (`guitar`; `pluckString(s, velocity, pick, delay)`,
+  `strum`, `pressFret`, `tapFret`, `slideFret`, `bendString`, `releaseString`, `muteStrings`,
+  `chooseChord(id | null)`, `pressChord(i)` (its button or key; the chord chosen again, the strings
+  open), `pickChord(by)` (the arrows, the open strings among the chords), `setGuitarKnob`,
+  `turnGuitarKnob`, `setPickup`, `resetGuitar`, shown on the guitar and in the card (`showGuitar`,
+  `showGuitarKnobs`, `showStrings` on `guitar.onStrings`); `unheard` (no sound, or no AudioWorklet
+  for its strings, said once); `guitar.prepare()` on arriving at it; each string's `level` for its
+  look in the frame loop; the controls', the card's and the guitar kit's callbacks, the kit's with
+  a haptic pulse), MIDI (channel 10 the drums', the others the synth's, or the drums' while
+  `playingAt` the board, the keyboard's while at the keys (`midiKeys`: a note's off goes where its
+  on went) or the guitar's while at it (`midiGuitar`); the sustain pedal where it went down
+  (`pedalOnKeys`); mod and bend the synth's; all off all), and the frame loop.
 - `style.css`: the page over the view (a cable's choice under its input's name where the longest
-  wouldn't fit beside it; the sequencer's rows, `.seq-step`), and the 10-foot view under `html.tv`
+  wouldn't fit beside it; the sequencer's rows, `.seq-step`; the guitar's chords, `.chords`, and
+  its strings' frets, `.fretboard` scrolling across, `.fret-row`, `.fret` marked `.chord`, `.finger`
+  or `.muted`, shown under forced colours too), and the 10-foot view under `html.tv`
   (the hallway's: 960 × 540 at a pixel
   ratio of 2, 18 px text, 4 px focus rings, the TV's safe margins, the hint and toasts beside the
   card).
@@ -459,7 +558,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   only the files that pass it, `config.js`, `presence.js`, `room.js`, `controls.js`, `sound.js`,
   `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`, `board.js`, `midi.js`, `synth.js`,
   `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js`, `lfo.js`, `keys.js`, `keysboard.js`,
-  `filter.js`, `reverb.js`, `mixer.js` and `envelope.js` so far, and
+  `filter.js`, `reverb.js`, `mixer.js`, `envelope.js`, `strings.js`, `strings-worklet.js`,
+  `guitar.js` and `guitarboard.js` so far, and
   `test/types.test.js` runs it too. A file joins its `include` when a change makes it pass; what an
   included file imports is checked strictly with it. The rest has a few hundred errors with it,
   mostly untyped parameters and values that may be null (a canvas's 2D context). `tools/` and
@@ -476,12 +576,18 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `setLfoKnob(name, value)`, envelope, `setEnvelopeKnob(name, value)`, mixer, `setMixerKnob(name,
   value)`, filter, `setFilterKnob(name, value)`, reverb, `setReverbKnob(name, value)`, `route(id)`, keys, keysDesk, keysKit, `keysOn(note, v)`, `keysOff(note)`,
   `tapKeys(note, v)`, `chooseKeys(id)`, `setKeysKnob(id, value)`, `setKeysSwitch(id, on)`,
-  `setSustain(on)`, `setKeysOctave(o)`, `resetKeys()`, `chosenKey`, `chosenStep`, `chosenNote`,
-  `carried`, access,
+  `setSustain(on)`, `setKeysOctave(o)`, `resetKeys()`, guitar, guitarDesk, guitarKit,
+  `pluckString(s, velocity, pick, delay)`, `strum(down, velocity)`, `pressFret(s, fret, velocity)`,
+  `tapFret(s, fret, velocity)`, `slideFret(s, fret)`, `bendString(s, semitones)`,
+  `releaseString(s)`, `muteStrings()`, `chooseChord(id)`, `pressChord(i)`, `pickChord(by)`,
+  `setGuitarKnob(id, value)`, `setPickup(id)`, `resetGuitar()`, `chosenKey`, `chosenStep`,
+  `chosenNote`, `carried`, access,
   `preview()`, `social()`, `tick(dt, n)`, `ready`,
   true once the pieces' pictures have loaded or failed). Tests fake Web Audio with
   `test/helpers/audio.js` (`FakeContext`, whose params, `createIIRFilter`, a convolver's `buffer`
-  and `disconnect(node)` refuse what a browser's would) and the page
+  and `disconnect(node)` refuse what a browser's would, and whose `audioWorklet` loads a module
+  only when the test says, `settle()` or `refuse()`; `FakeWorkletNode`, made only once one is,
+  keeping what its port is sent) and the page
   with `test/helpers/dom.js`. A hidden browser pane gets no animation frames: drive it with
   `tick()` (the clock's timer runs without them). A pane loaded while hidden may have a 0 × 0 view
   (a NaN camera): set its size, then load it. XR frames under `?xr=emulate` need frames too;

@@ -1,14 +1,17 @@
 // Just enough of Web Audio for sound.js, drums.js, delay.js, synth.js, keys.js, lfo.js, filter.js,
-// reverb.js, mixer.js and envelope.js in Node: nodes that keep what they are connected to (and let go
-// of one, refusing one they aren't connected to, or of all), params that keep their automation and
-// refuse what a browser would (a time, a value or a time constant that isn't finite, an exponential
-// ramp to 0, a negative time constant), sources that keep when they start and stop (and refuse a
-// second start, or a stop before one), delays that refuse a longest time a browser wouldn't make, a
-// merger that refuses an input it hasn't, periodic waves that refuse terms a browser would (of two
-// lengths, fewer than two, or not finite), IIR filters that keep their coefficients and refuse those
-// a browser would (none or more than 20, not finite, a feedforward all 0, a first feedback of 0), and
-// convolvers that refuse a response a browser would (not at the context's rate, or of a number of
-// channels other than 1, 2 or 4). A test sets the context's currentTime itself.
+// reverb.js, mixer.js, envelope.js and guitar.js in Node: nodes that keep what they are connected to
+// (and let go of one, refusing one they aren't connected to, or of all), params that keep their
+// automation and refuse what a browser would (a time, a value or a time constant that isn't finite,
+// an exponential ramp to 0, a negative time constant), sources that keep when they start and stop
+// (and refuse a second start, or a stop before one), delays that refuse a longest time a browser
+// wouldn't make, a merger that refuses an input it hasn't, periodic waves that refuse terms a browser
+// would (of two lengths, fewer than two, or not finite), IIR filters that keep their coefficients and
+// refuse those a browser would (none or more than 20, not finite, a feedforward all 0, a first
+// feedback of 0), convolvers that refuse a response a browser would (not at the context's rate, or of
+// a number of channels other than 1, 2 or 4), and an AudioWorklet: its modules added (a promise, kept
+// for the test to settle: `audioWorklet.settle()`, or refuse), and its nodes (FakeWorkletNode), made
+// only once a module is, keeping what their port is sent (cloned, as a browser's is). A test sets the
+// context's currentTime itself.
 
 class Param {
   constructor(value) {
@@ -99,6 +102,18 @@ class Wave {
   }
 }
 
+/** An AudioWorkletNode: made only once its context's worklet has a module, what its port is sent kept. */
+export class FakeWorkletNode extends Node {
+  constructor(context, name, options = {}) {
+    if (!context.audioWorklet?.added.length) throw new Error(`AudioWorkletNode: no processor ${name} registered`);
+    super(context, 'worklet');
+    this.name = name;
+    this.options = options;
+    const sent = [];
+    this.port = { sent, postMessage: (m) => sent.push(structuredClone(m)) };
+  }
+}
+
 export class FakeContext {
   /** @param {AudioContextOptions} [options] */
   constructor(options = {}) {
@@ -108,6 +123,27 @@ export class FakeContext {
     this.state = 'suspended';
     this.nodes = [];
     this.destination = new Node(this, 'destination');
+    // Its modules load when the test says: settle() (or refuse()).
+    const pending = [];
+    this.audioWorklet = {
+      asked: [],
+      added: [],
+      addModule: (url) => new Promise((resolve, reject) => {
+        this.audioWorklet.asked.push(url);
+        pending.push({ url, resolve, reject });
+      }),
+      settle: async () => {
+        for (const p of pending.splice(0)) {
+          this.audioWorklet.added.push(p.url);
+          p.resolve();
+        }
+        await new Promise((r) => setTimeout(r, 0));
+      },
+      refuse: async () => {
+        for (const p of pending.splice(0)) p.reject(new Error(`AbortError: ${p.url} would not load`));
+        await new Promise((r) => setTimeout(r, 0));
+      },
+    };
     FakeContext.made.push(this);
   }
 

@@ -372,7 +372,7 @@ export function hitSynth(S, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
   else if (jack >= 0) kind = 'jack';
   else if (button >= 0) kind = 'button';
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
-  out.pad = out.step = out.knob = out.seq = out.rack = out.keys = -1;
+  out.pad = out.step = out.knob = out.seq = out.rack = out.keys = out.guitar = -1;
   out.jack = jack;
   out.key = key;
   out.dial = dial;

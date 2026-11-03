@@ -14,8 +14,11 @@ clock or by notes, both to patch into the synth, and over them a mixer of four s
 filter to put any sound through and a plate reverb (below, "The rack"). To the left of the board
 stands a keyboard of sixty-one keys with two sounds, an organ with nine drawbars and a rotary
 speaker, and an electric piano, or both at once, with jacks of its own: its sound, its notes for the
-synth to play along, and its rotary speaker's speed (below, "The keyboard"). An electric guitar
-comes next, patchable as the rest, and more modules in time. The room is the one
+synth to play along, and its rotary speaker's speed (below, "The keyboard"). Along the right wall,
+beside the rack, an electric guitar lies on its desk, to pluck, strum and fret as a guitarist does:
+its six strings modelled as they are played, heard through its pickups and its amp (below, "The
+guitar"). Its pedals and its jacks come next, patchable as the rest, and more modules in time. The
+room is the one
 [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty) makes: a floor, four
 walls, a ceiling with its lamps, a window onto the afternoon sky, and the doorway back to the
 Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay walls, and is a little
@@ -404,6 +407,80 @@ speed in**; its sound is a choice for either delay's in, under **Drums** and **R
 mixer's, the filter's and the reverb's, under **Rack**, and its notes for the synth's **Notes in**,
 under **Synth**, and the envelope's, under **Rack**.
 
+## The guitar
+
+Along the right wall, beside the rack, under a sign that says **Guitar**, an electric guitar lies on
+its back on a desk turned to face into the room: its neck to your left and its low E string nearest
+you, as a guitar you hold looks when you look down at it. Behind its neck are sixteen chord buttons
+in two rows, as their keys lie on a computer's keyboard (**E**, **A**, **D**, **G**, **C**, **F**,
+**Em** and **Am** under 1 to 8, the far row; **Dm**, **Bm**, **E7**, **A7**, **D7**, **B7**, **E5**
+and **A5** under Q to I), the chord chosen lit; on its body its **VOLUME** and **TONE** knobs and its
+pickup switch (**NECK**, **BOTH**, **BRIDGE**); and at the back a panel with its display (the chord,
+the pickup, how the amp sounds, and the knob turned last), its amp's knobs (**GAIN**, **BASS**,
+**MIDDLE**, **TREBLE**, **MASTER**) and a blank plate where its pedals will go. Choose it or its
+sign, as the board, and you walk up to play; on a screen the view comes down over it, clear of the
+card; in VR you are taken to its neck's end, turned to face it.
+
+| | Strum or pluck | Fret a string | Choose a chord | A knob, the pickup switch | Step away |
+|---|---|---|---|---|---|
+| Desktop | drag across the strings over the body (away from you a down strum, towards you an up one), or press one there; or the keys: Z to N pluck a string each, the low E to the high E, the arrows down and up strum down and up, Shift plays harder; M, or a click on the bridge, mutes them | press a string on the neck at a fret and hold; drag along the neck to slide, across the string to bend it | click its button, or its key, 1–8 and Q–I; the arrows left and right: the chord before or after | drag a knob up or down, or scroll over it; click the switch where you want it | Esc, or walk off |
+| Phone | swipe across the strings over the body, or touch one there | touch a string on the neck and hold, and slide (with as many fingers as you like: one fretting while another strums) | tap it | drag a knob; tap the switch | tap the floor |
+| Headset | sweep a stick's tip (they show near the guitar too) or a forefinger across the strings over the body, as fast and as hard as you like; or point at one there and pull the trigger; a tip down on the bridge mutes them | press a string on the neck down with a tip, and move it along or across; lift it to let go; or point at it and pull the trigger | a tip down on its button, or point at it and pull the trigger | point at a knob and push the stick up or down; point at the switch and pull the trigger | walk off |
+| Gamepad | the dot on a string over the body and A | the dot on a string on the neck and A | the dot on its button and A | the dot on the switch and A; the knobs in the card | B |
+| TV remote | OK or down strums down, up strums up | | left and right | in the card: Menu goes to its chords | Back |
+| MIDI keyboard | | any channel but 10, the drums', while you play at the guitar: each note on a string (below) | | | |
+
+A chord frets the strings it fingers and mutes the ones it leaves out (struck, they thud), and the
+strings' keys, a sweep over them and the arrows play what it frets; with none chosen the strings are
+open. A string pressed on the neck plays at that fret instead, ringing on as it is slid along the
+neck to another fret or bent across it, up to a whole tone; let go, the finger lifting mutes it, and
+the chord frets it again. Choosing another chord moves the fingers, muting the strings they move on,
+and choosing the chord chosen again lets go of it. A click, A, OK or a trigger on a string over the
+neck presses it there a moment. A sweep plucks each string it crosses as hard as it goes fast; a
+strum goes from the low E to the high E (up, from the high E, the low strings less), faster the
+harder. Every string rings until it dies away or is muted, all six at once, and one plucked again
+stops ringing as the pick meets it. A MIDI keyboard played at the guitar plays its strings: each note
+on the free string where it falls lowest on the neck (where none is free, the string of the note
+held longest), pressed at that fret and plucked, and let go with the key; one the guitar can't reach
+an octave up or down.
+
+Its strings are modelled as they are plucked, as Karplus and Strong made theirs and Jaffe and Smith
+extended it, so there are no samples: a pluck puts the pick's push into a loop one period of the
+note long, its harmonics falling away as a plucked string's do, those with a node where the pick
+meets it left out (nearer the bridge, thinner), with a little of the pick's scrape, brighter the
+harder it is plucked; each time round, the string loses a little, more of its
+highs, so it rings on at its note, its brightness dying first (open, the low E for seven seconds,
+the high E for three and a half). Its two pickups hear the strings where they lie, as a guitar's
+magnets do: **NECK**, a quarter of the way from the bridge, round and full; **BRIDGE**, near it,
+thinner and brighter; **BOTH**, the two at once. Its knobs:
+
+- **VOLUME**: how much of it goes into the amp, so that turned down it drives the amp less.
+- **TONE**: the pickups' resonance, a peak at 5 kHz full up, darker down to 1 kHz with none.
+
+Its amp's knobs:
+
+- **GAIN**: how hard the guitar drives its valve, clean (up to a third), then crunch, then lead
+  (from two thirds), its curve clipping the tops of the wave a little sooner than the bottoms, as a
+  valve does.
+- **BASS**, **MIDDLE** and **TREBLE**: its tone stack, each 12 dB up or down, at 120 Hz, 650 Hz and
+  2.6 kHz.
+- **MASTER**: how loud it is.
+
+Then a 12-inch speaker cabinet's sound: no deep lows, a thump, a bite, and nothing much over 5 kHz.
+The strings are worked out on the audio thread (an AudioWorklet), which a browser has only on a page
+served securely, as GitHub Pages and `localhost` are; where it has none, a toast says it can't play
+them.
+
+The card's **Guitar** has the same: **Play at the guitar**; **Chord** (**Open strings** and the
+sixteen chords, each with its key, then **Strum down**, **Strum up** and **Mute strings**);
+**Strings**, each string's frets from 0 to 12 as buttons, each sounding while it is pressed as a
+string pressed on the neck does, marked where the chord or a finger frets it (one stop among them:
+the arrows go along a string and across them; not on a TV); **Pickup** (**Neck**, **Both**,
+**Bridge**); **Guitar** (**Volume**, **Tone**) and **Amp** (**Gain**, **Bass**, **Middle**,
+**Treble**, **Master**) as sliders; and **As it comes**. The knobs, the pickup and the chord are kept
+for the next visit (`instruments.guitar`). Its sound goes out through **Sound**'s volume with the
+rest.
+
 ## Moving about
 
 As in the Hallway:
@@ -472,7 +549,7 @@ the config's `hallwayDoor()`:
 {
   id: 'instruments',
   title: 'instruments',
-  subtitle: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads, a six-voice analog synth with a rack of modules, and a keyboard with an organ and an electric piano to play, and soon an electric guitar. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
+  subtitle: "A room of instruments behind the Hallway's door: a drum board of twelve analog pads, a six-voice analog synth with a rack of modules, a keyboard with an organ and an electric piano, and an electric guitar with its amp to play. Walk it and play in VR on a Meta Quest, on a desktop or on a phone.",
   sign: 'Band Room',
   url: 'https://ariamokr.github.io/instruments/',
   preview: 'https://ariamokr.github.io/instruments/hallway-preview.jpg',
@@ -542,7 +619,7 @@ site full screen in a WebView whose user agent ends ` HallwayTV/<version>`), or 
 through its `tv.js`:
 
 - The arrows walk and turn. OK uses what the dot in the middle of the view is on: the drums, the
-  synth, the rack or the keys (it, or the sign over it, which is at the dot's height: it walks up to play),
+  synth, the rack, the keys or the guitar (it, or the sign over it, which is at the dot's height: it walks up to play),
   the doorway, a picture on the walls, a button on the panel, or the floor (it walks there). With
   the dot on a picture, the hint says what OK does there: `OK: The studio` for one that leads
   somewhere, `OK: walk up to …` for the rest. It comes back for that if it had faded, and fades
@@ -570,6 +647,10 @@ through its `tv.js`:
   down an octave), OK plays it a moment, Menu goes to its sounds in the card (its drawbars, its
   percussion, its knobs and its cables follow), and Back steps away. The card's keys aren't there
   either.
+- At the guitar likewise, the card open on it: left and right choose the chord before or after (the
+  strings open among them, its name in a toast), OK or down strums down and up strums up, Menu goes
+  to its chords in the card (strumming, the pickup and its knobs follow), and Back steps away. The
+  card's strings aren't there on a TV: they would be seventy-eight more stops.
 - Back while walking goes back a page, to the room's door in the Hallway.
 - There is no Fullscreen or Enter VR. The card and the hint are the 10-foot view (`html.tv` in
   `style.css`): the page is 960 × 540 at a pixel ratio of 2, with larger text, focus rings that show
@@ -605,7 +686,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, its LFO, its envelope, its mixer, its filter and its reverb, where it stands and its keys), the keyboard (its organ and its electric piano, its drawbars and knobs, its jacks, where it stands and what a ray meets on it), MIDI, the card, and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, its LFO, its envelope, its mixer, its filter and its reverb, where it stands and its keys), the keyboard (its organ and its electric piano, its drawbars and knobs, its jacks, where it stands and what a ray meets on it), the guitar (its strings, its chords, its pickups and its amp, where it stands and what a ray meets on it), MIDI, the card, and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -623,7 +704,8 @@ library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `tsconfig.strict.json` checks only the files that pass it (so far `config.js`, `presence.js`,
 `room.js`, `controls.js`, `sound.js`, `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`,
 `board.js`, `midi.js`, `synth.js`, `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js`, `lfo.js`,
-`keys.js`, `keysboard.js`, `filter.js`, `reverb.js`, `mixer.js` and `envelope.js`), and
+`keys.js`, `keysboard.js`, `filter.js`, `reverb.js`, `mixer.js`, `envelope.js`, `strings.js`,
+`strings-worklet.js`, `guitar.js` and `guitarboard.js`), and
 `npm test` runs it too. A file joins its `include` when a change makes it pass. `tools/` and
 `test/` come later.
 
