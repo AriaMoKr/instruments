@@ -214,9 +214,15 @@ export class Seq {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
+  /** Keeps now what was to be kept a moment later, if anything was (the page put away). */
+  flush() {
+    if (this._saving !== undefined) this.save();
+  }
+
   /** Keeps the line now (localStorage): each step's note, the steps played, accented and slid, and the octave. */
   save() {
     clearTimeout(this._saving);
+    this._saving = undefined;
     const steps = this.steps;
     const line = {
       notes: steps.map((step) => step.note),

@@ -331,7 +331,9 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `keysText`, `keysKnobName`, `registration` (the drawbars as an organist writes them),
   `drawbarWave`; `KEYS_SWITCHES` perc, third, fast, rotaryFast, `DEFAULT_SWITCHES`, `switchWords`;
   `KEYS_VOICES` 16 a sound, `PERC`, `ROTORS`, `ORGAN_OUT` (the organ's level made up after its
-  drive, as loud as the synth's and the piano's), `ampAt`; `Keys`: the organ (a PeriodicWave a note
+  drive, as loud as the synth's and the piano's), `PIANO_GAIN` (the piano's, its chord as loud to
+  the ear as the rest's by BS.1770's K-weighting, though louder by its rms), `ampAt`; `Keys`: the
+  organ (a PeriodicWave a note
   from the drawbars, a click, the percussion on a phrase's first key, the scanner's chorus, a drive,
   a rotary speaker's horn and drum each swaying a delay and a gain either side) and the electric
   piano (FM, its index dying back, more struck harder, a tine at 7×, a damper; the tremolo pans it),
@@ -493,7 +495,9 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   hint is `aria-hidden` (out of TalkBack's reading order) but stays the canvas's description
   (`aria-describedby`). `presence.js`: the session's status and notices in words.
 - `preview.js`: the two pictures (`renderPreview`, hung as the hallway hangs its doorways', and
-  `renderSocial`, from `socialView`).
+  `renderSocial` from `bandView`: the band from `BAND.eye` high, as near as keeps all five desks'
+  `deskPoints` (the guitar's turned by `roomXZ`) within `BAND.fill` of its edges, looking at the
+  middle of them (test/preview.test.js); an empty room's `socialView` without).
 - `main.js`: the visit and the way back (common's `door.js`; `<id>.visit` in sessionStorage),
   arrival (at the doorway, or back from a piece's link, `?from=<piece id>` with no `back`, in front
   of it with the kept way back), `go(piece)` (fade, then `location.assign`: the way back, or the
@@ -511,8 +515,10 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   before walking, so arriving (at once with less
   motion) forgets it; `answerApp`; no fullscreen or XR), the drums (`play(i,
   velocity)`, `select(i)`, `setKnob`, the overlay's and the controls' callbacks, the kit's strikes
-  with a haptic pulse, MIDI, the sound woken by presses and put to sleep on `pagehide` or when
-  hidden), the clock (`toggleClock`, also a play/pause key anywhere; `setTempo`; `schedule` from the
+  with a haptic pulse, MIDI, the sound woken by presses, and on `pagehide` or when hidden
+  `putAway`: what each in `KEPT_SOON` was to keep a moment later kept at once (`flush`), every note
+  let go, the sound asleep), the clock (`toggleClock`, also a play/pause key anywhere; `setTempo`;
+  `schedule` from the
   frame loop and a 25 ms timer: `clock.advance` by the audio clock, a pulse a step of the drums when
   the output in their clock in sends it (`drumsEvery`), of the arpeggiator likewise
   (`synthEvery`, `synth.arpStep`), and of the sequencer (`seqEvery`; its step's note
@@ -591,6 +597,14 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
 
 - Client URLs stay relative (tested). Quest 3 is the target: few draw calls, light baked,
   `MeshBasicMaterial`, nothing allocated per frame.
+- What is kept for the next visit: each instrument and module writes its `localStorage` entry 0.4 s
+  after its last change (`_saveSoon`, a knob turned keeps changing) and `flush()` writes one that
+  waits at once, nothing if none does (main.js's `putAway`; so a page left open with nothing changed
+  writes nothing over what another tab kept since); `save()` forgets the wait. The patch and the
+  sound write at once. test/keep.test.js.
+- Loudness: the instruments are balanced by BS.1770's K-weighted loudness at the master (a chord at
+  0.85 on the synth, the organ and the piano, a strum on the guitar: within 2 dB), not by
+  rms; measure it there with a recording worklet in headless Chrome (with autoplay allowed).
 - Types, with no build: `tsconfig.json` checks `public/js/` from its JSDoc (`allowJs`, `checkJs`,
   `noEmit`, bundler resolution: three's types from `@types/three`, common's and
   layersharedsession's from their `.d.ts`), and the page is served as it is, the import map

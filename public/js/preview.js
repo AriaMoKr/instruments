@@ -6,13 +6,22 @@
 //     its doorways' pictures (its hall.js PICTURE: 2.4 m behind the opening, 3 m high, the horizon
 //     at eye height and 56 % up), so through the doorway it looks like the room with some parallax.
 //     Outside's preview.js.
-//   social.jpg, 1280 × 640, for the link-preview tags (index.html og:image): the room from the
-//     corner across from the doorway, so the doorway and the window are both in it.
+//   social.jpg, 1280 × 640, for the link-preview tags (index.html og:image): the band (bandView),
+//     from a little over eye height in front of the instruments, all of them in it. An empty room's
+//     (socialView) is from the corner across from the doorway, so the doorway and the window are both
+//     in it.
 import * as THREE from 'three';
-import { EYE } from './room.js';
+import { EYE, MARGIN } from './room.js';
+import { boardOutline } from './board.js';
 
 export const PREVIEW = { width: 2048, height: 1024, depth: 2.4, pictureHeight: 3.0, eye: 1.6, horizon: 0.56 };
 export const SOCIAL = { width: 1280, height: 640, fov: 60 };
+/**
+ * The social picture of the band (bandView): how high it is taken from (a little over a visitor's
+ * eyes, so that the desks' tops show), how high it looks (degrees) and how near its edges what is in
+ * it may come (−1…1 across and up).
+ */
+export const BAND = { eye: 2.2, fov: 50, fill: 0.9 };
 
 /** Where the hallway's picture is taken from and how wide it looks (the frustum at 1 m), and how it is hung. Pure. */
 export function previewView(p = PREVIEW, from = { x: 0, y: 0, z: -0.6 }) {
@@ -46,6 +55,83 @@ export function socialView(L) {
     eye: { x, y: EYE, z: L.z1 + inset },
     target: { x: -side * L.door.width * 0.9, y: L.door.height * 0.55, z: 0 },
   };
+}
+
+/**
+ * What of a desk the band's picture keeps in it, in the room: its outline (board.js boardOutline: the
+ * top and the panel), its front feet and its sign. `turn` takes a point in its own frame into the
+ * room's, for a desk laid out as if against the far wall and turned (the guitar's: guitarboard.js
+ * roomXZ). Pure.
+ * @param {import('./board.js').Desk} D
+ * @param {(x: number, z: number) => [number, number]} [turn]
+ * @returns {[number, number, number][]}
+ */
+export function deskPoints(D, turn = (x, z) => [x, z]) {
+  const s = D.sign;
+  /** @type {[number, number, number][]} */
+  const own = [...boardOutline(D, 4), [D.x0, 0, D.zFront], [D.x1, 0, D.zFront], [s.x0, s.y0, s.z], [s.x1, s.y0, s.z], [s.x0, s.y1, s.z], [s.x1, s.y1, s.z]];
+  return own.map(([x, y, z]) => {
+    const [rx, rz] = turn(x, z);
+    return [rx, y, rz];
+  });
+}
+
+/**
+ * The view from (x, y, z) at `points`, turned to the middle of the angles they take up across it and
+ * then up it, and whether all of them are within BAND.fill of its edges (`tx`, `ty` the tangents of
+ * its half-widths).
+ * @param {readonly (readonly number[])[]} points
+ * @param {number} x
+ * @param {number} y
+ * @param {number} z
+ * @param {number} tx
+ * @param {number} ty
+ */
+function aimed(points, x, y, z, tx, ty) {
+  let a0 = Infinity, a1 = -Infinity, e0 = Infinity, e1 = -Infinity;
+  for (const [px, , pz] of points) {
+    const a = Math.atan2(px - x, z - pz); // to the right of straight ahead (−z)
+    a0 = Math.min(a0, a);
+    a1 = Math.max(a1, a);
+  }
+  const yaw = (a0 + a1) / 2, sy = Math.sin(yaw), cy = Math.cos(yaw);
+  for (const [px, py, pz] of points) {
+    const e = Math.atan2(py - y, (px - x) * sy - (pz - z) * cy);
+    e0 = Math.min(e0, e);
+    e1 = Math.max(e1, e);
+  }
+  const pitch = (e0 + e1) / 2, sp = Math.sin(pitch), cp = Math.cos(pitch);
+  // Ahead, to the right and up, as three's lookAt turns a camera.
+  const f = [sy * cp, sp, -cy * cp], r = [cy, 0, sy], u = [-sp * sy, cp, sp * cy];
+  const fits = points.every(([px, py, pz]) => {
+    const dx = px - x, dy = py - y, dz = pz - z;
+    const ahead = dx * f[0] + dy * f[1] + dz * f[2];
+    const across = (dx * r[0] + dz * r[2]) / (ahead * tx), up = (dx * u[0] + dy * u[1] + dz * u[2]) / (ahead * ty);
+    return ahead > 0 && Math.abs(across) <= BAND.fill && Math.abs(up) <= BAND.fill;
+  });
+  return { eye: { x, y, z }, target: { x: x + f[0], y: y + f[1], z: z + f[2] }, fits };
+}
+
+/**
+ * Where the social picture is taken from in a room with instruments in it (`points`, in the room: each
+ * desk's deskPoints): from BAND.eye high, in front of the middle of them across the room, as near as
+ * keeps all of them in it within BAND.fill of its edges (stepping back towards the doorway's wall, no
+ * nearer it than MARGIN), looking at the middle of them. Pure.
+ * @param {readonly (readonly number[])[]} points
+ * @param {{ fov?: number, aspect?: number }} [o] how high it looks (degrees), and how wide for 1 high
+ */
+export function bandView(points, { fov = BAND.fov, aspect = SOCIAL.width / SOCIAL.height } = {}) {
+  const ty = Math.tan((fov * Math.PI) / 360), tx = ty * aspect;
+  let x0 = Infinity, x1 = -Infinity, front = -Infinity;
+  for (const [px, , pz] of points) {
+    x0 = Math.min(x0, px);
+    x1 = Math.max(x1, px);
+    front = Math.max(front, pz);
+  }
+  for (let z = front + 0.5; ; z += 0.05) {
+    const view = aimed(points, (x0 + x1) / 2, BAND.eye, Math.min(z, -MARGIN), tx, ty);
+    if (view.fits || z >= -MARGIN) return { eye: view.eye, target: view.target, fov };
+  }
 }
 
 /**
@@ -96,12 +182,15 @@ export function renderPreview(renderer, scene, camera, { hide = [], from, view =
   return renderShot(renderer, scene, camera, shot, view.width, view.height, hide);
 }
 
-/** The social picture of the room, in a canvas. */
-export function renderSocial(renderer, scene, camera, L, { hide = [], view = SOCIAL } = {}) {
-  const v = socialView(L);
-  const shot = new THREE.PerspectiveCamera(view.fov, view.width / view.height, 0.05, 150);
-  shot.position.set(v.eye.x, v.eye.y, v.eye.z);
-  shot.lookAt(v.target.x, v.target.y, v.target.z);
+/**
+ * The social picture of the room, in a canvas: from `from` (where it is taken from, what it looks at
+ * and how high, in degrees: bandView's; an empty room's socialView, as high as `view`'s), `view` its
+ * size.
+ */
+export function renderSocial(renderer, scene, camera, L, { hide = [], view = SOCIAL, from = socialView(L) } = {}) {
+  const shot = new THREE.PerspectiveCamera(from.fov ?? view.fov, view.width / view.height, 0.05, 150);
+  shot.position.set(from.eye.x, from.eye.y, from.eye.z);
+  shot.lookAt(from.target.x, from.target.y, from.target.z);
   shot.updateMatrixWorld(true);
   return renderShot(renderer, scene, camera, shot, view.width, view.height, hide);
 }

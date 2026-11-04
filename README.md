@@ -74,7 +74,8 @@ and the knobs of the pad last played (**As it comes** sets the knobs back), the 
 **Play from a MIDI device**, which asks for the devices plugged in; once you have said yes, the room
 listens to them on every visit, on every channel, and to any plugged in later. The knobs are kept
 for the next visit (`localStorage`, `instruments.drums`), as are the volume and mute
-(`instruments.sound`).
+(`instruments.sound`). What each instrument keeps is written a moment after its last change, and at
+once when the page is left, closed or hidden, so a knob turned just before leaving is kept too.
 
 Every sound is made in the browser as it is played (Web Audio), the way the drum machines of the
 early 1980s made theirs, so there are no samples to download or credit: a sine whose pitch falls
@@ -771,9 +772,10 @@ committed:
 
 - `public/hallway-preview.jpg`, 2048 × 1024: the room from where one arrives, at eye height, facing
   in, hung as the Hallway hangs its doorways' pictures. The Hallway's doorway to here shows it.
-- `public/social.jpg`, 1280 × 640: the room from across it, looking back at the doorway and the
-  window. The page's `og:image` and `twitter:image` show it, and it is the repository's social
-  preview.
+- `public/social.jpg`, 1280 × 640: the band, from a little over eye height in front of it, as near
+  as keeps all five desks in it with their signs (`bandView` in `public/js/preview.js`): the
+  keyboard, the drum board, the synth and the rack along the far wall, the guitar by the right wall.
+  The page's `og:image` and `twitter:image` show it, and it is the repository's social preview.
 
 Render them again whenever the room changes. Chrome starts through common's `tools/chrome.mjs`, on a
 new profile that is first told the Windows password is not blank, so it never tries a logon to find

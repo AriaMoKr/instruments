@@ -188,9 +188,15 @@ export class Clock {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
+  /** Keeps now what was to be kept a moment later, if anything was (the page put away). */
+  flush() {
+    if (this._saving !== undefined) this.save();
+  }
+
   /** Keeps the tempo now (localStorage). */
   save() {
     clearTimeout(this._saving);
+    this._saving = undefined;
     try {
       this._storage?.setItem(this._key, JSON.stringify({ tempo: this.tempo }));
     } catch {

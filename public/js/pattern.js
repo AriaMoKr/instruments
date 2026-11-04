@@ -161,9 +161,15 @@ export class Pattern {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
+  /** Keeps now what was to be kept a moment later, if anything was (the page put away). */
+  flush() {
+    if (this._saving !== undefined) this.save();
+  }
+
   /** Keeps the pattern now (localStorage): each pad's steps as text, a cleared one as rests. */
   save() {
     clearTimeout(this._saving);
+    this._saving = undefined;
     /** @type {Record<string, string>} */
     const out = {};
     PADS.forEach((p, i) => {

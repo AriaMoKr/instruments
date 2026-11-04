@@ -283,8 +283,12 @@ export const ROTORS = Object.freeze({
   horn: Object.freeze({ slow: 0.8, fast: 6.7, ramp: 0.35, sway: 0.0004, am: 0.35 }),
   drum: Object.freeze({ slow: 0.67, fast: 5.9, ramp: 1.4, sway: 0.00015, am: 0.2 }),
 });
-/** A piano note's loudness at full velocity, its attack (seconds) and how quickly the damper stops it (a time constant). */
-const PIANO_GAIN = 0.32, PIANO_ATTACK = 0.002, DAMP = 0.045;
+/**
+ * A piano note's loudness at full velocity, its attack (seconds) and how quickly the damper stops it (a
+ * time constant). Its chord is as loud to the ear as the organ's, the synth's and the guitar's (as
+ * BS.1770 weighs it), though by its rms it would be louder: most of a tine's sound is low.
+ */
+const PIANO_GAIN = 0.46, PIANO_ATTACK = 0.002, DAMP = 0.045;
 /** Its FM: how far the index falls back to (of its peak) and how quickly (a time constant); the tine's ring, its frequency (of the note's), its depth and how quickly it dies. */
 const INDEX_SUSTAIN = 0.15, INDEX_DECAY = 0.3, TINE = 7, RING = 0.9, RING_DECAY = 0.022;
 /** How quickly a note cut short goes (a time constant, in seconds), and how long its sources go on after. */
@@ -1044,9 +1048,15 @@ export class Keys {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
+  /** Keeps now what was to be kept a moment later, if anything was (the page put away). */
+  flush() {
+    if (this._saving !== undefined) this.save();
+  }
+
   /** Keeps the knobs, the switches, the sound and the octave now (localStorage). */
   save() {
     clearTimeout(this._saving);
+    this._saving = undefined;
     try {
       this._storage?.setItem(this._key, JSON.stringify({ knobs: this.knobs, switches: this.switches, choice: this.choice, octave: this.octave }));
     } catch {

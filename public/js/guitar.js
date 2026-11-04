@@ -1051,9 +1051,15 @@ export class Guitar {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
+  /** Keeps now what was to be kept a moment later, if anything was (the page put away). */
+  flush() {
+    if (this._saving !== undefined) this.save();
+  }
+
   /** Keeps the knobs, the pedals, the pickup and the chord now (localStorage). */
   save() {
     clearTimeout(this._saving);
+    this._saving = undefined;
     try {
       this._storage?.setItem(this._key, JSON.stringify({ knobs: this.knobs, pedals: this.pedals, pickup: this.pickup, chord: this.chord }));
     } catch {

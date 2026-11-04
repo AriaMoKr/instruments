@@ -1348,9 +1348,15 @@ export class Synth {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
+  /** Keeps now what was to be kept a moment later, if anything was (the page put away). */
+  flush() {
+    if (this._saving !== undefined) this.save();
+  }
+
   /** Keeps the knobs, Mono, the preset, the octave and the arpeggiator's settings now (localStorage). */
   save() {
     clearTimeout(this._saving);
+    this._saving = undefined;
     const arp = { mode: this.arp.mode, hold: this.arp.hold, range: this.arp.range };
     try {
       this._storage?.setItem(this._key, JSON.stringify({ knobs: this.knobs, mono: this.mono, preset: this.preset, edited: this.edited, octave: this.octave, arp }));

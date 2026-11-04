@@ -72,12 +72,12 @@ import { KEYS_COUNT, KEYS_LOWEST, KEYS_SWITCHES, Keys, isDrawbar, keysText, swit
 import { KEYBOARD, layoutKeyboard } from './keysboard.js';
 import { KeysKit } from './keyskit.js';
 import { CHORDS, GUITAR_STRINGS, Guitar, PEDALS, PICKUPS, guitarText } from './guitar.js';
-import { GUITAR, layoutGuitar } from './guitarboard.js';
+import { GUITAR, layoutGuitar, roomXZ } from './guitarboard.js';
 import { GuitarKit } from './guitarkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { setAnisotropy } from './textures.js';
-import { renderPreview, renderSocial, previewView, socialView } from './preview.js';
+import { bandView, deskPoints, renderPreview, renderSocial, previewView } from './preview.js';
 import { hallLink, hallwayViews, keptWay, leaveUrl, readVisit, wayBack, withoutVisit } from 'common/door.js';
 import { Fade } from 'common/fade.js';
 import { NAV_KEY, loadNav, saveNav } from 'common/nav.js';
@@ -1226,19 +1226,21 @@ for (const type of ['pointerup', 'touchend', 'keydown']) {
     if (sound.ctx) sound.wake();
   }, { capture: true, passive: true });
 }
-// Put away: every note let go (none kept sounding, nor waiting to), and the sound asleep.
-addEventListener('pagehide', () => {
+// Put away: what each was to keep a moment after its last change kept now (the page may not come
+// back: a knob turned just before leaving is kept too), every note let go (none kept sounding, nor
+// waiting to), and the sound asleep. Only what waits is written, so a page left open elsewhere with
+// nothing changed keeps nothing over what another has kept since.
+const KEPT_SOON = [drums, clock, pattern, delay, synth, seq, rackDelay, lfo, filter, reverb, envelope, mixer, keys, guitar];
+function putAway() {
+  for (const k of KEPT_SOON) k.flush();
   keys.allOff();
   synth.allOff();
   guitar.allOff();
   sound.sleep();
-});
+}
+addEventListener('pagehide', putAway);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) return;
-  keys.allOff();
-  synth.allOff();
-  guitar.allOff();
-  sound.sleep();
+  if (document.hidden) putAway();
 });
 
 // From a MIDI device (midi.js): asked for with the card's button, or at once when the visitor has
@@ -2207,9 +2209,11 @@ window.__room = {
   preview(quality = 0.9) {
     return { jpeg: renderPreview(renderer, scene, camera, { hide: [fade.mesh, vignette.mesh] }).toDataURL('image/jpeg', quality), params: previewView().params };
   },
-  /** The picture for link previews (preview.js), as a data: URL, with where it is taken from. */
+  /** The picture for link previews (preview.js): the band, all five desks in it, as a data: URL, with where it is taken from. */
   social(quality = 0.88) {
-    return { jpeg: renderSocial(renderer, scene, camera, L, { hide: [fade.mesh, vignette.mesh] }).toDataURL('image/jpeg', quality), view: socialView(L) };
+    const points = [board, synthDesk, rackDesk, keysDesk].flatMap((d) => deskPoints(d)).concat(deskPoints(guitarDesk, (x, z) => roomXZ(guitarDesk, x, z)));
+    const from = bandView(points);
+    return { jpeg: renderSocial(renderer, scene, camera, L, { hide: [fade.mesh, vignette.mesh], from }).toDataURL('image/jpeg', quality), view: from };
   },
   tick(dt = 1 / 60, n = 1) {
     for (let i = 0; i < n; i++) step(dt);
