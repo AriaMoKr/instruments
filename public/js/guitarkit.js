@@ -9,11 +9,13 @@
 // a dot over each string where it is fretted (the chord's in gold, a finger's in the room's glow, a
 // cross behind the nut where the chord mutes it) and a pale one where a pointer would press; the
 // chord buttons behind the neck, each with its chord and its key, and a light on the chord chosen; the
-// guitar's knobs and its pickup switch's lever on the body, the amp's knobs on the panel, each with a
-// line that shows where it is turned to; on one canvas, drawn once, what is on the top and the panel's
-// face (the display's frame, the amp's knobs' names and their scales, AMP over them, a blank plate
-// where its pedals will go); the display (the chord, the pickup, how the amp sounds, the knob turned
-// last), redrawn when it changes, at most ten times a second; and its sign on the wall over it. In VR
+// guitar's knobs and its pickup switch's lever on the body, the amp's knobs and the pedals' on the
+// panel, each with a line that shows where it is turned to, and each pedal's footswitch and its light,
+// lit while it is on; on one canvas, drawn once, what is on the top and the panel's face (its jacks,
+// as the board's, PATCH over them; the display's frame; the amp's knobs' names and their scales, AMP
+// over them; the four pedals, each in its colour, its name, its knob's scale and name); the display
+// (the chord, the pickup, how the amp sounds, the pedals on, the knob turned last), redrawn when it
+// changes, at most ten times a second; and its sign on the wall over it. Its cables are kit.js's. In VR
 // a stick's tip (kit.js's sticks, which show near it too) or a forefinger is a pick over the body,
 // plucking each string it crosses as fast as it goes, and a finger on the neck, pressing a string at a
 // fret, sliding along it and bending it across, and letting it go as it lifts; coming down on the
@@ -21,16 +23,18 @@
 // allocated.
 import * as THREE from 'three';
 import { Builder } from './builder.js';
-import { REARM, boardPoint, panelPoint, strikeVelocity } from './board.js';
+import { BOARD, REARM, boardPoint, panelPoint, strikeVelocity } from './board.js';
 import { BODY, GUITAR, bendFor, chordAt, fretAt, fretPlace, guitarPoint, neckHalf, partAt, pickAt, spacingAt, stringAt, stringB, strummed, switchA } from './guitarboard.js';
-import { CHORDS, CHORD_KEYS, DEFAULT_GUITAR, FRETS, PICKUPS, ampWords, guitarKnobName } from './guitar.js';
-import { STICK, canvas, context, fit, lin, signPlate, texture, times } from './kit.js';
+import { CHORDS, CHORD_KEYS, DEFAULT_GUITAR, FRETS, PEDALS, PICKUPS, ampWords, guitarKnobName } from './guitar.js';
+import { JACKS } from './patch.js';
+import { STICK, canvas, context, drawJack, drawPlate, fit, lin, signPlate, texture, times } from './kit.js';
 import { GOLD, SANS } from './textures.js';
 
 /** @typedef {import('./guitarboard.js').GuitarDesk} GuitarDesk */
 /** @typedef {import('./guitar.js').GuitarKnob} GuitarKnob */
 /** @typedef {import('./guitar.js').GuitarKnobs} GuitarKnobs */
 /** @typedef {import('./guitar.js').Pickup} Pickup */
+/** @typedef {import('./guitar.js').PedalId} PedalId */
 /** @typedef {import('common/controls.js').Hand<import('./board.js').BandHit>} Hand */
 /**
  * A tip that plays the guitar in VR (a stick's, a forefinger): where it was last frame on the top (a,
@@ -51,10 +55,24 @@ const STEEL = lin('#cfccc4'), WOUND = lin('#ada79c'), GLOW = lin('#5cc8a8');
 const GAUGE = [0.0026, 0.0022, 0.0019, 0.0015, 0.0012, 0.001], BLUR = 0.004;
 /** The dots (linear): where the chord frets a string, where a finger presses one, where the chord mutes one, and where a pointer would press. */
 const DOT = { chord: lin('#e9c46a'), finger: lin('#5cc8a8'), muted: lin('#d9573b'), hover: lin('#f4efe4') };
-/** The chord buttons' lights: off, on (linear). */
+/** The chord buttons' lights: off, on (linear); and the pedals': off, on. */
 const LIGHT = { off: lin('#2a1d18'), on: lin('#f2b648') };
-/** The knobs (linear): the guitar's (cream, a dark line) and the amp's (black, a cream line); the pickup switch's lever. */
-const KNOB = { guitar: lin('#e8dfc9'), guitarMark: lin('#2a2420'), amp: lin('#1c1a18'), ampMark: lin('#efe5cf'), lever: lin('#1c1a18') };
+const LED = { off: lin('#3a1613'), on: lin('#ff4636') };
+/**
+ * The knobs (linear): the guitar's (cream, a dark line), the amp's (black, a cream line) and the
+ * pedals' (as the guitar's); the pickup switch's lever; the pedals' footswitches.
+ */
+const KNOB = {
+  guitar: lin('#e8dfc9'), guitarMark: lin('#2a2420'), amp: lin('#1c1a18'), ampMark: lin('#efe5cf'),
+  pedal: lin('#e8dfc9'), pedalMark: lin('#2a2420'), lever: lin('#1c1a18'), stomp: lin('#cdc9c1'),
+};
+/** Each pedal's colour, and its writing's. @type {Readonly<Record<PedalId, { body: string, ink: string }>>} */
+const PEDAL_LOOK = {
+  wah: { body: '#262523', ink: '#efe5cf' },
+  overdrive: { body: '#276b3b', ink: '#efe5cf' },
+  chorus: { body: '#285c94', ink: '#efe5cf' },
+  tremolo: { body: '#e0802f', ink: '#1c1a18' },
+};
 /** How high the body's sides start over the top, how high the headstock's face is, and the fretboard's over the body's. */
 const UNDER = 0.003, HEAD = 0.028, BOARD_UP = 0.001;
 /** The headstock's pegs: how far in from its near edge, the first's place from its end, and how far apart. */
@@ -181,9 +199,9 @@ function fretboard(G) {
  * What is drawn once, on one canvas: the top (the desk round the guitar, CHORDS over the chord buttons,
  * each with its chord and its key; the headstock with its pegs and the strings round them, the
  * fretboard with its inlays, the body's sunburst, the pickguard, the switch's slot and the names of
- * the knobs and its places) over the panel's face (the display's frame, its own name, AMP over the
- * amp's knobs, each one's scale and name, the blank plate). `top` and `panel`: how many of its rows
- * each takes.
+ * the knobs and its places) over the panel's face (its jacks, PATCH over them; the display's frame,
+ * its own name; AMP over the amp's knobs, each one's scale and name; the pedals). `top` and `panel`:
+ * how many of its rows each takes.
  * @param {GuitarDesk} G
  */
 function faces(G) {
@@ -320,50 +338,96 @@ function faces(G) {
   g.textAlign = 'left';
   g.fillText('Electric guitar', x(S.a0), panelY(S.b1 + 0.045));
   g.textAlign = 'center';
-  // AMP over its knobs, a line along them either side of it, its ends turned down to them.
-  const amp = P.titles[0], A = GUITAR.amp, a0 = P.amp.a0 + 0.012, a1 = P.amp.a1 - 0.012, ty = panelY(amp.b);
+  // AMP over its knobs and PATCH over the jacks, a line along each either side of it, its ends turned
+  // down to them.
   g.font = `600 ${Math.round(0.0105 * k)}px ${SANS}`;
-  g.fillStyle = GOLD;
-  g.fillText(amp.text, x(amp.a), ty);
-  const half = g.measureText(amp.text).width / 2 + 12;
-  g.strokeStyle = 'rgba(224,187,114,0.5)';
-  g.lineWidth = 2;
-  g.beginPath();
-  g.moveTo(x(a0), ty + 8);
-  g.lineTo(x(a0), ty);
-  g.lineTo(x(amp.a) - half, ty);
-  g.moveTo(x(amp.a) + half, ty);
-  g.lineTo(x(a1), ty);
-  g.lineTo(x(a1), ty + 8);
-  g.stroke();
-  // Each amp's knob: a scale round it, 0 to 10, and its name under it.
-  for (const d of G.dials) {
-    if (d.on !== 'panel') continue;
-    const cx = x(d.a), cy = panelY(d.b), r0 = (A.r + 0.005) * k, r1 = (A.r + 0.0095) * k;
-    g.strokeStyle = 'rgba(239,229,207,0.7)';
-    g.lineWidth = 3;
+  for (const t of P.titles) {
+    const ty = panelY(t.b), half = g.measureText(t.text).width / 2 + 12;
+    g.fillStyle = GOLD;
+    g.fillText(t.text, x(t.a), ty);
+    g.strokeStyle = 'rgba(224,187,114,0.5)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(x(t.a0), ty + 8);
+    g.lineTo(x(t.a0), ty);
+    g.lineTo(x(t.a) - half, ty);
+    g.moveTo(x(t.a) + half, ty);
+    g.lineTo(x(t.a1), ty);
+    g.lineTo(x(t.a1), ty + 8);
+    g.stroke();
+  }
+  // Its jacks, as the board's: its outs on a plate, each with what it is under it.
+  drawPlate(g, P.jacks.filter((j) => j.out), x, panelY, k);
+  for (const j of P.jacks) {
+    drawJack(g, x(j.a), panelY(j.b), BOARD.panel.jack * k);
+    g.fillStyle = '#efe5cf';
+    g.fillText(JACKS.find((J) => J.id === j.id)?.label ?? '', x(j.a), panelY(j.b - BOARD.panel.jack - 0.011));
+  }
+  /**
+   * A knob's scale round it, 0 to 10, from `inner` to `outer` past its edge (0, 5 and 10 longer).
+   * @param {import('./guitarboard.js').GuitarDial} d
+   * @param {number} inner
+   * @param {number} outer
+   */
+  const scale = (d, inner, outer) => {
+    const cx = x(d.a), cy = panelY(d.b), r0 = (d.r + inner) * k, r1 = (d.r + outer) * k;
     g.beginPath();
     for (let n = 0; n <= 10; n++) {
-      const t = ((n / 10 - 0.5) * 1.5 * Math.PI), long = n % 5 === 0 ? 1.35 : 1;
+      const t = (n / 10 - 0.5) * 1.5 * Math.PI, long = n % 5 === 0 ? 1.35 : 1;
       g.moveTo(cx + r0 * Math.sin(t), cy - r0 * Math.cos(t));
       g.lineTo(cx + (r0 + (r1 - r0) * long) * Math.sin(t), cy - (r0 + (r1 - r0) * long) * Math.cos(t));
     }
     g.stroke();
+  };
+  // Each amp's knob: its scale, and its name under it.
+  for (const d of G.dials) {
+    if (d.section !== 'amp') continue;
+    g.strokeStyle = 'rgba(239,229,207,0.7)';
+    g.lineWidth = 3;
+    scale(d, 0.005, 0.0095);
     g.fillStyle = '#efe5cf';
-    fit(g, d.label, A.spacing * k - 16, Math.round(0.0095 * k));
-    g.fillText(d.label, cx, panelY(d.b - A.r - 0.019));
+    fit(g, d.label, GUITAR.amp.spacing * k - 16, Math.round(0.0095 * k));
+    g.fillText(d.label, x(d.a), panelY(d.b - d.r - 0.019));
   }
-  // The blank plate where its pedals will go.
-  const bx = x(1.0), by = panelY(0.215), bw = x(G.width - 0.04) - bx, bh = panelY(0.035) - by;
-  g.fillStyle = '#2c2a27';
-  g.beginPath();
-  g.roundRect(bx, by, bw, bh, 6);
-  g.fill();
-  for (const [sx, sy] of [[bx + 14, by + 14], [bx + bw - 14, by + 14], [bx + 14, by + bh - 14], [bx + bw - 14, by + bh - 14]]) {
-    g.fillStyle = '#8d877d';
+  // The pedals, each in its colour: its name, its knob's scale and name, its light's bezel, its
+  // footswitch's nut, a screw at each corner.
+  const E = GUITAR.pedal;
+  for (const p of P.pedals) {
+    const look = PEDAL_LOOK[p.id], px = x(p.a0), py = panelY(p.b1), pw = x(p.a1) - px, pd = panelY(p.b0) - py, d = G.dials[p.knob];
+    g.fillStyle = look.body;
     g.beginPath();
-    g.arc(sx, sy, 6, 0, 2 * Math.PI);
+    g.roundRect(px, py, pw, pd, 0.007 * k);
     g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.5)';
+    g.lineWidth = 3;
+    g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.12)';
+    g.fillRect(px + 0.007 * k, py + 2, pw - 0.014 * k, 3);
+    g.fillStyle = look.ink;
+    fit(g, p.label, pw - 18, Math.round(0.0088 * k), '700');
+    g.fillText(p.label, x(p.a), panelY(E.name));
+    g.strokeStyle = look.ink;
+    g.globalAlpha = 0.7;
+    g.lineWidth = 2;
+    scale(d, 0.003, 0.0065);
+    g.globalAlpha = 1;
+    g.font = `600 ${Math.round(0.0068 * k)}px ${SANS}`;
+    g.fillText(d.label, x(d.a), panelY(d.b - d.r - 0.011));
+    g.fillStyle = '#121110';
+    g.beginPath();
+    g.arc(x(p.a), panelY(E.led), 0.0064 * k, 0, 2 * Math.PI);
+    g.fill();
+    g.fillStyle = '#6f6a62';
+    g.beginPath();
+    g.arc(x(p.a), panelY(E.stomp.b), E.stomp.r * 1.32 * k, 0, 2 * Math.PI);
+    g.fill();
+    const s = 0.0055 * k;
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    for (const [sx, sy] of [[px + s, py + s], [px + pw - s, py + s], [px + s, py + pd - s], [px + pw - s, py + pd - s]]) {
+      g.beginPath();
+      g.arc(sx, sy, 3.5, 0, 2 * Math.PI);
+      g.fill();
+    }
   }
   return { canvas: c, top: th, panel: ph };
 }
@@ -536,24 +600,36 @@ export class GuitarKit {
     /** @private the hover dot as last written: string × 32 + fret, -1 hidden, -2 never */
     this._hoverShown = -2;
 
-    // The knobs (the guitar's two on its body, the amp's five on the panel) and the pickup switch's
-    // lever, one mesh, each its size and colour; a line on each knob.
-    const n = G.dials.length;
-    this.knobs = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1.08, 1, 24).translate(0, 0.5, 0), new THREE.MeshBasicMaterial(), n + 1);
+    // The knobs (the guitar's two on its body, the amp's five and the pedals' four on the panel), the
+    // pickup switch's lever and the pedals' footswitches, one mesh, each its size and colour; a line
+    // on each knob.
+    const n = G.dials.length, E = GUITAR.pedal;
+    this.knobs = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1.08, 1, 24).translate(0, 0.5, 0), new THREE.MeshBasicMaterial(), n + 1 + G.panel.pedals.length);
     this.marks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), n);
     this.knobs.name = 'guitar knobs';
     this.marks.name = 'guitar knob marks';
     turned.add(this.knobs, this.marks);
     const tint = (/** @type {number[]} */ c, /** @type {THREE.Color} */ l) => this._color.setRGB(c[0] * l.r, c[1] * l.g, c[2] * l.b);
     G.dials.forEach((d, i) => {
-      const own = d.on === 'top';
-      this.knobs.setColorAt(i, tint(own ? KNOB.guitar : KNOB.amp, own ? light : panelLight));
-      this.marks.setColorAt(i, tint(own ? KNOB.guitarMark : KNOB.ampMark, own ? light : panelLight));
+      const [body, mark] = d.section === 'guitar' ? [KNOB.guitar, KNOB.guitarMark] : d.section === 'amp' ? [KNOB.amp, KNOB.ampMark] : [KNOB.pedal, KNOB.pedalMark];
+      this.knobs.setColorAt(i, tint(body, d.on === 'top' ? light : panelLight));
+      this.marks.setColorAt(i, tint(mark, d.on === 'top' ? light : panelLight));
     });
     this.knobs.setColorAt(n, tint(KNOB.lever, light));
+    G.panel.pedals.forEach((p, i) => {
+      const o = this._dummy;
+      o.position.set(p.a, 0, -E.stomp.b);
+      o.rotation.set(0, 0, 0);
+      o.scale.set(E.stomp.r, E.stomp.h, E.stomp.r);
+      o.updateMatrix();
+      this.knobs.setMatrixAt(n + 1 + i, this._mat.multiplyMatrices(panel.matrix, o.matrix));
+      this.knobs.setColorAt(n + 1 + i, tint(KNOB.stomp, panelLight));
+    });
 
-    // The chord buttons' lights: one each, in its corner, lit on the chord chosen.
-    this.lights = new THREE.InstancedMesh(new THREE.CircleGeometry(0.0042, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial(), G.chords.length);
+    // The lights: the chord buttons', one each in its corner, lit on the chord chosen; the pedals', one
+    // each over its footswitch, lit while it is on.
+    const chords = G.chords.length;
+    this.lights = new THREE.InstancedMesh(new THREE.CircleGeometry(0.0042, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial(), chords + G.panel.pedals.length);
     this.lights.name = 'guitar lights';
     turned.add(this.lights);
     G.chords.forEach((cb, i) => {
@@ -564,8 +640,18 @@ export class GuitarKit {
       d.updateMatrix();
       this.lights.setMatrixAt(i, this._mat.multiplyMatrices(top.matrix, d.matrix));
     });
+    G.panel.pedals.forEach((p, i) => {
+      const d = this._dummy;
+      d.position.set(p.a, 0.0006, -E.led);
+      d.rotation.set(0, 0, 0);
+      d.scale.set(1, 1, 1);
+      d.updateMatrix();
+      this.lights.setMatrixAt(chords + i, this._mat.multiplyMatrices(panel.matrix, d.matrix));
+    });
     /** @private each light on (1) or off (0) as last written, -1 never */
-    this._lightShown = new Int8Array(G.chords.length).fill(-1);
+    this._lightShown = new Int8Array(chords + G.panel.pedals.length).fill(-1);
+    /** @private which pedals are on (G.panel.pedals' order) */
+    this._pedals = G.panel.pedals.map(() => false);
 
     // The display, over its frame on the face.
     const Sd = G.panel.display, dw = Sd.a1 - Sd.a0, dd = Sd.b1 - Sd.b0;
@@ -580,7 +666,7 @@ export class GuitarKit {
 
     // The sign on the wall, as wide as the desk.
     const Gs = G.sign, sw = Gs.x1 - Gs.x0, sh = Gs.y1 - Gs.y0, mid = [(Gs.x0 + Gs.x1) / 2, (Gs.y0 + Gs.y1) / 2, Gs.z];
-    const plate = signPlate(1024, Math.round((1024 * sh) / sw), 'Guitar', 'an electric guitar and its amp');
+    const plate = signPlate(1024, Math.round((1024 * sh) / sw), 'Guitar', 'an electric guitar, its amp and its pedals');
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), new THREE.MeshBasicMaterial({ map: texture(plate, anisotropy), color: lightColor(R(mid), RN([0, 0, 1])) }));
     sign.position.set(mid[0], mid[1], mid[2]);
     sign.name = 'guitar sign';
@@ -598,8 +684,8 @@ export class GuitarKit {
     this._crossed = [0, 0, 0, 0, 0, 0];
     /** @private */
     this._when = [0, 0, 0, 0, 0, 0];
-    /** @private what the display shows: the chord, its two lines, the knob turned last */
-    this._shown = { name: '', first: '', second: '', last: '' };
+    /** @private what the display shows: the chord, its three lines, the knob turned last */
+    this._shown = { name: '', first: '', second: '', third: '', last: '' };
     /** @private the chord chosen (CHORDS' index), -1 none */
     this._chord = -1;
     /** @private */
@@ -663,20 +749,24 @@ export class GuitarKit {
   }
 
   /**
-   * The guitar as it is (guitar.js Guitar: the chord, its name, the pickup, the knobs): on the
-   * display, the lights and the switch.
-   * @param {{ chord: string | null, chordName: string, pickup: Pickup, knobs: Readonly<GuitarKnobs> }} state
+   * The guitar as it is (guitar.js Guitar: the chord, its name, the pickup, the knobs, the pedals on):
+   * on the display, the lights and the switch.
+   * @param {{ chord: string | null, chordName: string, pickup: Pickup, knobs: Readonly<GuitarKnobs>, pedals: Readonly<Record<PedalId, boolean>> }} state
    */
-  setState({ chord, chordName, pickup, knobs }) {
+  setState({ chord, chordName, pickup, knobs, pedals }) {
     const p = PICKUPS.find((x) => x.id === pickup);
     const first = `${p ? p.name.toUpperCase() : ''}  ·  VOLUME ${pct(knobs.volume)}  ·  TONE ${pct(knobs.tone)}`;
     const second = `AMP ${ampWords(knobs.gain).toUpperCase()}  ·  GAIN ${pct(knobs.gain)}  ·  MASTER ${pct(knobs.master)}`;
+    const on = PEDALS.filter((x) => pedals[x.id]).map((x) => x.label);
+    const third = `PEDALS  ${on.length ? on.join('  ·  ') : 'OFF'}`;
     const shown = this._shown;
-    if (chordName !== shown.name || first !== shown.first || second !== shown.second) this._displayDirty = true;
+    if (chordName !== shown.name || first !== shown.first || second !== shown.second || third !== shown.third) this._displayDirty = true;
     shown.name = chordName;
     shown.first = first;
     shown.second = second;
+    shown.third = third;
     this._chord = CHORDS.findIndex((c) => c.id === chord);
+    this.desk.panel.pedals.forEach((x, i) => (this._pedals[i] = !!pedals[x.id]));
     this.setPickup(pickup);
   }
 
@@ -706,7 +796,7 @@ export class GuitarKit {
    */
   _turn(i, value) {
     const d = this.desk.dials[i], o = this._dummy, own = d.on === 'top';
-    const r = own ? GUITAR.knob.r : GUITAR.amp.r, h = own ? GUITAR.knob.h : GUITAR.amp.h, base = own ? GUITAR.body : 0;
+    const { r, h } = d, base = own ? GUITAR.body : 0;
     const frame = own ? this._top.matrix : this._panel.matrix, turn = -(value - 0.5) * 1.5 * Math.PI;
     o.position.set(d.a, base, -d.b);
     o.rotation.set(0, turn, 0);
@@ -806,17 +896,18 @@ export class GuitarKit {
   }
 
   /**
-   * The chord buttons' lights as they are now, where they changed: on the chord chosen. Whether any was
-   * written.
+   * The lights as they are now, where they changed: the chord buttons' on the chord chosen, the
+   * pedals' on those on. Whether any was written.
    * @private
    */
   _writeLights() {
     let wrote = false;
+    const chords = this.desk.chords.length;
     for (let l = 0; l < this._lightShown.length; l++) {
-      const on = l === this._chord ? 1 : 0;
+      const pedal = l >= chords, on = (pedal ? this._pedals[l - chords] : l === this._chord) ? 1 : 0;
       if (on === this._lightShown[l]) continue;
       this._lightShown[l] = on;
-      const c = on ? LIGHT.on : LIGHT.off;
+      const c = pedal ? (on ? LED.on : LED.off) : on ? LIGHT.on : LIGHT.off;
       this.lights.setColorAt(l, this._color.setRGB(c[0], c[1], c[2]));
       wrote = true;
     }
@@ -842,7 +933,7 @@ export class GuitarKit {
     if (this._displayDirty && this._displayAge >= 0.1) this._drawDisplay();
   }
 
-  /** The display: the chord, its two lines, and the knob turned last. @private */
+  /** The display: the chord, its three lines, and the knob turned last. @private */
   _drawDisplay() {
     this._displayDirty = false;
     this._displayAge = 0;
@@ -853,12 +944,14 @@ export class GuitarKit {
     g.textBaseline = 'middle';
     g.fillStyle = '#9ee6b8';
     fit(g, s.name, w - 40, 52, '700');
-    g.fillText(s.name, 20, h * 0.2);
+    g.fillText(s.name, 20, h * 0.16);
     g.fillStyle = '#6fbf93';
     fit(g, s.first, w - 40, 26);
-    g.fillText(s.first, 20, h * 0.45);
+    g.fillText(s.first, 20, h * 0.37);
     fit(g, s.second, w - 40, 26);
-    g.fillText(s.second, 20, h * 0.66);
+    g.fillText(s.second, 20, h * 0.53);
+    fit(g, s.third, w - 40, 26);
+    g.fillText(s.third, 20, h * 0.69);
     if (s.last) {
       g.fillStyle = '#efe5cf';
       fit(g, s.last, w - 40, 28, '500');

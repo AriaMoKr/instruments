@@ -8,8 +8,9 @@
 // tempo and the delay's settings (canvases, each redrawn when they change, at most ten times a
 // second), over its face (one canvas, drawn once: its sections, its jacks and what they are); the RUN
 // button, its light lit while the clock runs and brighter on each beat; the cables between the
-// jacks, its own, the synth's, the rack's and the keyboard's (addJacks), each in its colour with a
-// plug at either end, kept off every desk (made again when the patch changes), and the one being
+// jacks, its own, the synth's, the rack's, the keyboard's and the guitar's (addJacks; the guitar's
+// desk turned), each in its colour with a plug at either end, kept off every desk (made again when
+// the patch changes), and the one being
 // carried, from its jack to wherever it is pointed (moved each frame, in place), and a ring round the
 // jack pointed at; and its sign on the wall over it. In VR a stick in each hand that holds a
 // controller, near the board, whose tip comes down on a pad to play it (board.js strikeAt), as hard as
@@ -34,7 +35,16 @@ import { GOLD, SANS, SERIF } from './textures.js';
  * those addJacks adds) and its colour.
  * @typedef {{ from: number, to: number, color: string }} DrawnCable
  */
-/** A desk the cables keep off: its shape, and how high what stands on its top is. @typedef {{ D: import('./board.js').Desk, rise: number }} CableDesk */
+/**
+ * A desk, which may be turned (guitarboard.js's): laid out in a frame of its own, `place` where that
+ * frame's origin is in the room and how it is turned (its yaw).
+ * @typedef {import('./board.js').Desk & { place?: { x: number, z: number, yaw: number } }} PlacedDesk
+ */
+/**
+ * A desk the cables keep off: its shape, how high what stands on its top is, how it is turned (its
+ * yaw's cosine and sine), and in the room's frame its panel's normal and the way up its top.
+ * @typedef {{ D: PlacedDesk, rise: number, cos: number, sin: number, normal: number[], up: number[] }} CableDesk
+ */
 /** A jack a cable goes into: its desk (an index in the kit's desks) and where on its panel. @typedef {{ desk: number, a: number, b: number }} PlacedJack */
 
 /** @param {string} hex @returns {[number, number, number]} linear */
@@ -57,9 +67,9 @@ const BUTTON = 0.008;
 /**
  * What a hand's reticle shows on near the board (or the synth: its dials and buttons; or the rack: its
  * keys, knobs and buttons; or the keyboard: its drawbars, knobs and buttons; or the guitar: its chord
- * buttons, its knobs and its pickup switch), where its laser is a stick.
+ * buttons, its knobs, its pickup switch and its pedals), where its laser is a stick.
  */
-const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton', 'drawbar', 'keysknob', 'keysbutton', 'chord', 'guitarknob', 'pickup']);
+const AIMED = new Set(['knob', 'jack', 'run', 'step', 'dial', 'button', 'seq', 'accent', 'slide', 'rackknob', 'rackbutton', 'drawbar', 'keysknob', 'keysbutton', 'chord', 'guitarknob', 'pickup', 'pedal']);
 /**
  * A cable: its radius, its plug's length out of the panel and radius, how far it hangs (`sag`, and
  * `sagPer` metre between its ends, to `sagMax`), and how much farther the one carried reaches from
@@ -326,9 +336,39 @@ function ring(pos, at, x, y, z, tx, ty, tz, r) {
 }
 
 /**
+ * A desk for the cables (addJacks): it, how high what stands on its top is, and its ways turned into
+ * the room's.
+ * @param {PlacedDesk} D
+ * @param {number} rise
+ * @returns {CableDesk}
+ */
+function cableDesk(D, rise) {
+  const yaw = D.place?.yaw ?? 0, C = { D, rise, cos: Math.cos(yaw), sin: Math.sin(yaw), normal: [...D.panel.normal], up: [...D.up] };
+  toRoom(C, C.normal, true);
+  toRoom(C, C.up, true);
+  return C;
+}
+
+/**
+ * A point in a desk's own frame turned into the room's, in place (a desk not turned, as it is); or a
+ * way (`way`: turned, not moved).
+ * @param {{ D: PlacedDesk, cos: number, sin: number }} C
+ * @param {number[] | Float32Array} p
+ * @param {boolean} [way]
+ */
+function toRoom(C, p, way = false) {
+  const T = C.D.place;
+  if (!T) return p;
+  const x = p[0], z = p[2];
+  p[0] = x * C.cos + z * C.sin + (way ? 0 : T.x);
+  p[2] = z * C.cos - x * C.sin + (way ? 0 : T.z);
+  return p;
+}
+
+/**
  * A cable's path, sampled at SEGMENTS + 1 points into out: from p, leaving along n, to q, coming in
  * along -m, hanging lower between them the further apart they are; kept off each desk's top (and
- * what stands on it) and in front of its panel.
+ * what stands on it) and in front of its panel, in its own frame (a turned desk's turned back).
  * @param {readonly CableDesk[]} desks
  * @param {number[] | Float32Array} p
  * @param {number[] | Float32Array} n
@@ -344,26 +384,36 @@ function hang(desks, p, n, q, m, out) {
   for (let i = 0; i <= SEGMENTS; i++) {
     const t = i / SEGMENTS, s = 1 - t;
     const w0 = s * s * s, w1 = 3 * s * s * t, w2 = 3 * s * t * t, w3 = t * t * t;
-    const x = w0 * p[0] + w1 * ax + w2 * bx + w3 * q[0];
+    let x = w0 * p[0] + w1 * ax + w2 * bx + w3 * q[0];
     let y = w0 * p[1] + w1 * ay + w2 * by + w3 * q[1];
     let z = w0 * p[2] + w1 * az + w2 * bz + w3 * q[2];
     for (let d = 0; d < desks.length; d++) {
-      const D = desks[d].D, P = D.panel;
-      if (x < D.x0 || x > D.x1) continue;
+      const C = desks[d], D = C.D, P = D.panel, T = D.place;
+      // In its own frame.
+      let lx = x, lz = z;
+      if (T) {
+        lx = (x - T.x) * C.cos - (z - T.z) * C.sin;
+        lz = (x - T.x) * C.sin + (z - T.z) * C.cos;
+      }
+      if (lx < D.x0 || lx > D.x1) continue;
       // Over the top: not into it, nor into what stands on it.
       const Oy = D.origin[1], Oz = D.origin[2], Ny = D.normal[1], Nz = D.normal[2];
-      const over = (y - Oy) * Ny + (z - Oz) * Nz - desks[d].rise - 0.006, along = (y - Oy) * D.up[1] + (z - Oz) * D.up[2];
+      const over = (y - Oy) * Ny + (lz - Oz) * Nz - C.rise - 0.006, along = (y - Oy) * D.up[1] + (lz - Oz) * D.up[2];
       if (over < 0 && along >= 0 && along <= D.length) {
         y -= Ny * over;
-        z -= Nz * over;
+        lz -= Nz * over;
       }
       // In front of the panel: not into it.
       const Py = P.origin[1], Pz = P.origin[2], My = P.normal[1], Mz = P.normal[2];
-      const front = (y - Py) * My + (z - Pz) * Mz - 0.004, up = (y - Py) * P.up[1] + (z - Pz) * P.up[2];
+      const front = (y - Py) * My + (lz - Pz) * Mz - 0.004, up = (y - Py) * P.up[1] + (lz - Pz) * P.up[2];
       if (front < 0 && up >= 0 && up <= P.height) {
         y -= My * front;
-        z -= Mz * front;
+        lz -= Mz * front;
       }
+      if (T) {
+        x = T.x + lx * C.cos + lz * C.sin;
+        z = T.z + lz * C.cos - lx * C.sin;
+      } else z = lz;
     }
     out[i * 3] = x;
     out[i * 3 + 1] = y;
@@ -626,7 +676,7 @@ export class Kit {
     // The cables, one mesh (made again when they change), and the one being carried (moved in place),
     // between the jacks of the desks there are: the board's, and those addJacks adds.
     /** @private @type {CableDesk[]} */
-    this._desks = [{ D: B, rise: BOARD.rise }];
+    this._desks = [cableDesk(B, BOARD.rise)];
     /** @private @type {PlacedJack[]} */
     this._jacks = B.panel.jacks.map((j) => ({ desk: 0, a: j.a, b: j.b }));
     /** @private how far the cable carried reaches from its jack (_reaches) */
@@ -661,6 +711,8 @@ export class Kit {
     this._q = new Float32Array(3);
     /** @private @type {[number, number, number]} */
     this._from = [0, 0, 0];
+    /** @private @type {[number, number, number]} a point in a desk's own frame */
+    this._own = [0, 0, 0];
     this._free = new Float32Array(3);
     this._m = new Float32Array(3);
 
@@ -836,17 +888,31 @@ export class Kit {
 
   /**
    * Another desk's jacks (the synth's, synthboard.js; the rack's, rackboard.js; the keyboard's,
-   * keysboard.js), after those there are: cables go into them too, kept off its top (what stands on
-   * it, `rise` high) and in front of its panel, and the one carried reaches them. Where its first is
-   * in the room's list of jacks.
-   * @param {import('./board.js').Desk & { panel: { jacks: readonly { a: number, b: number }[] } }} D
+   * keysboard.js; the guitar's, guitarboard.js, turned by its `place`), after those there are: cables
+   * go into them too, kept off its top (what stands on it, `rise` high) and in front of its panel, and
+   * the one carried reaches them. Where its first is in the room's list of jacks.
+   * @param {PlacedDesk & { panel: { jacks: readonly { a: number, b: number }[] } }} D
    * @param {number} rise
    */
   addJacks(D, rise) {
-    const first = this._jacks.length, desk = this._desks.push({ D, rise }) - 1;
+    const first = this._jacks.length, desk = this._desks.push(cableDesk(D, rise)) - 1;
     for (const j of D.panel.jacks) this._jacks.push({ desk, a: j.a, b: j.b });
     this._reach = this._reaches();
     return first;
+  }
+
+  /**
+   * Where jack j (the room's list of them) is in the room, `h` out of its panel, written into out.
+   * @private
+   * @param {number} j
+   * @param {number} h
+   * @param {[number, number, number]} out
+   */
+  _jackPoint(j, h, out) {
+    const jack = this._jacks[j], C = this._desks[jack.desk];
+    panelPoint(C.D, jack.a, jack.b, h, out);
+    toRoom(C, out);
+    return out;
   }
 
   /**
@@ -855,7 +921,7 @@ export class Kit {
    * @private
    */
   _reaches() {
-    const at = this._jacks.map((j) => panelPoint(this._desks[j.desk].D, j.a, j.b, 0, [0, 0, 0]));
+    const at = this._jacks.map((_, j) => this._jackPoint(j, 0, [0, 0, 0]));
     let far = 0;
     for (const p of at) for (const q of at) far = Math.max(far, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
     return far + CABLE.slack;
@@ -872,8 +938,8 @@ export class Kit {
     cables.forEach((c, i) => {
       const from = this._jacks[c.from], to = this._jacks[c.to];
       if (!from || !to) return;
-      const F = this._desks[from.desk].D, T = this._desks[to.desk].D;
-      this._writeCable(pos, i * CABLE_VERTICES, panelPoint(F, from.a, from.b, 0, [0, 0, 0]), F.panel.normal, panelPoint(T, to.a, to.b, 0, [0, 0, 0]), T.panel.normal);
+      const F = this._desks[from.desk], T = this._desks[to.desk];
+      this._writeCable(pos, i * CABLE_VERTICES, this._jackPoint(c.from, 0, [0, 0, 0]), F.normal, this._jackPoint(c.to, 0, [0, 0, 0]), T.normal);
       this._paint(color, i * CABLE_VERTICES, c.color);
       cableIndices(i * CABLE_VERTICES, index);
     });
@@ -930,9 +996,10 @@ export class Kit {
     const jack = this._jacks[j], ring = this._jackRing;
     ring.visible = !!jack;
     if (!jack) return;
-    const D = this._desks[jack.desk].D, at = panelPoint(D, jack.a, jack.b, 0.0012, this._ringAt);
+    const D = this._desks[jack.desk].D, at = this._jackPoint(j, 0.0012, this._ringAt);
     ring.position.set(at[0], at[1], at[2]);
-    ring.rotation.x = Math.PI / 2 - D.panel.lean;
+    // Leaning back as its panel does, then turned as its desk is.
+    ring.rotation.set(Math.PI / 2 - D.panel.lean, D.place?.yaw ?? 0, 0, 'YXZ');
     ring.material.color.copy(ok ? this._ringColors.ok : this._ringColors.no);
   }
 
@@ -996,9 +1063,9 @@ export class Kit {
   _moveCarried() {
     const jack = this._jacks[this._carry];
     if (!jack) return;
-    const { D: B, rise } = this._desks[jack.desk];
-    const N = B.panel.normal, a = this._aim, q = this._free, m = this._m;
-    const p = panelPoint(B, jack.a, jack.b, 0, this._from);
+    const C = this._desks[jack.desk], B = C.D;
+    const N = C.normal, a = this._aim, q = this._free, m = this._m;
+    const p = this._jackPoint(this._carry, 0, this._from);
     if (a.has) {
       m[0] = a.nx;
       m[1] = a.ny;
@@ -1018,18 +1085,23 @@ export class Kit {
         m[2] = -dz / d;
       }
     } else {
-      // Out from the jack and down onto the top, its plug lying back towards the panel.
-      q[0] = p[0];
-      q[1] = p[1] + N[1] * 0.14 - 0.1;
-      q[2] = p[2] + N[2] * 0.14;
-      const over = heightOver(B, q[0], q[1], q[2], rise) - 0.012;
+      // Out from the jack and down onto the top, its plug lying back towards the panel (in its desk's
+      // own frame, then turned as it is).
+      const o = panelPoint(B, jack.a, jack.b, 0, this._own), PN = B.panel.normal;
+      o[1] += PN[1] * 0.14 - 0.1;
+      o[2] += PN[2] * 0.14;
+      const over = heightOver(B, o[0], o[1], o[2], C.rise) - 0.012;
       if (over < 0) {
-        q[1] -= B.normal[1] * over;
-        q[2] -= B.normal[2] * over;
+        o[1] -= B.normal[1] * over;
+        o[2] -= B.normal[2] * over;
       }
-      m[0] = 0;
-      m[1] = B.up[1];
-      m[2] = B.up[2];
+      toRoom(C, o);
+      q[0] = o[0];
+      q[1] = o[1];
+      q[2] = o[2];
+      m[0] = C.up[0];
+      m[1] = C.up[1];
+      m[2] = C.up[2];
     }
     this._writeCable(this._carriedPos, 0, p, N, q, m);
     this.carried.geometry.getAttribute('position').needsUpdate = true;

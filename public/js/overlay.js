@@ -29,7 +29,8 @@
 // (ROTARY). Guitar is the guitar: a button to go and play at it, its chords (a choice, or the strings
 // open) with buttons that strum them down or up and mute them, its strings a row each with a button
 // for each fret (pressing the string there and plucking it while it is pressed; one stop among them,
-// the arrows going along and across), its pickup, and its knobs and its amp's as sliders.
+// the arrows going along and across), its pickup, its knobs and its amp's as sliders, its pedals
+// (each on or off, and its knob), and the cables into its inputs (WAH, CLOCK).
 // Sound is the volume and mute over the room's sound, and a MIDI device to play from, where the
 // browser has Web MIDI.
 // On a TV (common's tv.js) the remote reaches only the card, so Wave is in it, and there is nothing
@@ -50,7 +51,7 @@ import { KEYS, LOWEST, NOTE_KEYS, OCTAVES, PRESETS, SECTIONS, SYNTH_KNOBS, isBla
 import { ARP_MODES, ARP_RANGES } from './arp.js';
 import { SEQ_OCTAVES, SEQ_RANGE } from './seq.js';
 import { KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_OCTAVES, KEYS_SECTIONS, KEYS_SOUNDS, KEYS_SWITCHES, drawbarStep, isDrawbar, keysText, registration } from './keys.js';
-import { CHORDS, CHORD_KEYS, GUITAR_KNOBS, GUITAR_SECTIONS, GUITAR_STRINGS, PICKUPS, guitarText } from './guitar.js';
+import { CHORDS, CHORD_KEYS, GUITAR_KNOBS, GUITAR_SECTIONS, GUITAR_STRINGS, PEDALS, PICKUPS, guitarKnobName, guitarText } from './guitar.js';
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -296,10 +297,10 @@ const KEYS_HINTS = {
 };
 // At the guitar, playing it.
 const GUITAR_HINTS = {
-  touch: 'Swipe across the strings over the body · press a string on the neck at a fret, slide along it, bend it across · tap a chord · tap the floor to step away',
-  mouse: 'Press 1–8 and Q–I for a chord, Z–N to pluck a string, the down and up arrows to strum, M to mute · drag across the strings, or press one on the neck · Esc steps away',
-  gamepad: 'Right stick to aim · A plucks the string in the middle, presses it at its fret, chooses a chord · B steps away',
-  tv: 'Left, right: choose a chord · OK or down: strum down · up: strum up · Back: step away · Menu: its chords and knobs',
+  touch: 'Swipe across the strings over the body · press a string on the neck at a fret, slide along it, bend it across · tap a chord or a pedal · tap the floor to step away',
+  mouse: 'Press 1–8 and Q–I for a chord, Z–N to pluck a string, the down and up arrows to strum, M to mute · drag across the strings, or press one on the neck · click a pedal to switch it · Esc steps away',
+  gamepad: 'Right stick to aim · A plucks the string in the middle, presses it at its fret, chooses a chord, switches a pedal · B steps away',
+  tv: 'Left, right: choose a chord · OK or down: strum down · up: strum up · Back: step away · Menu: its chords, knobs and pedals',
 };
 // With something on the walls (config.js's pieces), each names the pictures too.
 const PIECE_HINTS = {
@@ -874,7 +875,7 @@ export class Overlay {
     this.keysPart = el('div', { class: 'part keys', id: 'keys', hidden: '' }, this.keysPlayRow, this.keysRow, this.keysSoundBox, drawbarsBox, this.percBox, ...soundBoxes,
       this.keysCablesBox);
     // The guitar, as on it: going to play at it, its chords (strummed down or up, muted), its strings'
-    // frets, its pickup, and its knobs and its amp's.
+    // frets, its pickup, its knobs and its amp's, its pedals, and its cables in.
     /** Play at the guitar, or step away from it. */
     this.onPlayGuitar = () => {};
     /** (id) a chord fretted (guitar.js CHORDS' id), or none (null): the strings open. @type {(id: string | null) => void} */
@@ -891,8 +892,10 @@ export class Overlay {
     this.onFretTap = () => {};
     /** (id) its pickup (guitar.js PICKUPS). @type {(id: string) => void} */
     this.onPickup = () => {};
-    /** (id, value) a knob of the guitar's or its amp's set 0…1. @type {(id: import('./guitar.js').GuitarKnob, value: number) => void} */
+    /** (id, value) a knob of the guitar's, its amp's or a pedal's set 0…1. @type {(id: import('./guitar.js').GuitarKnob, value: number) => void} */
     this.onGuitarKnob = () => {};
+    /** (id, on) a pedal (guitar.js PEDALS' id) switched on or off. @type {(id: import('./guitar.js').PedalId, on: boolean) => void} */
+    this.onPedal = () => {};
     /** The guitar as it comes. */
     this.onResetGuitar = () => {};
     this.guitarToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'guitar' }, 'Guitar');
@@ -958,17 +961,32 @@ export class Overlay {
     this.pickupBox = el('fieldset', { class: 'pickup' }, el('legend', {}, 'Pickup: ', this.pickupName), el('div', { class: 'choices three' }, ...pickups));
     /** Each of the guitar's sliders and the words for its setting. @type {Map<import('./guitar.js').GuitarKnob, { input: HTMLInputElement, out: HTMLOutputElement }>} */
     this.guitarInputs = new Map();
-    const guitarBoxes = GUITAR_SECTIONS.map((s) => el('fieldset', { class: 'section' }, el('legend', {}, s.name),
+    const guitarBoxes = GUITAR_SECTIONS.filter((s) => s.id !== 'pedals').map((s) => el('fieldset', { class: 'section' }, el('legend', {}, s.name),
       ...GUITAR_KNOBS.filter((k) => k.section === s.id).map((k) => {
         const row = slider(k.name, (v) => this.onGuitarKnob(k.id, v));
         this.guitarInputs.set(k.id, row);
         return row.row;
       })));
+    // Its pedals, as they stand on its panel: each switched on or off, and its knob, named by its
+    // pedal ('Overdrive drive', as on its display).
+    /** Each pedal's switch. @type {Map<import('./guitar.js').PedalId, HTMLInputElement>} */
+    this.pedalInputs = new Map();
+    this.pedalsBox = el('fieldset', { class: 'section pedals' }, el('legend', {}, 'Pedals'),
+      ...PEDALS.flatMap((p) => {
+        const input = el('input', { type: 'checkbox', name: `guitar-${p.id}` });
+        input.addEventListener('change', () => this.onPedal(p.id, input.checked));
+        this.pedalInputs.set(p.id, input);
+        const row = slider(guitarKnobName(p.knob), (v) => this.onGuitarKnob(p.knob, v));
+        this.guitarInputs.set(p.knob, row);
+        return [el('label', { class: 'check' }, input, p.name), row.row];
+      }));
     this.resetGuitar = el('button', { class: 'chip', type: 'button' }, 'As it comes');
     this.resetGuitar.addEventListener('click', () => this.onResetGuitar());
+    // Its cables in, WAH and CLOCK (its sound and its notes go out from the others' choices).
+    this.guitarCablesBox = el('fieldset', { class: 'cables' }, el('legend', {}, 'Cables'), ...plugRows(['guitar']));
     this.guitarPlayRow = el('div', { class: 'actions' }, this.playGuitar);
     this.guitarPart = el('div', { class: 'part guitar', id: 'guitar', hidden: '' }, this.guitarPlayRow, this.chordsBox, this.fretsBox, this.pickupBox, ...guitarBoxes,
-      el('div', { class: 'actions' }, this.resetGuitar));
+      this.pedalsBox, el('div', { class: 'actions' }, this.resetGuitar), this.guitarCablesBox);
     // The room's sound: its volume and Mute, and a MIDI device to play from.
     this.soundToggle = el('button', { class: 'chip', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'sound' }, 'Sound');
     this.soundToggle.addEventListener('click', () => this.openSound(this.sound.hidden));
@@ -1270,19 +1288,20 @@ export class Overlay {
 
   /**
    * The guitar as it is (guitar.js Guitar): its chord (its name over the choice, else the strings
-   * open) and its pickup.
-   * @param {{ chord: string | null, chordName: string, pickup: string }} guitar
+   * open), its pickup and its pedals on.
+   * @param {{ chord: string | null, chordName: string, pickup: string, pedals: Readonly<Record<import('./guitar.js').PedalId, boolean>> }} guitar
    */
-  setGuitar({ chord, chordName, pickup }) {
+  setGuitar({ chord, chordName, pickup, pedals }) {
     if (this.chordName.textContent !== chordName) this.chordName.textContent = chordName;
     const id = chord ?? '';
     for (const [c, input] of this.chordInputs) if (input.checked !== (c === id)) input.checked = c === id;
     const name = PICKUPS.find((p) => p.id === pickup)?.name ?? '';
     if (this.pickupName.textContent !== name) this.pickupName.textContent = name;
     for (const [p, input] of this.pickupInputs) if (input.checked !== (p === pickup)) input.checked = p === pickup;
+    for (const [p, input] of this.pedalInputs) if (input.checked !== pedals[p]) input.checked = pedals[p];
   }
 
-  /** The guitar's knobs and its amp's (guitar.js): their sliders and words. @param {Readonly<Record<import('./guitar.js').GuitarKnob, number>>} knobs */
+  /** The guitar's knobs, its amp's and its pedals' (guitar.js): their sliders and words. @param {Readonly<Record<import('./guitar.js').GuitarKnob, number>>} knobs */
   setGuitarKnobs(knobs) {
     for (const [id, { input, out }] of this.guitarInputs) {
       const value = String(Math.round(knobs[id] * 100));

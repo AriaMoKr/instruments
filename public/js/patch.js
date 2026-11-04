@@ -3,10 +3,11 @@
 // its sound out, its arpeggiator's clock in, its LFO and filter envelope out, its pitch, cutoff and
 // amp in and its notes in; in the rack beside it the clock's outputs again, the sequencer's clock in
 // and notes out, its delay's input, its LFO's output, its envelope's clock in, notes in and out, its
-// mixer's four ins and its out, its filter's in, cutoff in and out and its reverb's in; and on the
-// keyboard its sound out, its notes out and its rotary speaker's speed in) and the cables between
-// them. A cable runs from an output to an input of its kind, a clock's pulses, sound, a modulation (a
-// voltage that moves something, as an LFO's does) or notes (a sequencer's or a keyboard's, to play);
+// mixer's four ins and its out, its filter's in, cutoff in and out and its reverb's in; on the
+// keyboard its sound out, its notes out and its rotary speaker's speed in; and on the guitar's amp its
+// sound out, its notes out, its wah's in and its clock in) and the cables between them. A cable runs
+// from an output to an input of its kind, a clock's pulses, sound, a modulation (a voltage that moves
+// something, as an LFO's does) or notes (a sequencer's, a keyboard's or a guitar's, to play);
 // an input takes one cable at most, so plugging in another pulls the first out, and an output may
 // feed any number; no cable may bring a sound back round into where it came from (the filter's out
 // into its own in, or into the mixer that goes into it), as no sound can go round so. The page draws
@@ -21,9 +22,10 @@ import { pageStorage } from './sound.js';
 
 /**
  * A jack: its id, the module it is on ('clock', 'drums', 'delay', 'synth', the rack's 'rackclock',
- * 'seq', 'rackdelay', 'lfo', 'env', 'mixer', 'filter' and 'reverb', and 'keys'), its name in words
- * (the page's list of cables, screen readers), its label (short, printed by it on the board, the
- * synth, the rack or the keyboard), whether signals come out of it or go in, and what kind they are.
+ * 'seq', 'rackdelay', 'lfo', 'env', 'mixer', 'filter' and 'reverb', 'keys' and 'guitar'), its name
+ * in words (the page's list of cables, screen readers), its label (short, printed by it on the board,
+ * the synth, the rack, the keyboard or the guitar's panel), whether signals come out of it or go in,
+ * and what kind they are.
  * @typedef {{ id: string, module: string, name: string, label: string, dir: 'in' | 'out', kind: JackKind }} Jack
  */
 
@@ -50,7 +52,9 @@ const padJack = (p) => ({ id: `pad.${p.id}`, module: 'drums', name: `${p.name} o
  * the sequencer's clock in and notes out, its delay's input, its LFO's output, its envelope's clock in,
  * notes in and output (a modulation), its mixer's four ins and its out, its filter's in, its cutoff in
  * (a modulation) and its out, and its reverb's in; then the keyboard's, its sound out, its notes out
- * (to play the synth with it) and its rotary speaker's speed in.
+ * (to play the synth with it) and its rotary speaker's speed in; then the guitar's, its sound out
+ * (after its amp and its pedals), its notes out, its wah's in (a modulation, moving it as the pedal
+ * does) and its clock in (strumming it).
  * @type {readonly Jack[]}
  */
 export const JACKS = Object.freeze([
@@ -87,6 +91,10 @@ export const JACKS = Object.freeze([
   { id: 'keys.out', module: 'keys', name: 'Keyboard out', label: 'OUT', dir: 'out', kind: 'audio' },
   { id: 'keys.notes', module: 'keys', name: 'Keyboard notes out', label: 'NOTES', dir: 'out', kind: 'notes' },
   { id: 'keys.rotary', module: 'keys', name: 'Rotary speed in', label: 'ROTARY', dir: 'in', kind: 'mod' },
+  { id: 'guitar.out', module: 'guitar', name: 'Guitar out', label: 'OUT', dir: 'out', kind: 'audio' },
+  { id: 'guitar.notes', module: 'guitar', name: 'Guitar notes out', label: 'NOTES', dir: 'out', kind: 'notes' },
+  { id: 'guitar.wah', module: 'guitar', name: 'Wah in', label: 'WAH', dir: 'in', kind: 'mod' },
+  { id: 'guitar.clock', module: 'guitar', name: 'Guitar clock in', label: 'CLOCK', dir: 'in', kind: 'clock' },
 ]);
 
 /**

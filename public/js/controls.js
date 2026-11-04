@@ -34,21 +34,24 @@
 //     onFretSlide, across it bends, onFretBend, and coming up lets it go, onFretUp; a click, A, OK
 //     or a trigger, onFretTap), its strings over the body (a press plucks the one under it, and a
 //     drag each it crosses: onPluck(s, velocity, pick, delay)), its bridge (onMuteStrings), its
-//     chord buttons (onChord(i)), its pickup switch (onPickup(i)), its knobs and its amp's
-//     (onGuitarKnob(id, by), as the board's) and the rest of it.
+//     chord buttons (onChord(i)), its pickup switch (onPickup(i)), its knobs, its amp's and its
+//     pedals' (onGuitarKnob(id, by), as the board's), its pedals' footswitches (onPedal(i)), its
+//     jacks (onJack, as the board's: the room's list of them, the keyboard's and those before it
+//     first) and the rest of it.
 //     Choosing any of them walks up to it to play it (walkToBoard, walkToSynth, walkToRack,
 //     walkToKeys, walkToGuitar): on a screen the visitor is then `at` it (onPlaying), so a press on a
-//     pad, a key, a step key, a jack, RUN or a button works as it goes down (fingers at once on a
-//     phone); a jack works so on another desk too, for a cable from one to the other. At the board
-//     the keys 1–4, Q–R and A–F are the pads' (Shift harder), on a TV the arrows choose a pad
-//     (onPick); at the synth the middle row from A plays the white keys and the row over it the black
-//     ones (onNoteOn, then onNoteOff as each comes up), Z and X move the octave (onOctave), and on a
-//     TV the arrows choose a key (onKeyPick); at the keyboard likewise (onKeysOn, onKeysOff,
-//     onKeysOctave, onKeysPick); at the rack the keys 1–8 and Q–I are the steps' (Shift their
-//     accents'), Z and X move its octave (onSeqOctave), and on a TV the arrows choose a step and turn
-//     its note (onSeqPick); at the guitar the keys 1–8 and Q–I fret a chord (onChord), Z to N pluck a
-//     string each (onPluck; Shift harder), M mutes them (onMuteStrings), and the arrows down and up
-//     strum (onStrum), left and right choose the chord before or after (onChordPick), on a TV too.
+//     pad, a key, a step key, a jack, RUN, a button or a footswitch works as it goes down (fingers
+//     at once on a phone); a jack works so on another desk too, for a cable from one to the other.
+//     At the board the keys 1–4, Q–R and A–F are the pads' (Shift harder), on a TV the arrows choose
+//     a pad (onPick); at the synth the middle row from A plays the white keys and the row over it
+//     the black ones (onNoteOn, then onNoteOff as each comes up), Z and X move the octave
+//     (onOctave), and on a TV the arrows choose a key (onKeyPick); at the keyboard likewise
+//     (onKeysOn, onKeysOff, onKeysOctave, onKeysPick); at the rack the keys 1–8 and Q–I are the
+//     steps' (Shift their accents'), Z and X move its octave (onSeqOctave), and on a TV the arrows
+//     choose a step and turn its note (onSeqPick); at the guitar the keys 1–8 and Q–I fret a chord
+//     (onChord), Z to N pluck a string each (onPluck; Shift harder), M mutes them (onMuteStrings),
+//     and the arrows down and up strum (onStrum), left and right choose the chord before or after
+//     (onChordPick), on a TV too.
 //     Escape (a cable carried first), Back or walking off steps away (stepAway).
 //     While a cable is `carrying`: a jack plugs it in, the controls where one plays work, another
 //     desk walks there with it (`goingTo` while on the way), and choosing anything else, or Escape,
@@ -98,8 +101,8 @@ const ON_RACK = new Set([...SEQ_ROWS, 'rackknob', 'rackbutton', 'rack']);
 const SEQ_KEYS = new Set(SEQ_ROWS);
 /** What a ray can meet on the keyboard. */
 const ON_KEYS = new Set(['note', 'drawbar', 'keysknob', 'keysbutton', 'keys']);
-/** What a ray can meet on the guitar. */
-const ON_GUITAR = new Set(['fret', 'strum', 'mute', 'chord', 'guitarknob', 'pickup', 'guitar']);
+/** What a ray can meet on the guitar (and its jacks). */
+const ON_GUITAR = new Set(['fret', 'strum', 'mute', 'chord', 'guitarknob', 'pickup', 'pedal', 'guitar']);
 /** The rest of each desk, which walks up to it. */
 const DESKS = new Set(['board', 'synth', 'rack', 'keys', 'guitar']);
 /** What a drag, the wheel or (in VR) a stick turns: the board's knobs, the synth's dials, the rack's knobs, the keyboard's and its drawbars, the guitar's and its amp's. */
@@ -174,13 +177,14 @@ export class Controls extends Walking {
     /**
      * The guitar's string pointed at (0 the low E), else -1, and the fret a press there would press it
      * at (0: over the body, where it would pluck it); its chord button, its knob (an index in its
-     * dials) and its pickup switch's place.
+     * dials), its pickup switch's place and its pedal (an index in its panel's pedals).
      */
     this.hoverString = -1;
     this.hoverFret = 0;
     this.hoverChord = -1;
     this.hoverGuitarKnob = -1;
     this.hoverPickup = -1;
+    this.hoverPedal = -1;
     /** Where the view's pointer, or its middle, is on something, and the way out of it (`has` false: nothing). */
     this.aim = { has: false, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0 };
     /** In VR, the hand that last chose something (its index in hands), else -1. */
@@ -199,7 +203,7 @@ export class Controls extends Walking {
     this.onStep = () => {};
     /** (k, by) when knob k (board.js layoutBoard's knobs) is turned, by this much of its whole turn. @type {(k: number, by: number) => void} */
     this.onKnob = () => {};
-    /** (j) when jack j (the room's list of them: board.js layoutBoard's panel.jacks, then the synth's, the rack's and the keyboard's) is chosen. @type {(j: number) => void} */
+    /** (j) when jack j (the room's list of them: board.js layoutBoard's panel.jacks, then the synth's, the rack's, the keyboard's and the guitar's) is chosen. @type {(j: number) => void} */
     this.onJack = () => {};
     /** RUN pressed: the clock started, or stopped. */
     this.onRun = () => {};
@@ -273,6 +277,8 @@ export class Controls extends Walking {
     this.onFretTap = () => {};
     /** (i) the guitar's pickup switch pressed at a place (guitar.js PICKUPS' index). @type {(i: number) => void} */
     this.onPickup = () => {};
+    /** (i) a pedal's footswitch stomped (guitar.js PEDALS' index): it on, or off. @type {(i: number) => void} */
+    this.onPedal = () => {};
     /** (id, by) a knob of the guitar's or its amp's turned by this much of its whole turn. @type {(id: GuitarKnob, by: number) => void} */
     this.onGuitarKnob = () => {};
     /** (at) when the visitor starts playing at the board, the synth, the rack, the keyboard or the guitar on a screen, or steps away (null). @type {(at: At | null) => void} */
@@ -387,7 +393,7 @@ export class Controls extends Walking {
    * 'run' or 'board' (to walk up to it; not while playing it), 'key', 'dial', 'button' or 'synth'
    * (likewise), 'seq', 'accent', 'slide', 'rackknob', 'rackbutton' or 'rack' (likewise), 'note',
    * 'drawbar', 'keysknob', 'keysbutton' or 'keys' (likewise), 'fret', 'strum', 'mute', 'chord',
-   * 'guitarknob', 'pickup' or 'guitar' (likewise), or common's ('door').
+   * 'guitarknob', 'pickup', 'pedal' or 'guitar' (likewise), or common's ('door').
    * @param {BandHit | null} hit
    */
   usable(hit) {
@@ -399,15 +405,16 @@ export class Controls extends Walking {
   }
 
   /**
-   * The desk a hit is on, the board, the synth, the rack, the keyboard (a jack by where it is in the
-   * room's list of them) or the guitar, else null.
+   * The desk a hit is on, the board, the synth, the rack, the keyboard or the guitar (a jack by where
+   * it is in the room's list of them), else null.
    * @param {BandHit | null} hit
    * @returns {At | null}
    */
   deskOf(hit) {
     if (!hit) return null;
     if (hit.kind === 'jack') {
-      return hit.jack < this.synth.panel.jackBase ? 'board' : hit.jack < this.rack.panel.jackBase ? 'synth' : hit.jack < this.keyboard.panel.jackBase ? 'rack' : 'keys';
+      const j = hit.jack;
+      return j < this.synth.panel.jackBase ? 'board' : j < this.rack.panel.jackBase ? 'synth' : j < this.keyboard.panel.jackBase ? 'rack' : j < this.guitar.panel.jackBase ? 'keys' : 'guitar';
     }
     return ON_BOARD.has(hit.kind) ? 'board' : ON_SYNTH.has(hit.kind) ? 'synth' : ON_RACK.has(hit.kind) ? 'rack' : ON_KEYS.has(hit.kind) ? 'keys' : ON_GUITAR.has(hit.kind) ? 'guitar' : null;
   }
@@ -419,9 +426,9 @@ export class Controls extends Walking {
    * likewise (a key pressed, a button), the keyboard's likewise (a key played for a moment, a drawbar
    * pulled out to where it is used, a button pressed), the guitar's likewise (a string pressed at a
    * fret for a moment, or over the body plucked, the strings muted, a chord chosen, the pickup
-   * switched), a jack on any of them (in VR, or while playing at any: for a cable from one to
-   * another), or common's (the doorway, the floor). Carrying a cable, a desk's controls work where
-   * one plays, another desk walks there with it, and anything else drops it.
+   * switched, a pedal stomped), a jack on any of them (in VR, or while playing at any: for a cable
+   * from one to another), or common's (the doorway, the floor). Carrying a cable, a desk's controls
+   * work where one plays, another desk walks there with it, and anything else drops it.
    * @param {BandHit | null} hit
    * @param {How} how
    */
@@ -446,6 +453,7 @@ export class Controls extends Walking {
     else if (control && hit?.kind === 'mute') this.onMuteStrings();
     else if (control && hit?.kind === 'chord') this.onChord(hit.guitar);
     else if (control && hit?.kind === 'pickup') this.onPickup(hit.guitar);
+    else if (control && hit?.kind === 'pedal') this.onPedal(hit.guitar);
     else if (desk) {
       if (this.at !== desk) this._walkTo(desk);
     } else super.use(hit, how);
@@ -501,6 +509,7 @@ export class Controls extends Walking {
     this.hoverChord = hit?.kind === 'chord' ? hit.guitar : -1;
     this.hoverGuitarKnob = hit?.kind === 'guitarknob' ? hit.guitar : -1;
     this.hoverPickup = hit?.kind === 'pickup' ? hit.guitar : -1;
+    this.hoverPedal = hit?.kind === 'pedal' ? hit.guitar : -1;
     const a = this.aim;
     a.has = !!hit && hit.kind !== 'ceiling';
     if (!hit) return;
@@ -515,7 +524,7 @@ export class Controls extends Walking {
   /**
    * A hand's reticle on a piece, a pad, a step key, a knob, a jack, RUN, a key, a dial or a button,
    * the rack's keys, knobs and buttons, the keyboard's keys, drawbars, knobs and buttons, the guitar's
-   * chord buttons, knobs, bridge, pickup switch and strings; the rest as common's.
+   * chord buttons, knobs, bridge, pickup switch, pedals and strings; the rest as common's.
    * @param {string | null} use
    * @param {BandHit} hit
    */
@@ -523,7 +532,7 @@ export class Controls extends Walking {
     if (use === 'piece') return 1.3;
     if (use === 'pad') return 0.9;
     if (use === 'knob' || use === 'step' || use === 'run' || use === 'dial' || use === 'button' || use === 'rackbutton' || use === 'keysknob' || use === 'keysbutton' || use === 'drawbar') return 0.6;
-    if (use === 'chord' || use === 'guitarknob' || use === 'mute') return 0.6;
+    if (use === 'chord' || use === 'guitarknob' || use === 'mute' || use === 'pedal') return 0.6;
     if (use === 'key' || use === 'note' || use === 'rackknob' || (use && SEQ_KEYS.has(use))) return 0.5;
     if (use === 'jack' || use === 'pickup') return 0.45;
     if (use === 'fret' || use === 'strum') return 0.4;
@@ -918,9 +927,9 @@ export class Controls extends Walking {
    * slides it as it is dragged along the neck and bends it as it is dragged across, until it comes up;
    * one over the strings between the neck and the bridge (on one, or a little beside them) plucks the
    * string under it, then each it crosses as it is dragged (as fast as it goes, as hard); one on the
-   * bridge mutes them, on a chord button or the pickup switch works at once, on a knob turns it. At
-   * any of them, one on a jack of any works at once. Elsewhere, walking's. Taken in the view's parent,
-   * as the press goes down to the view.
+   * bridge mutes them, on a chord button, the pickup switch or a pedal works at once, on a knob turns
+   * it. At any of them, one on a jack of any works at once. Elsewhere, walking's. Taken in the view's
+   * parent, as the press goes down to the view.
    * @private
    */
   _bindBoard() {
@@ -953,6 +962,7 @@ export class Controls extends Walking {
       else if (at === 'guitar' && hit.kind === 'mute') this.onMuteStrings();
       else if (at === 'guitar' && hit.kind === 'chord') this.onChord(hit.guitar);
       else if (at === 'guitar' && hit.kind === 'pickup') this.onPickup(hit.guitar);
+      else if (at === 'guitar' && hit.kind === 'pedal') this.onPedal(hit.guitar);
       else if (at === 'guitar' && hit.kind === 'guitarknob') this._grab(e, hit.guitar, 'guitarknob');
       else if (!(at === 'guitar' && this._sweep(e, hit))) return;
       e.stopPropagation();

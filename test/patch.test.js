@@ -2,10 +2,10 @@
 // each pad, the delay's input, the synth's patch bay, the rack's clock outputs, its sequencer's
 // clock in and notes out, its delay's in, its LFO's out, its envelope's clock in, notes in and out,
 // its mixer's four ins and its out, its filter's in, cutoff in and out and its reverb's in, the
-// keyboard's sound out, notes out and rotary speed in), the patch the room comes with, what a cable
-// can join (never a sound back round into itself), plugging and unplugging (an input takes one
-// cable, an output feeds any number), onChange, and the patch kept for the next visit (what was kept
-// but can't be plugged, as it comes).
+// keyboard's sound out, notes out and rotary speed in, the guitar's sound out, notes out, wah in and
+// clock in), the patch the room comes with, what a cable can join (never a sound back round into
+// itself), plugging and unplugging (an input takes one cable, an output feeds any number), onChange,
+// and the patch kept for the next visit (what was kept but can't be plugged, as it comes).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_PATCH, JACKS, Patch, padForJack } from '../public/js/patch.js';
@@ -44,12 +44,14 @@ const RACK_JACKS = [
 const RACK_MODULES = new Set(['rackclock', 'seq', 'rackdelay', 'lfo', 'env', 'mixer', 'filter', 'reverb']);
 /** The keyboard's jacks: its sound out, its notes out, its rotary speaker's speed in. */
 const KEYS_JACKS = [['keys.out', 'OUT', 'out', 'audio'], ['keys.notes', 'NOTES', 'out', 'notes'], ['keys.rotary', 'ROTARY', 'in', 'mod']];
+/** The guitar's jacks: its sound out, its notes out, its wah's in, its clock in. */
+const GUITAR_JACKS = [['guitar.out', 'OUT', 'out', 'audio'], ['guitar.notes', 'NOTES', 'out', 'notes'], ['guitar.wah', 'WAH', 'in', 'mod'], ['guitar.clock', 'CLOCK', 'in', 'clock']];
 /** Every input as kept with the patch as it comes, and `o` changed. */
 const kept = (o = {}) => ({
   'drums.clock': 'clock.x1', 'delay.in': null, 'synth.clock': 'clock.x1', 'synth.pitch': null, 'synth.cutoff': null, 'synth.amp': null,
   'synth.notes': 'seq.notes', 'seq.clock': 'rack.x1', 'rackdelay.in': null, 'env.clock': null, 'env.notes': null,
   'mixer.in1': null, 'mixer.in2': null, 'mixer.in3': null, 'mixer.in4': null, 'filter.in': null, 'filter.cutoff': null, 'reverb.in': null,
-  'keys.rotary': null, ...o,
+  'keys.rotary': null, 'guitar.wah': null, 'guitar.clock': null, ...o,
 });
 
 /** A patch kept nowhere, and each onChange it calls, as [to, from, was]. */
@@ -60,10 +62,10 @@ function noted(o = {}) {
   return { patch, changes };
 }
 
-test("the jacks: the clock's three outputs, the drums' clock input, an output for each pad in PADS's order, the delay's input, then the synth's patch bay, then the rack's, then the keyboard's; each id and each name once", () => {
+test("the jacks: the clock's three outputs, the drums' clock input, an output for each pad in PADS's order, the delay's input, then the synth's patch bay, then the rack's, the keyboard's and the guitar's; each id and each name once", () => {
   assert.deepEqual(JACKS.map((j) => j.id), [
     'clock.x1', 'clock.d2', 'clock.d4', 'drums.clock', ...PADS.map((p) => `pad.${p.id}`), 'delay.in', ...SYNTH_JACKS.map((j) => j[0]), ...RACK_JACKS.map((j) => j[0]),
-    ...KEYS_JACKS.map((j) => j[0]),
+    ...KEYS_JACKS.map((j) => j[0]), ...GUITAR_JACKS.map((j) => j[0]),
   ]);
   assert.equal(new Set(JACKS.map((j) => j.id)).size, JACKS.length);
   assert.equal(new Set(JACKS.map((j) => j.name)).size, JACKS.length, "each said apart in the card's cables");
@@ -76,12 +78,14 @@ test("the jacks: the clock's three outputs, the drums' clock input, an output fo
   assert.deepEqual(JACKS.filter((j) => RACK_MODULES.has(j.module)).map((j) => [j.id, j.label, j.dir, j.kind]), RACK_JACKS);
   assert.deepEqual(JACKS.filter((j) => j.module === 'rackclock').map((j) => j.id), RACK_CLOCK_OUTS.map((o) => o.id), "clock.js's outputs on the rack");
   assert.deepEqual(JACKS.filter((j) => j.module === 'keys').map((j) => [j.id, j.label, j.dir, j.kind]), KEYS_JACKS);
+  assert.deepEqual(JACKS.filter((j) => j.module === 'guitar').map((j) => [j.id, j.label, j.dir, j.kind]), GUITAR_JACKS);
   assert.deepEqual(JACKS.filter((j) => j.dir === 'in').map((j) => [j.id, j.module, j.kind]), [
     ['drums.clock', 'drums', 'clock'], ['delay.in', 'delay', 'audio'],
     ['synth.clock', 'synth', 'clock'], ['synth.pitch', 'synth', 'mod'], ['synth.cutoff', 'synth', 'mod'], ['synth.amp', 'synth', 'mod'],
     ['synth.notes', 'synth', 'notes'], ['seq.clock', 'seq', 'clock'], ['rackdelay.in', 'rackdelay', 'audio'],
     ['env.clock', 'env', 'clock'], ['env.notes', 'env', 'notes'], ...MIXER_KNOBS.map((k) => [`mixer.${k}`, 'mixer', 'audio']),
     ['filter.in', 'filter', 'audio'], ['filter.cutoff', 'filter', 'mod'], ['reverb.in', 'reverb', 'audio'], ['keys.rotary', 'keys', 'mod'],
+    ['guitar.wah', 'guitar', 'mod'], ['guitar.clock', 'guitar', 'clock'],
   ]);
   for (const j of JACKS) {
     assert.ok(j.name && j.label, `${j.id}: a name and a label`);
@@ -260,6 +264,10 @@ test('the patch: kept at every change for the next visit, every input (one left 
   const noMixer = new Patch({ storage: memoryStorage({ patch: JSON.stringify({ ...kept({ 'filter.in': 'synth.out' }), ...Object.fromEntries(newer.map((id) => [id, undefined])) }) }) });
   assert.deepEqual(noMixer.cables(), [...AS_IT_COMES, { from: 'synth.out', to: 'filter.in' }]);
   assert.deepEqual(newer.map((id) => noMixer.source(id)), newer.map(() => null));
+  // One kept before the guitar's jacks: its WAH and CLOCK ins as they come (nothing), the rest as kept.
+  const noGuitar = new Patch({ storage: memoryStorage({ patch: JSON.stringify({ ...kept({ 'reverb.in': 'keys.out' }), 'guitar.wah': undefined, 'guitar.clock': undefined }) }) });
+  assert.deepEqual(noGuitar.cables(), [...AS_IT_COMES, { from: 'keys.out', to: 'reverb.in' }]);
+  assert.deepEqual(['guitar.wah', 'guitar.clock'].map((id) => noGuitar.source(id)), [null, null]);
 });
 
 test("the rack's envelope: a clock's pulses or notes into it, its out into any modulation in; its mixer: up to four sounds into it, its out wherever a sound goes, never back round into it", () => {
@@ -367,6 +375,33 @@ test("the keyboard's jacks: its sound into either delay, its notes into the synt
   assert.deepEqual(patch.targets('lfo.out'), ['synth.cutoff']);
   assert.ok(patch.unplug('keys.notes'));
   assert.equal(patch.source('synth.notes'), null);
+});
+
+test("the guitar's jacks: its sound wherever a sound goes, its notes into the synth or the envelope, any modulation into its wah, any clock into its CLOCK", () => {
+  const { patch, changes } = noted();
+  for (const i of ['delay.in', 'rackdelay.in', 'reverb.in', 'filter.in', ...MIXER_KNOBS.map((k) => `mixer.${k}`)]) assert.ok(patch.canPlug('guitar.out', i), i);
+  for (const n of ['synth.notes', 'env.notes']) assert.ok(patch.canPlug('guitar.notes', n), n);
+  for (const m of ['synth.lfo', 'synth.env', 'lfo.out', 'env.out']) assert.ok(patch.canPlug(m, 'guitar.wah'), m);
+  for (const c of ['clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d4']) assert.ok(patch.canPlug(c, 'guitar.clock'), c);
+  const never = [
+    ['guitar.out', 'synth.notes'], ['guitar.out', 'guitar.wah'], ['guitar.out', 'synth.amp'], ['guitar.out', 'guitar.clock'], ['guitar.notes', 'delay.in'],
+    ['guitar.notes', 'guitar.clock'], ['guitar.notes', 'seq.clock'], ['guitar.notes', 'keys.notes'], ['guitar.wah', 'keys.rotary'], ['guitar.clock', 'drums.clock'],
+    ['seq.notes', 'guitar.clock'], ['clock.x1', 'guitar.wah'], ['synth.out', 'guitar.wah'], ['keys.notes', 'guitar.wah'], ['guitar.out', 'keys.out'],
+  ];
+  for (const [a, b] of never) assert.ok(!patch.canPlug(a, b) && !patch.canPlug(b, a), `${a}, ${b}`);
+  // Its notes into the synth in the sequencer's place, and the envelope; the envelope into its wah
+  // (an auto-wah); its sound through the filter into the reverb; the clock strumming it.
+  assert.ok(patch.plug('guitar.notes', 'synth.notes'));
+  assert.deepEqual(changes.at(-1), ['synth.notes', 'guitar.notes', 'seq.notes']);
+  assert.ok(patch.plug('env.notes', 'guitar.notes') && patch.plug('env.out', 'guitar.wah'));
+  assert.deepEqual(patch.targets('guitar.notes'), ['synth.notes', 'env.notes']);
+  assert.ok(patch.plug('guitar.out', 'filter.in') && patch.plug('filter.out', 'reverb.in'));
+  assert.ok(patch.plug('clock.d2', 'guitar.clock'));
+  assert.deepEqual(changes.slice(-5), [
+    ['env.notes', 'guitar.notes', null], ['guitar.wah', 'env.out', null], ['filter.in', 'guitar.out', null], ['reverb.in', 'filter.out', null], ['guitar.clock', 'clock.d2', null],
+  ]);
+  assert.ok(patch.unplug('guitar.notes'));
+  assert.deepEqual([patch.source('synth.notes'), patch.source('env.notes')], [null, null]);
 });
 
 test("the rack's delay takes sound (a pad's, the synth's), and its LFO goes where a modulation goes: the synth's pitch, cutoff and amp", () => {

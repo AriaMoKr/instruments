@@ -193,12 +193,14 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
    of eight), each with its key, under the strings open; strumming and muting; its strings a row each,
    the high E's at the top, a button for each fret (where each plays lit, the chord's in gold, a
    finger's in the room's glow; a muted string's open one struck through), a swipe along them scrolls
-   them; its pickup, three to a row; its knobs and its amp's, two to a row. */
+   them; its pickup, three to a row; its knobs and its amp's, two to a row; its pedals a row each, its
+   switch beside its knob. */
 .chords { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .chords .open { grid-column: 1 / -1; }
 .chords kbd { font: 600 12px/1 var(--font); color: var(--muted); }
 .choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.fretboard { display: grid; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 4px; scrollbar-width: thin; }
+.fretboard { position: relative; display: grid; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 4px; scrollbar-width: thin; }
+/* (Positioned, so its frets' notes for a screen reader, .sr-only, are placed in it: else they reach past the card, which then scrolls across.) */
 .fret-row { display: grid; grid-template-columns: 14px repeat(13, 30px); align-items: center; gap: 3px; width: max-content; }
 .string-name { color: var(--muted); font-size: 12px; font-weight: 600; text-align: center; }
 .fret {
@@ -211,6 +213,7 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
 .fret.chord { background: #e9c46a; color: #1a1208; font-weight: 700; }
 .fret.finger { background: #5cc8a8; color: #1a1208; font-weight: 700; }
 .fret.muted { border-color: #e0664a; color: var(--text); text-decoration: line-through; }
+.part .pedals { grid-template-columns: auto minmax(0, 1fr); }
 
 /* How to move. */
 .hint {

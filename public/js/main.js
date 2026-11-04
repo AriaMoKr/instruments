@@ -71,8 +71,8 @@ import { RackKit } from './rackkit.js';
 import { KEYS_COUNT, KEYS_LOWEST, KEYS_SWITCHES, Keys, isDrawbar, keysText, switchWords } from './keys.js';
 import { KEYBOARD, layoutKeyboard } from './keysboard.js';
 import { KeysKit } from './keyskit.js';
-import { CHORDS, Guitar, PICKUPS, guitarText } from './guitar.js';
-import { layoutGuitar } from './guitarboard.js';
+import { CHORDS, GUITAR_STRINGS, Guitar, PEDALS, PICKUPS, guitarText } from './guitar.js';
+import { GUITAR, layoutGuitar } from './guitarboard.js';
 import { GuitarKit } from './guitarkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
@@ -259,33 +259,40 @@ select(drums.selected);
 // (envelope.js). Each pulse is a step of the rack's LFO too, whose cycles start again with the
 // clock; while the clock is stopped it keeps on by itself, at the tempo. What a pulse shows (the
 // steps playing, the pads lit, RUN's lights on the beat, the sequencer's note on the synth's keys)
-// is queued until it is heard. A sound (a pad's, the synth's, the keyboard's, the mixer's, the
-// filter's) patched into a delay's in (the board's, the rack's) or the reverb's is connected to it
-// besides its own channel, and into the mixer's ins or the filter's in instead of its channel
-// (route), once there is sound (sound.onReady; the synth's onBuilt); as the rack's LFO and envelope
-// are to what they are patched into, and the synth's LFO or filter envelope to the keyboard's ROTARY
-// or the filter's CUTOFF.
+// is queued until it is heard. A pulse is a strum of the guitar too, its CLOCK in patched: down and
+// up in turn, whatever is fretted. A sound (a pad's, the synth's, the keyboard's, the guitar's, the
+// mixer's, the filter's) patched into a delay's in (the board's, the rack's) or the reverb's is
+// connected to it besides its own channel, and into the mixer's ins or the filter's in instead of its
+// channel (route), once there is sound (sound.onReady; the synth's and the guitar's onBuilt); as the
+// rack's LFO and envelope are to what they are patched into, and the synth's LFO or filter envelope
+// to the keyboard's ROTARY, the filter's CUTOFF or the guitar's WAH.
 
 /**
- * How many of the clock's pulses make a step of the drums, of the arpeggiator, of the sequencer and
- * of the envelope (the output each one's clock in is patched to), else 0; whether the sequencer's
- * notes go into the synth, or the keyboard's; and whether the sequencer's or the keyboard's go into
- * the envelope.
+ * How many of the clock's pulses make a step of the drums, of the arpeggiator, of the sequencer, of
+ * the envelope and a strum of the guitar (the output each one's clock in is patched to), else 0;
+ * whether the sequencer's notes go into the synth, or the keyboard's, or the guitar's; and whether
+ * the sequencer's, the keyboard's or the guitar's go into the envelope.
  */
-let drumsEvery = 0, synthEvery = 0, seqEvery = 0, envEvery = 0, seqPlays = false, keysPlays = false, envSeq = false, envKeys = false;
+let drumsEvery = 0, synthEvery = 0, seqEvery = 0, envEvery = 0, guitarEvery = 0;
+let seqPlays = false, keysPlays = false, guitarPlays = false, envSeq = false, envKeys = false, envGuitar = false;
 function patchedClock() {
   drumsEvery = clockEvery(patch.source('drums.clock'));
   synthEvery = clockEvery(patch.source('synth.clock'));
   seqEvery = clockEvery(patch.source('seq.clock'));
   envEvery = clockEvery(patch.source('env.clock'));
+  guitarEvery = clockEvery(patch.source('guitar.clock'));
   seqPlays = patch.source('synth.notes') === 'seq.notes';
   keysPlays = patch.source('synth.notes') === 'keys.notes';
+  guitarPlays = patch.source('synth.notes') === 'guitar.notes';
   envSeq = patch.source('env.notes') === 'seq.notes';
   envKeys = patch.source('env.notes') === 'keys.notes';
+  envGuitar = patch.source('env.notes') === 'guitar.notes';
 }
 patchedClock();
 /** How hard the pattern plays a pad: on the beat, and between. */
 const ON_BEAT = 0.85, OFF_BEAT = 0.7;
+/** How hard the clock strums the guitar: down on the beat, down between, and up. */
+const STRUM_BEAT = 0.9, STRUM_DOWN = 0.75, STRUM_UP = 0.65;
 // What each pulse shows once heard, in a ring: when it falls, its number, the drums' step (-1 none)
 // and the pads it plays (a bit each), the sequencer's step (-1 none) and the note it plays (-1 none).
 const QUEUED = 64;
@@ -296,7 +303,7 @@ let playhead = -1, seqPlayhead = -1;
 /** The note the sequencer plays on the synth as heard now, else -1: shown on its keys. */
 let seqSounding = -1;
 
-/** Pulse n of the clock, falling at `time` on the audio clock: the drums' step, the arpeggiator's, the sequencer's, the envelope's, the LFO's, and queued to be seen. */
+/** Pulse n of the clock, falling at `time` on the audio clock: the drums' step, the arpeggiator's, the sequencer's, the envelope's, the LFO's, the guitar's strum, and queued to be seen. */
 function pulse(n, time) {
   let step = -1, pads = 0, seqStep = -1, note = -1;
   const d = stepSeconds(clock.tempo);
@@ -321,6 +328,11 @@ function pulse(n, time) {
     }
   }
   if (envEvery && n % envEvery === 0) envelope.trigger(time, envEvery * d);
+  if (guitarEvery && n % guitarEvery === 0) {
+    // Down and up in turn from the clock's start, a down on the beat the hardest.
+    const down = (n / guitarEvery) % 2 === 0;
+    guitar.strum(down, down ? (n % 4 === 0 ? STRUM_BEAT : STRUM_DOWN) : STRUM_UP, { at: time });
+  }
   if ((queueTail + 1) % QUEUED === queueHead) queueHead = (queueHead + 1) % QUEUED; // full: the oldest goes
   shownAt[queueTail] = time;
   shownPulse[queueTail] = n;
@@ -332,7 +344,8 @@ function pulse(n, time) {
 }
 /**
  * The pulses due soon handed out (while the clock is stopped, the LFO's steps by itself instead); and
- * the arpeggiator's steps on its own clock, while the room's isn't patched into it or is stopped.
+ * the arpeggiator's steps on its own clock, while the room's isn't patched into it or is stopped; and
+ * the guitar's notes out that have died away by now, ended.
  */
 function schedule() {
   const ctx = sound.ctx;
@@ -340,6 +353,7 @@ function schedule() {
   if (clock.running) clock.advance(ctx.currentTime, pulse);
   else lfo.run(ctx.currentTime, ctx.currentTime + LOOKAHEAD, stepSeconds(clock.tempo));
   if (synth.arp.on && !(clock.running && synthEvery)) synth.arpRun(ctx.currentTime, ctx.currentTime + LOOKAHEAD, stepSeconds(clock.tempo));
+  guitar.ringOut(ctx.currentTime);
 }
 // A chord just started on the arpeggiator: its first note now, on its own clock.
 synth.onArp = schedule;
@@ -549,18 +563,21 @@ overlay.onResetReverb = () => {
 };
 
 /**
- * The sound out of output jack `id` (a pad's, the synth's, the keyboard's, the mixer's, the
- * filter's), made once there is sound (the synth's once its voices are); else null. Each goes into
- * its own channel as it is made (home), until route says otherwise.
+ * The sound out of output jack `id` (a pad's, the synth's, the keyboard's, the guitar's, the mixer's,
+ * the filter's), made once there is sound (the synth's once its voices are, the guitar's once its
+ * strings are); else null. Each goes into its own channel as it is made (home), until route says
+ * otherwise.
  */
 function soundOut(id) {
   const i = padForJack(id);
   if (i >= 0) return drums.out(i);
-  return id === 'synth.out' ? synth.output : id === 'keys.out' ? keys.output() : id === 'mixer.out' ? mixer.output() : id === 'filter.out' ? filter.output() : null;
+  return id === 'synth.out' ? synth.output : id === 'keys.out' ? keys.output() : id === 'guitar.out' ? guitar.output()
+    : id === 'mixer.out' ? mixer.output() : id === 'filter.out' ? filter.output() : null;
 }
 /** The channel output `id`'s sound goes into as it is made (sound.js), else null. */
 function home(id) {
-  const name = padForJack(id) >= 0 ? 'drums' : id === 'synth.out' ? 'synth' : id === 'keys.out' ? 'keys' : id === 'mixer.out' ? mixer.channel : id === 'filter.out' ? filter.channel : null;
+  const name = padForJack(id) >= 0 ? 'drums' : id === 'synth.out' ? 'synth' : id === 'keys.out' ? 'keys' : id === 'guitar.out' ? 'guitar'
+    : id === 'mixer.out' ? mixer.channel : id === 'filter.out' ? filter.channel : null;
   return name ? sound.channel(name) : null;
 }
 /** The sound into input jack `id`: a delay's, the reverb's, one of the mixer's, the filter's, once there is sound; else null. */
@@ -605,23 +622,30 @@ sound.onReady = () => {
   }
   keys.setInput(modNode(patch.source('keys.rotary')));
   filter.setCutoffIn(modNode(patch.source('filter.cutoff')));
+  guitar.setWahIn(modNode(patch.source('guitar.wah')));
 };
 synth.onBuilt = () => route('synth.out');
-/** The cables' colours: the clock's amber, a pad's sound in the pad's colour, the synth's blue, the keyboard's red, the filter's violet, the mixer's pale (a sound of several), a modulation's pink, notes green. */
-const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8', SYNTH_CABLE = '#5aa2f0', KEYS_CABLE = '#d8434d', FILTER_CABLE = '#8f7cff', MOD_CABLE = '#e8609a', NOTES_CABLE = '#62c87a';
+/**
+ * The cables' colours: the clock's amber, a pad's sound in the pad's colour, the synth's blue, the
+ * keyboard's red, the guitar's copper (its sunburst's edge), the filter's violet, the mixer's pale (a sound of
+ * several), a modulation's pink, notes green.
+ */
+const CLOCK_CABLE = '#e8a33c', SOUND_CABLE = '#cfc6b8', SYNTH_CABLE = '#5aa2f0', KEYS_CABLE = '#d8434d', GUITAR_CABLE = '#b65e2a', FILTER_CABLE = '#8f7cff';
+const MOD_CABLE = '#e8609a', NOTES_CABLE = '#62c87a';
 const cableColor = (id) => {
   const i = padForJack(id), kind = patch.jack(id)?.kind;
   if (i >= 0) return PADS[i].color;
   if (id === 'synth.out') return SYNTH_CABLE;
   if (id === 'keys.out') return KEYS_CABLE;
+  if (id === 'guitar.out') return GUITAR_CABLE;
   if (id === 'filter.out') return FILTER_CABLE;
   return kind === 'audio' ? SOUND_CABLE : kind === 'mod' ? MOD_CABLE : kind === 'notes' ? NOTES_CABLE : CLOCK_CABLE;
 };
-/** Jack `id`'s place in the room's list of them (the board's, then the synth's, the rack's and the keyboard's: kit.js), else -1. */
+/** Jack `id`'s place in the room's list of them (the board's, then the synth's, the rack's, the keyboard's and the guitar's: kit.js), else -1. */
 function jackIndex(id) {
   const k = board.panel.jacks.findIndex((j) => j.id === id);
   if (k >= 0) return k;
-  for (const D of [synthDesk, rackDesk, keysDesk]) {
+  for (const D of [synthDesk, rackDesk, keysDesk, guitarDesk]) {
     const s = D.panel.jacks.findIndex((j) => j.id === id);
     if (s >= 0) return D.panel.jackBase + s;
   }
@@ -632,9 +656,10 @@ function jackId(k) {
   if (k < synthDesk.panel.jackBase) return board.panel.jacks[k]?.id;
   if (k < rackDesk.panel.jackBase) return synthDesk.panel.jacks[k - synthDesk.panel.jackBase]?.id;
   if (k < keysDesk.panel.jackBase) return rackDesk.panel.jacks[k - rackDesk.panel.jackBase]?.id;
-  return keysDesk.panel.jacks[k - keysDesk.panel.jackBase]?.id;
+  if (k < guitarDesk.panel.jackBase) return keysDesk.panel.jacks[k - keysDesk.panel.jackBase]?.id;
+  return guitarDesk.panel.jacks[k - guitarDesk.panel.jackBase]?.id;
 }
-/** The cables on the board, the synth, the rack and the keyboard, and in the card. */
+/** The cables on the board, the synth, the rack, the keyboard and the guitar, and in the card. */
 function showPatch() {
   if (kit) kit.setCables(patch.cables().map((c) => ({ from: jackIndex(c.from), to: jackIndex(c.to), color: cableColor(c.from) })));
   overlay.setPatch(patch);
@@ -646,14 +671,14 @@ function showPatch() {
  */
 const modSource = (id) => (id === 'synth.lfo' ? 'lfo' : id === 'synth.env' ? 'env' : id === 'lfo.out' ? lfo.output() : id === 'env.out' ? envelope.output() : null);
 /**
- * What goes into a modulation input outside the synth (the keyboard's ROTARY, the filter's CUTOFF)
- * from output `id`: the synth's LFO or its filter envelope (its voices made for them), the rack's
- * LFO or its envelope; each once there is sound (until then nothing, and then it, sound.onReady),
- * else nothing.
+ * What goes into a modulation input outside the synth (the keyboard's ROTARY, the filter's CUTOFF,
+ * the guitar's WAH) from output `id`: the synth's LFO or its filter envelope (its voices made for
+ * them), the rack's LFO or its envelope; each once there is sound (until then nothing, and then it,
+ * sound.onReady), else nothing.
  */
 const modNode = (id) => (id === 'synth.lfo' ? synth.modOutput('lfo') : id === 'synth.env' ? synth.modOutput('env') : id === 'lfo.out' ? lfo.output() : id === 'env.out' ? envelope.output() : null);
 /** The inputs that say what plays what: the clock ins, the notes ins. */
-const PLAYED_BY = new Set(['drums.clock', 'synth.clock', 'seq.clock', 'env.clock', 'synth.notes', 'env.notes']);
+const PLAYED_BY = new Set(['drums.clock', 'synth.clock', 'seq.clock', 'env.clock', 'guitar.clock', 'synth.notes', 'env.notes']);
 patch.onChange = (to, from, was) => {
   if (patch.jack(to)?.kind === 'audio') {
     route(was);
@@ -663,13 +688,16 @@ patch.onChange = (to, from, was) => {
   // The sequencer's clock or its notes unplugged: a note it slid on, let go (on the synth, the envelope).
   if ((to === 'seq.clock' || to === 'synth.notes') && !(seqEvery && seqPlays)) synth.seqEnd();
   if ((to === 'seq.clock' || to === 'env.notes') && !(seqEvery && envSeq)) envelope.seqEnd();
-  // The keyboard's notes unplugged: those it was playing on the synth, or holding the envelope, let go.
+  // The keyboard's notes unplugged, or the guitar's: those it was playing on the synth, or holding the
+  // envelope, let go.
   if (to === 'synth.notes' && was === 'keys.notes') keysOffSynth();
-  if (to === 'env.notes' && was === 'keys.notes') envelope.allOff();
+  if (to === 'synth.notes' && was === 'guitar.notes') guitarOffSynth();
+  if (to === 'env.notes' && (was === 'keys.notes' || was === 'guitar.notes')) envelope.allOff();
   const input = MOD_INPUTS.find((m) => to === `synth.${m}`);
   if (input) synth.setInput(input, modSource(from));
   if (to === 'keys.rotary') keys.setInput(modNode(from));
   if (to === 'filter.cutoff') filter.setCutoffIn(modNode(from));
+  if (to === 'guitar.wah') guitar.setWahIn(modNode(from));
   showPatch();
 };
 for (const m of MOD_INPUTS) synth.setInput(m, modSource(patch.source(`synth.${m}`)));
@@ -681,7 +709,7 @@ overlay.onPlug = (input, output) => {
     overlay.setPatch(patch);
     const a = patch.jack(output), b = patch.jack(input);
     if (a && b) overlay.toast(whyNot(a, b), 4);
-  }
+  } else if (input === 'guitar.wah' && !guitar.pedals.wah) overlay.toast('The wah is off: switch it on to hear its cable', 4);
 };
 // ── The synth ────────────────────────────────────────────────────────────────
 // Six voices into the same sound, its knobs, its preset, Mono, its octave and its arpeggiator kept
@@ -1006,17 +1034,70 @@ showKeysKnobs();
 
 // ── The guitar ───────────────────────────────────────────────────────────────
 // Its six strings, modelled as they are plucked (strings.js, on the audio thread once the sound is
-// made), through its pickups, its knobs and its amp into the same sound; its knobs, its pickup and its
-// chord kept for the next visit (guitar.js). A string plucked: its key at the guitar (Z to N), a
-// press on it over the body or a sweep across them, in VR a stick or a forefinger across them (which
-// the controller feels). All strummed: the arrows down and up at it, the card's buttons, on a TV OK.
-// A string pressed at a fret and plucked, held until let go: a press on it over the neck (slid along
-// it, bent across it), in VR a tip down on it, a fret's button in the card; a click, A, OK or a
-// trigger on one presses it a moment. A chord fretted: its button, its key (1–8, Q–I), the arrows left
-// and right; the one lit pressed again, the strings open. Muted: M, its bridge, the card's button.
-// Where each string is fretted shows on it and in the card, and its chord on its display.
+// made), through its pickups, its knobs, its pedals and its amp into the same sound; its knobs, its
+// pedals, its pickup and its chord kept for the next visit (guitar.js). A string plucked: its key at
+// the guitar (Z to N), a press on it over the body or a sweep across them, in VR a stick or a
+// forefinger across them (which the controller feels). All strummed: the arrows down and up at it,
+// the card's buttons, on a TV OK. A string pressed at a fret and plucked, held until let go: a press
+// on it over the neck (slid along it, bent across it), in VR a tip down on it, a fret's button in the
+// card; a click, A, OK or a trigger on one presses it a moment. A chord fretted: its button, its key
+// (1–8, Q–I), the arrows left and right; the one lit pressed again, the strings open. Muted: M, its
+// bridge, the card's button. A pedal on or off: its footswitch, the card's. Where each string is
+// fretted shows on it and in the card, and its chord on its display. Its jacks: its sound out into a
+// delay, the reverb, the mixer or the filter (route), its notes out into the synth (played there too)
+// or the rack's envelope (starting it with each pluck: onNoteOut), WAH in, a modulation moving its wah
+// (modNode), and CLOCK in, the clock strumming it (pulse).
 
 const guitar = new Guitar(sound, { key: `${ROOM.id}.guitar` });
+guitar.onBuilt = () => route('guitar.out');
+/** The note each of the guitar's strings plays on the synth (its NOTES out patched into the synth's NOTES in), -1 none, and how hard it was plucked. */
+const guitarOnSynth = new Int16Array(GUITAR_STRINGS.length).fill(-1), guitarVelocity = new Float32Array(GUITAR_STRINGS.length);
+/** How many strings play each note on the synth: let go when the last does. @type {Map<number, number>} */
+const guitarNotes = new Map();
+/** A note of the guitar's played on the synth from `at`. */
+function guitarSynthOn(note, velocity, at) {
+  guitarNotes.set(note, (guitarNotes.get(note) ?? 0) + 1);
+  synth.noteOn(note, velocity, at);
+}
+/** …and let go at `at`, unless another string still plays it. */
+function guitarSynthOff(note, at) {
+  const n = (guitarNotes.get(note) ?? 0) - 1;
+  if (n > 0) guitarNotes.set(note, n);
+  else {
+    guitarNotes.delete(note);
+    synth.noteOff(note, at);
+  }
+}
+/** What holds the envelope for string s (each string its own: two may play one note). */
+const stringKey = (s) => 1000 + s;
+// Its notes out: into the synth, while patched there, each string's from its pluck till it ends,
+// slid there legato (the new note before the old is let go), as though played on the synth's own
+// keys; into the rack's envelope, while patched there, each pluck starting it, held while any string
+// rings.
+guitar.onNoteOut = (s, note, velocity, at) => {
+  if (envGuitar && velocity !== null) envelope.noteOn(stringKey(s), velocity, at);
+  else if (envGuitar && note < 0) envelope.noteOff(stringKey(s), at);
+  if (!guitarPlays) return;
+  const was = guitarOnSynth[s];
+  if (note < 0 || velocity === null) {
+    if (was < 0) return;
+    if (note >= 0) guitarSynthOn(note, guitarVelocity[s], at);
+    guitarSynthOff(was, at);
+    guitarOnSynth[s] = note;
+    return;
+  }
+  if (was >= 0) guitarSynthOff(was, at);
+  guitarOnSynth[s] = note;
+  guitarVelocity[s] = velocity;
+  guitarSynthOn(note, velocity, at);
+};
+/** The guitar's notes on the synth let go (its NOTES out unplugged from it). */
+function guitarOffSynth() {
+  const now = sound.ctx?.currentTime ?? 0;
+  for (const note of guitarNotes.keys()) synth.noteOff(note, now);
+  guitarNotes.clear();
+  guitarOnSynth.fill(-1);
+}
 /** The guitar in 3D (guitarkit.js), once the scene is made. @type {GuitarKit | null} */
 let guitarKit = null;
 let toldNoStrings = false;
@@ -1086,15 +1167,26 @@ const turnGuitarKnob = (id, by) => setGuitarKnob(id, guitar.knobs[id] + by);
 function setPickup(id) {
   if (guitar.setPickup(id)) showGuitar();
 }
-/** The guitar as it comes: its knobs, its pickup, the strings open. */
+/** A pedal switched on or off (guitar.js PEDALS' id). */
+function setPedal(id, on) {
+  if (guitar.setPedal(id, on)) showGuitar();
+}
+/** Pedal i's footswitch pressed: on if it was off, off if on, said. */
+function pressPedal(i) {
+  const p = PEDALS[i];
+  if (!p) return;
+  setPedal(p.id, !guitar.pedals[p.id]);
+  overlay.toast(`${p.name} ${guitar.pedals[p.id] ? 'on' : 'off'}`, 2);
+}
+/** The guitar as it comes: its knobs, its pedals off, its pickup, the strings open. */
 function resetGuitar() {
   guitar.reset();
   showGuitarKnobs();
   showGuitar();
 }
-/** The guitar as it is (its chord, its pickup, its knobs), on it (its display, its lights, its switch) and in the card. */
+/** The guitar as it is (its chord, its pickup, its pedals, its knobs), on it (its display, its lights, its switch) and in the card. */
 function showGuitar() {
-  const state = { chord: guitar.chord, chordName: guitar.chordName, pickup: guitar.pickup, knobs: guitar.knobs };
+  const state = { chord: guitar.chord, chordName: guitar.chordName, pickup: guitar.pickup, pedals: guitar.pedals, knobs: guitar.knobs };
   guitarKit?.setState(state);
   overlay.setGuitar(state);
 }
@@ -1122,6 +1214,7 @@ overlay.onFretDown = (s, fret, velocity) => pressFret(s, fret, velocity);
 overlay.onFretUp = releaseString;
 overlay.onFretTap = (s, fret) => tapFret(s, fret);
 overlay.onPickup = setPickup;
+overlay.onPedal = setPedal;
 overlay.onGuitarKnob = setGuitarKnob;
 overlay.onResetGuitar = resetGuitar;
 showGuitar();
@@ -1228,7 +1321,7 @@ renderer.xr.setReferenceSpaceType('local-floor');
 // The view, to a screen reader: a picture of the room (what can be done in it is in the card).
 renderer.domElement.setAttribute('role', 'img');
 const onWalls = ROOM.pieces.map((p) => p.title).join(', ');
-renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a keyboard to its left (sixty-one keys, nine drawbars, and the knobs and buttons of an organ and an electric piano), a synth to its right (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), a rack beside that (a clock, a sequencer of sixteen steps with a knob for each note, a delay, an LFO, an envelope, a mixer, a filter and a reverb), an electric guitar on a desk by the right wall (six strings over fifteen frets, sixteen chord buttons, its knobs and pickup switch, and an amp's knobs), ${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
+renderer.domElement.setAttribute('aria-label', `${ROOM.title}: a floor, four walls and a ceiling, a window onto the afternoon sky, a drum board against the far wall (twelve pads, sixteen step keys, and a panel of jacks and cables), a keyboard to its left (sixty-one keys, nine drawbars, and the knobs and buttons of an organ and an electric piano), a synth to its right (thirty-seven keys, its knobs, and a panel of sounds, jacks and an arpeggiator), a rack beside that (a clock, a sequencer of sixteen steps with a knob for each note, a delay, an LFO, an envelope, a mixer, a filter and a reverb), an electric guitar on a desk by the right wall (six strings over fifteen frets, sixteen chord buttons, its knobs and pickup switch, and a panel of jacks, an amp's knobs and four pedals),${onWalls ? '' : 'and '}the doorway back to the ${leadsTo}${onWalls ? `, and on the walls: ${onWalls}` : ''}`);
 document.getElementById('app').append(renderer.domElement);
 const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 setAnisotropy(anisotropy);
@@ -1254,17 +1347,18 @@ const room = buildRoom(L, { colors: ROOM.colors, skyYaw: ROOM.skyYaw, glow, name
 scene.add(room.group);
 // The drum board against the far wall, in the room's light, and the synth beside it, likewise, and
 // the rack beside that; the keyboard on the board's other side; the guitar by the right wall, past
-// the rack; the cables between their jacks, the board's kit's (its own, then the synth's, the rack's
-// and the keyboard's).
+// the rack; the cables between their jacks, the board's kit's (its own, then the synth's, the rack's,
+// the keyboard's and the guitar's).
 const board = layoutBoard(L);
 const synthDesk = layoutSynth(L, board);
 const rackDesk = layoutRack(L, synthDesk);
 const keysDesk = layoutKeyboard(L, board, rackDesk);
-const guitarDesk = layoutGuitar(L, rackDesk);
+const guitarDesk = layoutGuitar(L, rackDesk, keysDesk);
 kit = new Kit(board, { lit: room.lit, lightColor: room.lightColor, anisotropy });
 kit.addJacks(synthDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise));
 kit.addJacks(rackDesk, RACK.knob.h);
 kit.addJacks(keysDesk, Math.max(SYNTH.dial.h, SYNTH.key.rise + SYNTH.key.blackRise, KEYBOARD.drawbar.h));
+kit.addJacks(guitarDesk, GUITAR.body + GUITAR.knob.h);
 scene.add(kit.group);
 select(drums.selected);
 kit.setTempo(clock.tempo);
@@ -1522,9 +1616,11 @@ controls.onJack = (k) => {
   const a = patch.jack(carried.id);
   if (!a || id === carried.id) putDown();
   else if (patch.canPlug(carried.id, id)) {
+    const wahOff = (id === 'guitar.wah' || carried.id === 'guitar.wah') && !guitar.pedals.wah;
     patch.plug(carried.id, id);
     putDown(true);
-    overlay.toast(a.dir === 'out' ? `${a.name} into ${jack.name}` : `${jack.name} into ${a.name}`);
+    const words = a.dir === 'out' ? `${a.name} into ${jack.name}` : `${jack.name} into ${a.name}`;
+    overlay.toast(wahOff ? `${words}: switch the wah on to hear it` : words, wahOff ? 4 : undefined);
   } else overlay.toast(whyNot(a, jack), 4);
 };
 controls.onDrop = () => putDown();
@@ -1725,11 +1821,12 @@ keysKit.onKeyDown = (k, velocity, source) => {
 };
 keysKit.onKeyUp = (k) => keysOff(KEYS_LOWEST + k);
 
-// ── The guitar's strings, chords, knobs and pickup switch ────────────────────
+// ── The guitar's strings, chords, knobs, pickup switch and pedals ────────────
 // A string plucked, pressed at a fret, slid, bent and let go; strummed; muted; a chord fretted (and
-// said); a knob turned (a drag, the wheel, a stick); the pickup switched, said. In VR the controller
-// feels a string plucked, one pressed, a chord's button and the bridge. Walking up to it to play it,
-// and stepping away; on a TV the arrows choose a chord and strum.
+// said); a knob turned (a drag, the wheel, a stick); the pickup switched, said; a pedal switched on
+// or off by its footswitch, said. In VR the controller feels a string plucked, one pressed, a chord's
+// button, a footswitch and the bridge. Its jacks are the board's (controls.onJack). Walking up to it
+// to play it, and stepping away; on a TV the arrows choose a chord and strum.
 
 controls.onChord = pressChord;
 controls.onChordPick = pickChord;
@@ -1747,6 +1844,7 @@ controls.onPickup = (i) => {
   setPickup(p.id);
   overlay.toast(p.name, 2);
 };
+controls.onPedal = pressPedal;
 controls.onGuitarKnob = turnGuitarKnob;
 overlay.onPlayGuitar = () => {
   if (controls.at === 'guitar') controls.stepAway();
@@ -2084,7 +2182,7 @@ window.__room = {
   envelope, setEnvelopeKnob, mixer, setMixerKnob, filter, setFilterKnob, reverb, setReverbKnob, route,
   keys, keysDesk, keysKit, keysOn, keysOff, tapKeys, chooseKeys, setKeysKnob, setKeysSwitch, setSustain, setKeysOctave, resetKeys,
   guitar, guitarDesk, guitarKit, pluckString, strum, pressFret, tapFret, slideFret, bendString, releaseString, muteStrings, chooseChord, pressChord, pickChord,
-  setGuitarKnob, setPickup, resetGuitar,
+  setGuitarKnob, setPickup, setPedal, pressPedal, resetGuitar,
   /** On a TV at the synth, the key the arrows chose. */
   get chosenKey() {
     return chosenKey;

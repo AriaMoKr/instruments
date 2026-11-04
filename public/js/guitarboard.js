@@ -11,14 +11,16 @@
 // neck with FRETS frets (spaced as a guitar's are, the strings a little further apart towards the
 // bridge), its body with the two pickups where strings.js hears them, the bridge, its VOLUME and TONE
 // knobs and its pickup switch on the far side of the strings; behind its neck the chord buttons, two
-// rows of eight as the computer's keys that choose them (1–8 behind, Q–I in front); on the panel a
-// display and the amp's knobs. Pure functions with no three.js, as board.js's, so the tests run them
-// in Node.
+// rows of eight as the computer's keys that choose them (1–8 behind, Q–I in front); on the panel, from
+// its left end (nearest the rack, whose cables come to them), its jacks (patch.js's guitar jacks: its
+// outs, its sound and its notes, on a plate, its ins, WAH and CLOCK, under them), a display, the amp's
+// knobs, and its four pedals (guitar.js PEDALS), each with its knob, its light and its footswitch.
+// Pure functions with no three.js, as board.js's, so the tests run them in Node.
 //
 // Coordinates on the top, as board.js's: `a` from its left end along it, `b` from its front edge up
 // the slope; on the panel `a` likewise, `b` from its foot up its face.
-import { boardBlocks, boardFront, boardStand, clampBoard, meetDesk, writeHit } from './board.js';
-import { CHORDS, FRETS, GUITAR_KNOBS, MAX_BEND, PICKUPS } from './guitar.js';
+import { BOARD, boardBlocks, boardFront, boardStand, clampBoard, jackAt, meetDesk, writeHit } from './board.js';
+import { CHORDS, FRETS, GUITAR_KNOBS, MAX_BEND, PEDALS, PICKUPS } from './guitar.js';
 import { PICK, PICKUP_PLACES } from './strings.js';
 
 /** @typedef {import('./guitar.js').GuitarKnob} GuitarKnob */
@@ -46,7 +48,19 @@ export const GUITAR = Object.freeze({
   /** The guitar's knobs (VOLUME, TONE) on its body: each one's radius and height. */
   knob: Object.freeze({ r: 0.02, h: 0.02 }),
   /** The amp's knobs on the panel: each one's radius and height, `spacing` apart, from `from` along it, `b` up it. */
-  amp: Object.freeze({ r: 0.026, h: 0.026, spacing: 0.11, from: 0.5, b: 0.1 }),
+  amp: Object.freeze({ r: 0.026, h: 0.026, spacing: 0.09, from: 0.5, b: 0.1 }),
+  /**
+   * The pedals on the panel (guitar.js PEDALS), in a row from `from` along it: each `w` across, `gap`
+   * apart, from `b0` to `b1` up it; on each, from its top, its name (at `name`), its knob (`knob`: its
+   * radius and height, `b` up it), its light (at `led`) and its footswitch (`stomp`: its radius and
+   * height, `b` up it), which a press anywhere on the pedal under `press` stomps.
+   */
+  pedal: Object.freeze({
+    from: 0.925, w: 0.08, gap: 0.01, b0: 0.022, b1: 0.232, name: 0.217,
+    knob: Object.freeze({ r: 0.017, h: 0.018, b: 0.17 }), led: 0.113, stomp: Object.freeze({ r: 0.015, h: 0.012, b: 0.065 }), press: 0.128,
+  }),
+  /** Its jacks on the panel (as the board's, BOARD.panel.jack), BOARD.panel.pitch apart from `from` along it: its outs at `outs` up it, its ins under them at `ins`. */
+  jacks: Object.freeze({ from: 0.045, outs: 0.15, ins: 0.06 }),
   /** The pickup switch: its slot `long` along the body and `wide` across. */
   switch: Object.freeze({ long: 0.075, wide: 0.026 }),
   /** The panel: `height` up its face, leaning back `lean`, `thick`. */
@@ -86,8 +100,15 @@ export const BEND = Object.freeze({ dead: 0.2, per: 0.5 });
  */
 
 /**
- * A knob: the knob it turns (guitar.js), on the guitar's body (the top) or the amp's panel, where.
- * @typedef {{ id: GuitarKnob, on: 'top' | 'panel', label: string, a: number, b: number }} GuitarDial
+ * A knob: the knob it turns (guitar.js), its section's (the guitar's on its body, the top; the amp's
+ * and the pedals' on the panel), where, and how large: its radius and height.
+ * @typedef {{ id: GuitarKnob, section: import('./guitar.js').GuitarSection, on: 'top' | 'panel', label: string, a: number, b: number, r: number, h: number }} GuitarDial
+ */
+
+/**
+ * A pedal on the panel: which (guitar.js PEDALS), where (a0…a1, its middle `a`, b0…b1), and its knob's
+ * index in the desk's dials.
+ * @typedef {{ id: import('./guitar.js').PedalId, label: string, a0: number, a1: number, a: number, b0: number, b1: number, knob: number }} GuitarPedal
  */
 
 /**
@@ -96,13 +117,16 @@ export const BEND = Object.freeze({ dead: 0.2, per: 0.5 });
  * frame: its footprint, its top and panel as a Desk (board.js); the guitar on the top (its middle
  * line `mid`, its nut and bridge along it, each fret's place, the headstock's and the neck's ends, the
  * body's place (`body`: where its outline's u is 0), the pickups'); the chord buttons, the knobs (the
- * guitar's on the top, the amp's on the panel, in guitar.js GUITAR_KNOBS's order), the pickup switch
- * (its three places along its slot); on the panel the display and what is written there; and its sign.
+ * guitar's on the top, the amp's and the pedals' on the panel, in guitar.js GUITAR_KNOBS's order), the
+ * pickup switch (its three places along its slot); on the panel its jacks (as the board's, in patch.js
+ * JACKS's order; in the room's list of jacks after the keyboard's, from `jackBase`), the display, the
+ * pedals and what is written there; and its sign.
  * @param {{ x1: number }} L the room's layout (room.js layoutRoom): its right wall
  * @param {{ zFront: number }} rack the rack's (rackboard.js layoutRack)
+ * @param {{ panel: { jackBase: number, jacks: readonly unknown[] } }} keys the keyboard's (keysboard.js layoutKeyboard), whose jacks come before its
  */
-export function layoutGuitar(L, rack) {
-  const { scale, head, end, chord: C, amp: A, panel, tilt, front, wall, margin } = GUITAR;
+export function layoutGuitar(L, rack, keys) {
+  const { scale, head, end, chord: C, amp: A, pedal: E, jacks: J, panel, tilt, front, wall, margin } = GUITAR;
   const nut = margin + head, bridge = nut + scale;
   /** @type {number[]} each fret's place along the top, the nut's (0) first */
   const frets = Array.from({ length: FRETS + 1 }, (_, f) => nut + scale * (1 - 2 ** (-f / 12)));
@@ -120,15 +144,35 @@ export function layoutGuitar(L, rack) {
     const row = i < 8 ? 1 : 0, a0 = C.from + (i % 8) * (C.w + C.gap), b0 = neckFar + C.behind + row * (C.d + C.gap);
     return { chord: i, a0, a1: a0 + C.w, b0, b1: b0 + C.d };
   });
+  // The panel, from its left end: the jacks (its outs on a plate, its ins under them), the display,
+  // the amp's knobs, then the pedals to its right end.
+  /** @type {import('./board.js').BoardJack[]} */
+  const jacks = [
+    { id: 'guitar.out', a: J.from, b: J.outs, out: true, color: null },
+    { id: 'guitar.notes', a: J.from + BOARD.panel.pitch, b: J.outs, out: true, color: null },
+    { id: 'guitar.wah', a: J.from, b: J.ins, out: false, color: null },
+    { id: 'guitar.clock', a: J.from + BOARD.panel.pitch, b: J.ins, out: false, color: null },
+  ];
+  /** @type {GuitarPedal[]} */
+  const pedals = PEDALS.map((p, i) => {
+    const a0 = E.from + i * (E.w + E.gap);
+    return { id: p.id, label: p.label, a0, a1: a0 + E.w, a: a0 + E.w / 2, b0: E.b0, b1: E.b1, knob: -1 };
+  });
   /** @type {GuitarDial[]} */
   const dials = [];
+  let amps = 0;
   for (const k of GUITAR_KNOBS) {
+    const pedal = pedals.find((p) => PEDALS.find((q) => q.id === p.id)?.knob === k.id);
     if (k.section === 'guitar') {
       const [u, w] = ON_BODY[/** @type {'volume' | 'tone'} */ (k.id)];
-      dials.push({ id: k.id, on: 'top', label: k.label, a: bridge + u, b: mid + w });
-    } else dials.push({ id: k.id, on: 'panel', label: k.label, a: A.from + (dials.length - 2) * A.spacing, b: A.b });
+      dials.push({ id: k.id, section: k.section, on: 'top', label: k.label, a: bridge + u, b: mid + w, r: GUITAR.knob.r, h: GUITAR.knob.h });
+    } else if (pedal) {
+      pedal.knob = dials.length;
+      dials.push({ id: k.id, section: k.section, on: 'panel', label: k.label, a: pedal.a, b: E.knob.b, r: E.knob.r, h: E.knob.h });
+    } else dials.push({ id: k.id, section: k.section, on: 'panel', label: k.label, a: A.from + amps++ * A.spacing, b: A.b, r: A.r, h: A.h });
   }
-  const ampA0 = A.from - A.spacing / 2, ampA1 = ampA0 + (dials.length - 2) * A.spacing;
+  const ampA0 = A.from - A.spacing / 2, ampA1 = ampA0 + amps * A.spacing;
+  const bay = { a0: J.from - 0.026, a1: J.from + BOARD.panel.pitch + 0.026 };
   return {
     x0: 0, x1: width, zBack, zFront, width, length, tilt, front, top,
     /** @type {[number, number, number]} */
@@ -165,10 +209,18 @@ export function layoutGuitar(L, rack) {
       /** @type {[number, number, number]} */
       normal: [0, ls, lc],
       height: panel.height, lean: panel.lean, top: top + panel.height * lc,
-      display: { a0: 0.04, a1: 0.4, b0: 0.025, b1: 0.125 },
-      /** the amp's knobs' span, and what is written over them */
+      display: { a0: 0.17, a1: 0.43, b0: 0.025, b1: 0.125 },
+      jacks,
+      /** where its jacks start in the room's list of them (the board's, the synth's, the rack's and the keyboard's first) */
+      jackBase: keys.panel.jackBase + keys.panel.jacks.length,
+      /** the amp's knobs' span */
       amp: { a0: ampA0, a1: ampA1 },
-      titles: [{ text: 'AMP', a: (ampA0 + ampA1) / 2, b: panel.height - 0.03 }],
+      pedals,
+      /** what is written over the amp's knobs and over the jacks, a line along each's span */
+      titles: [
+        { text: 'AMP', a: (ampA0 + ampA1) / 2, b: panel.height - 0.03, a0: ampA0 + 0.012, a1: ampA1 - 0.012 },
+        { text: 'PATCH', a: (bay.a0 + bay.a1) / 2, b: panel.height - 0.03, ...bay },
+      ],
     },
     sign: { x0: 0, x1: width, y0: GUITAR.sign.bottom, y1: GUITAR.sign.top, z: GUITAR.sign.out },
   };
@@ -338,10 +390,25 @@ export const switchA = (G, i) => G.switch.a0 + ((i + 0.5) / PICKUPS.length) * (G
  * @param {'top' | 'panel'} on
  */
 export function guitarDialAt(G, a, b, on) {
-  const r = (on === 'top' ? GUITAR.knob.r : GUITAR.amp.r) * 1.3;
   for (let d = 0; d < G.dials.length; d++) {
-    const n = G.dials[d];
+    const n = G.dials[d], r = n.r * 1.3;
     if (n.on === on && (a - n.a) ** 2 + (b - n.b) ** 2 <= r * r) return d;
+  }
+  return -1;
+}
+
+/**
+ * The pedal whose footswitch a press at (a, b) on the panel stomps (anywhere on it under its knob's
+ * name, GUITAR.pedal.press): its index in G.panel.pedals (PEDALS'), else -1.
+ * @param {GuitarDesk} G
+ * @param {number} a
+ * @param {number} b
+ */
+export function pedalAt(G, a, b) {
+  const pedals = G.panel.pedals;
+  for (let i = 0; i < pedals.length; i++) {
+    const p = pedals[i];
+    if (a >= p.a0 && a <= p.a1 && b >= p.b0 && b <= GUITAR.pedal.press) return i;
   }
   return -1;
 }
@@ -401,9 +468,11 @@ const NEAR = { string: -1, across: 0 };
  * the fret, v how far across from the string, in spacings), over the body ('strum': `guitar` the
  * string nearest, u where the pick meets it, v likewise), the bridge ('mute'), a knob ('guitarknob':
  * `guitar` its index in G.dials), the pickup switch ('pickup': `guitar` the place under it); on the
- * top a chord button ('chord': `guitar` its index); on the panel an amp's knob ('guitarknob'); or the
- * rest of it ('guitar': the guitar elsewhere, its top, its panel, its front, its sides, its sign),
- * written into out as room.js castRay writes a hit (the other desks' -1). Whether it met the desk.
+ * top a chord button ('chord': `guitar` its index); on the panel a jack ('jack', as the board's are:
+ * `jack` its index in the room's list of them, G.panel.jackBase on), a pedal's footswitch ('pedal':
+ * `guitar` its index in G.panel.pedals) or a knob, the amp's or a pedal's ('guitarknob'); or the rest
+ * of it ('guitar': the guitar elsewhere, its top, its panel, its front, its sides, its sign), written
+ * into out as room.js castRay writes a hit (the other desks' -1). Whether it met the desk.
  * @param {GuitarDesk} G
  * @param {number} ox
  * @param {number} oy
@@ -415,7 +484,7 @@ const NEAR = { string: -1, across: 0 };
  * @param {number} [within]
  */
 export function hitGuitar(G, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
-  let kind = 'guitar', index = -1, u = 0, v = 0;
+  let kind = 'guitar', index = -1, jack = -1, u = 0, v = 0;
   const at = stringsAlong(G, ox, oy, oz, dx, dy, dz, ALONG), part = at && at.t < within ? partAt(G, at.a, at.b) : '';
   if (at && part) {
     const { a, b } = at;
@@ -443,15 +512,23 @@ export function hitGuitar(G, ox, oy, oz, dx, dy, dz, out, within = Infinity) {
     // The ray in the desk's frame, onto its top, its panel and the rest of it.
     if (!meetDesk(G, oz - G.place.z, oy, G.place.x - ox, dz, dy, -dx, within, GUITAR.chord.rise, MET)) return false;
     if (MET.on === 'top' && (index = chordAt(G, MET.a, MET.b)) >= 0) kind = 'chord';
-    else if (MET.on === 'panel' && (index = guitarDialAt(G, MET.a, MET.b, 'panel')) >= 0) kind = 'guitarknob';
+    else if (MET.on === 'panel') {
+      const j = jackAt(G, MET.a, MET.b);
+      if (j >= 0) {
+        kind = 'jack';
+        jack = G.panel.jackBase + j;
+      } else if ((index = guitarDialAt(G, MET.a, MET.b, 'panel')) >= 0) kind = 'guitarknob';
+      else if ((index = pedalAt(G, MET.a, MET.b)) >= 0) kind = 'pedal';
+    }
   }
   writeHit(out, MET, kind, ox, oy, oz, dx, dy, dz, u, v);
   // Its way out, turned into the room's (0, not -0, along the right wall).
   out.nx = MET.nz ? -MET.nz : 0;
   out.ny = MET.ny;
   out.nz = MET.nx;
-  out.pad = out.step = out.knob = out.jack = out.key = out.dial = out.button = out.seq = out.rack = out.keys = -1;
-  out.guitar = kind === 'guitar' || kind === 'mute' ? -1 : index;
+  out.pad = out.step = out.knob = out.key = out.dial = out.button = out.seq = out.rack = out.keys = -1;
+  out.jack = jack;
+  out.guitar = kind === 'guitar' || kind === 'mute' || kind === 'jack' ? -1 : index;
   return true;
 }
 

@@ -1,22 +1,23 @@
 // The guitar's desk (guitarboard.js): where it stands, turned, against the right wall by the rack, and
 // the room's points and rays turned into its frame and back; the guitar on its top (the neck to the
 // left, the low E nearest, the frets as a guitar's, the body round the pickups and the bridge), the
-// chord buttons behind the neck, the knobs and the pickup switch on the body, the amp's knobs on the
-// panel; what a ray meets on it; and one walking round it and playing it (on a screen all of it in
-// view; in VR the neck and the strings over the body in reach).
+// chord buttons behind the neck, the knobs and the pickup switch on the body; on the panel its jacks,
+// the amp's knobs and the four pedals; what a ray meets on it; and one walking round it and playing it
+// (on a screen all of it in view; in VR the neck and the strings over the body in reach).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOM } from '../public/js/config.js';
 import { EYE, MARGIN, layoutRoom } from '../public/js/room.js';
-import { BOARD, boardBlocks, boardPoint, boardStand, layoutBoard, panelPoint } from '../public/js/board.js';
+import { BOARD, boardBlocks, boardPoint, boardStand, jackAt, layoutBoard, panelPoint } from '../public/js/board.js';
 import { layoutSynth } from '../public/js/synthboard.js';
 import { layoutRack } from '../public/js/rackboard.js';
 import { layoutKeyboard } from '../public/js/keysboard.js';
 import {
   BEND, BODY, GUITAR, bendFor, chordAt, clampGuitar, deskXZ, fretAt, fretPlace, guitarBlocks, guitarDialAt, guitarFront, guitarPoint, guitarStand,
-  hitGuitar, layoutGuitar, neckHalf, onBody, partAt, pickAt, roomXZ, spacingAt, stringAt, stringB, stringsAlong, strummed, switchA, switchAt,
+  hitGuitar, layoutGuitar, neckHalf, onBody, partAt, pedalAt, pickAt, roomXZ, spacingAt, stringAt, stringB, stringsAlong, strummed, switchA, switchAt,
 } from '../public/js/guitarboard.js';
-import { CHORDS, FRETS, GUITAR_KNOBS, PICKUPS } from '../public/js/guitar.js';
+import { CHORDS, FRETS, GUITAR_KNOBS, PEDALS, PICKUPS } from '../public/js/guitar.js';
+import { JACKS } from '../public/js/patch.js';
 import { PICK, PICKUP_PLACES } from '../public/js/strings.js';
 
 const L = layoutRoom(ROOM);
@@ -24,7 +25,7 @@ const B = layoutBoard(L);
 const S = layoutSynth(L, B);
 const rack = layoutRack(L, S);
 const K = layoutKeyboard(L, B, rack);
-const G = layoutGuitar(L, rack);
+const G = layoutGuitar(L, rack, K);
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 const blank = () => ({ t: 0, kind: '', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, u: 0, v: 0, walkable: true, piece: -1, pad: 0, step: 0, knob: 0, jack: 0, key: 0, dial: 0, button: 0, seq: 0, rack: 0, keys: 0, guitar: 0 });
 /** A point in the desk's own frame in the room. */
@@ -142,19 +143,23 @@ test('behind the neck the chord buttons, two rows of eight as the keys that choo
 
 test('the guitar\'s knobs and its pickup switch on its body past the high E, the amp\'s knobs on the panel under AMP', () => {
   assert.deepEqual(G.dials.map((d) => d.id), GUITAR_KNOBS.map((k) => k.id));
+  assert.deepEqual(G.dials.map((d) => d.section), GUITAR_KNOBS.map((k) => k.section));
   assert.deepEqual(G.dials.map((d) => d.on), GUITAR_KNOBS.map((k) => (k.section === 'guitar' ? 'top' : 'panel')));
   const R = GUITAR.knob.r, A = GUITAR.amp.r;
   for (const [i, d] of G.dials.entries()) {
     assert.equal(guitarDialAt(G, d.a, d.b, d.on), i);
     assert.equal(guitarDialAt(G, d.a, d.b, d.on === 'top' ? 'panel' : 'top'), -1);
+    assert.deepEqual([d.r, d.h], d.section === 'guitar' ? [R, GUITAR.knob.h] : d.section === 'amp' ? [A, GUITAR.amp.h] : [GUITAR.pedal.knob.r, GUITAR.pedal.knob.h]);
     if (d.on === 'top') {
       for (let k = 0; k < 8; k++) assert.ok(onBody(G, d.a + R * Math.cos(k), d.b + R * Math.sin(k)), `${d.id} on the body`);
       assert.ok(d.b - R > stringB(G, 5, d.a) + GUITAR.edge + 0.02, `${d.id} past the high E`);
       assert.equal(switchAt(G, d.a, d.b), -1);
     } else {
-      assert.ok(d.a - A > G.panel.display.a1 + 0.02 && d.b - A > 0.04 && d.b + A < G.panel.height - 0.05, `${d.id} on the panel, right of the display`);
-      for (const o of G.dials) if (o !== d && o.on === 'panel') assert.ok(Math.abs(o.a - d.a) >= 2 * A * 1.3 + 0.02, `${d.id} apart from ${o.id}`);
+      assert.ok(d.a - d.r > G.panel.display.a1 + 0.02 && d.b - d.r > 0.04 && d.b + d.r < G.panel.height - 0.04, `${d.id} on the panel, right of the display`);
+      // Apart from the others, their scales too (as far out again as a third of each one's radius).
+      for (const o of G.dials) if (o !== d && o.on === 'panel') assert.ok(Math.hypot(o.a - d.a, o.b - d.b) >= 1.33 * (o.r + d.r) + 0.01, `${d.id} apart from ${o.id}`);
     }
+    if (d.section === 'amp') assert.ok(d.a + 1.5 * A < G.panel.pedals[0].a0, `${d.id} left of the pedals`);
   }
   const [volume, tone] = G.dials;
   assert.ok(Math.hypot(volume.a - tone.a, volume.b - tone.b) > 2 * R * 1.3, 'VOLUME and TONE apart');
@@ -172,9 +177,52 @@ test('the guitar\'s knobs and its pickup switch on its body past the high E, the
   assert.equal(switchAt(G, s.a1 + 0.02, s.b0), -1);
 });
 
-test('a ray meets the strings over a fret, over the body, the bridge, a knob, the switch, a chord, the amp\'s knobs, and the rest as the guitar', () => {
-  const check = (h, kind, guitar, what) => {
-    assert.deepEqual([h?.kind, h?.guitar, h?.pad, h?.step, h?.knob, h?.jack, h?.key, h?.dial, h?.button, h?.seq, h?.rack, h?.keys], [kind, guitar, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], what);
+test('on the panel its jacks at its left end, nearest the rack, under PATCH, after the keyboard\'s in the room\'s list', () => {
+  const P = G.panel, J = BOARD.panel.jack;
+  assert.deepEqual(P.jacks.map((j) => j.id), JACKS.filter((j) => j.module === 'guitar').map((j) => j.id));
+  assert.equal(P.jackBase, K.panel.jackBase + K.panel.jacks.length);
+  for (const [i, j] of P.jacks.entries()) {
+    const spec = JACKS.find((x) => x.id === j.id);
+    assert.equal(j.out, spec.dir === 'out', `${j.id}: its plate as it goes`);
+    assert.equal(jackAt(G, j.a, j.b), i);
+    assert.ok(j.a - 2 * J >= 0.015 && j.a + 2 * J < P.display.a0 - 0.02 && j.b - J - 0.02 > 0 && j.b + 2 * J < P.height - 0.04, `${j.id} on the panel, left of the display`);
+    for (const o of P.jacks) if (o !== j) assert.ok(Math.hypot(o.a - j.a, o.b - j.b) >= BOARD.panel.pitch - 1e-9, `${j.id} apart from ${o.id}`);
+    assert.equal(guitarDialAt(G, j.a, j.b, 'panel'), -1);
+    assert.equal(pedalAt(G, j.a, j.b), -1);
+  }
+  // Its outs over its ins; in the room, its left end the nearest the rack.
+  const [out, notes, wah, clock] = P.jacks;
+  assert.ok(near(out.b, notes.b) && near(wah.b, clock.b) && out.b > wah.b && near(out.a, wah.a) && out.a < notes.a);
+  assert.ok(roomXZ(G, out.a, 0)[1] < roomXZ(G, P.display.a0, 0)[1], 'towards the far wall');
+  const patch = P.titles.find((t) => t.text === 'PATCH');
+  assert.ok(patch && near(patch.a, (out.a + notes.a) / 2) && patch.b > out.b + 2 * J + 0.02 && patch.b < P.height, 'PATCH over them');
+  assert.ok(patch.a0 < out.a - J && patch.a1 > notes.a + J, 'its line over them all');
+});
+
+test('on the panel its four pedals at its right end, each with its knob, its light and its footswitch', () => {
+  const P = G.panel, E = GUITAR.pedal;
+  assert.deepEqual(P.pedals.map((p) => [p.id, p.label]), PEDALS.map((p) => [p.id, p.label]));
+  for (const [i, p] of P.pedals.entries()) {
+    assert.ok(p.a1 - p.a0 >= 0.07 && p.b1 - p.b0 >= 0.18, `${p.id}: large enough to stomp`);
+    assert.ok(p.a0 > P.amp.a1 && p.a1 <= G.width - 0.02 && p.b0 > 0 && p.b1 < P.height, `${p.id}: on the panel right of the amp`);
+    if (i) assert.ok(p.a0 >= P.pedals[i - 1].a1 + 0.005, `${p.id}: right of ${P.pedals[i - 1].id}`);
+    // Its knob on it, its own (guitar.js PEDALS's), under its name.
+    const d = G.dials[p.knob];
+    assert.equal(d.id, PEDALS[i].knob);
+    assert.ok(near(d.a, p.a) && d.a - d.r * 1.33 > p.a0 && d.a + d.r * 1.33 < p.a1 && d.b + d.r * 1.33 < E.name - 0.004, `${p.id}: its knob on it`);
+    // Its footswitch under its light, under its knob: a press on it, or on the pedal under the knob's name, stomps it.
+    assert.ok(E.stomp.b + E.stomp.r < E.led - 0.01 && E.led < E.press && E.press < d.b - d.r * 1.3 - 0.008, `${p.id}: its light between`);
+    for (const [a, b] of [[p.a, E.stomp.b], [p.a0 + 0.001, p.b0 + 0.001], [p.a1 - 0.001, E.press], [p.a, E.led]]) {
+      assert.equal(pedalAt(G, a, b), i, `${p.id} at ${a}, ${b}`);
+      assert.equal(guitarDialAt(G, a, b, 'panel'), -1);
+    }
+    for (const [a, b] of [[p.a, d.b], [p.a, E.press + 0.002], [p.a0 - 0.003, E.stomp.b], [p.a, E.name]]) assert.equal(pedalAt(G, a, b), -1, `${p.id}: not at ${a}, ${b}`);
+  }
+});
+
+test('a ray meets the strings over a fret, over the body, the bridge, a knob, the switch, a chord, the panel\'s jacks, knobs and pedals, and the rest as the guitar', () => {
+  const check = (h, kind, guitar, what, jack = -1) => {
+    assert.deepEqual([h?.kind, h?.guitar, h?.pad, h?.step, h?.knob, h?.jack, h?.key, h?.dial, h?.button, h?.seq, h?.rack, h?.keys], [kind, guitar, -1, -1, -1, jack, -1, -1, -1, -1, -1, -1], what);
     assert.equal(h.walkable, false);
   };
   for (let s = 0; s < 6; s++) {
@@ -196,10 +244,15 @@ test('a ray meets the strings over a fret, over the body, the bridge, a knob, th
   check(ray(eye, top(G.bridge + 0.09, G.mid, STRINGS)), 'guitar', -1, 'the body');
   check(ray(eye, top((G.headEnd + G.nut) / 2, G.mid, STRINGS)), 'guitar', -1, 'the headstock');
   for (const [i, d] of G.dials.entries()) {
-    check(ray(eye, d.on === 'top' ? top(d.a, d.b, GUITAR.body + GUITAR.knob.h) : panel(d.a, d.b, GUITAR.amp.h)), 'guitarknob', i, d.id);
+    check(ray(eye, d.on === 'top' ? top(d.a, d.b, GUITAR.body + d.h) : panel(d.a, d.b, d.h)), 'guitarknob', i, d.id);
   }
   for (const [i] of PICKUPS.entries()) check(ray(eye, top(switchA(G, i), (G.switch.b0 + G.switch.b1) / 2, GUITAR.body)), 'pickup', i, PICKUPS[i].id);
   for (const [i, c] of G.chords.entries()) check(ray(eye, top((c.a0 + c.a1) / 2, (c.b0 + c.b1) / 2, GUITAR.chord.rise)), 'chord', i, CHORDS[i].id);
+  for (const [j, J] of G.panel.jacks.entries()) check(ray(eye, panel(J.a, J.b)), 'jack', -1, J.id, G.panel.jackBase + j);
+  for (const [i, p] of G.panel.pedals.entries()) {
+    check(ray(eye, panel(p.a, GUITAR.pedal.stomp.b, GUITAR.pedal.stomp.h)), 'pedal', i, `${p.id}'s footswitch`);
+    check(ray(eye, panel(p.a, GUITAR.pedal.name)), 'guitar', -1, `${p.id}'s name`);
+  }
   // Its normals, turned into the room's: the top's and the panel's towards the player (the room's −x).
   const t = ray(eye, top(0.5, G.mid, STRINGS)), p = ray(eye, panel(0.2, 0.07));
   assert.ok(near(t.nx, -G.normal[2]) && near(t.ny, G.normal[1]) && near(t.nz, 0) && t.nx < 0);

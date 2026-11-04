@@ -9,8 +9,9 @@
 // sliders, and its cables (never a sound into its own module). The keys: its keys as the synth's, its
 // sound (the organ, the electric piano or both, Sustain, the computer's keys' octave), its drawbars in
 // eighths, its percussion, its knobs, and its cables. The guitar: its chords (with strumming and
-// muting them), its strings a row of frets each, one stop among them, its pickup and its knobs and
-// its amp's. Sound: the volume, Mute, and MIDI where there is Web MIDI.
+// muting them), its strings a row of frets each, one stop among them, its pickup, its knobs and its
+// amp's, its pedals (each on or off, and its knob) and its cables. Sound: the volume, Mute, and MIDI
+// where there is Web MIDI.
 // Playing at the board, the synth, the rack, the keys or the guitar and stepping away, with its hint;
 // and all six kept, open, where there is no 3D view.
 import { test } from 'node:test';
@@ -30,7 +31,7 @@ import { REVERB_KNOBS, reverbText } from '../public/js/reverb.js';
 import { ENVELOPE_KNOBS, envelopeText } from '../public/js/envelope.js';
 import { MIXER_KNOBS, UNITY, mixerText } from '../public/js/mixer.js';
 import { DEFAULT_KEYS, DEFAULT_SWITCHES, DRAWBARS, KEYS_COUNT, KEYS_KNOBS, KEYS_LOWEST, KEYS_OCTAVES, KEYS_SECTIONS, KEYS_SOUNDS, KEYS_SWITCHES, keysText } from '../public/js/keys.js';
-import { CHORDS, CHORD_KEYS, DEFAULT_GUITAR, GUITAR_KNOBS, GUITAR_SECTIONS, GUITAR_STRINGS, PICKUPS, guitarText } from '../public/js/guitar.js';
+import { CHORDS, CHORD_KEYS, DEFAULT_GUITAR, GUITAR_KNOBS, GUITAR_SECTIONS, GUITAR_STRINGS, PEDALS, PICKUPS, guitarKnobName, guitarText } from '../public/js/guitar.js';
 import { installDom } from './helpers/dom.js';
 
 const way = { url: 'https://ariamokr.github.io/hallway/?from=instruments', label: '← Hallway', title: 'Back to the Hallway' };
@@ -45,9 +46,12 @@ async function card(options = {}) {
     'onPlayRack', 'onSeqKey', 'onSeqNote', 'onSeqOctave', 'onClearSeq', 'onResetSeq', 'onRackDelay', 'onResetRackDelay', 'onLfo', 'onResetLfo',
     'onEnvelope', 'onResetEnvelope', 'onMixer', 'onResetMixer', 'onFilter', 'onResetFilter', 'onReverb', 'onResetReverb',
     'onPlayKeys', 'onKeysDown', 'onKeysUp', 'onKeysTap', 'onKeysSound', 'onSustain', 'onKeysOctave', 'onKeysKnob', 'onKeysSwitch', 'onResetKeys',
-    'onPlayGuitar', 'onChord', 'onStrum', 'onMuteStrings', 'onFretDown', 'onFretUp', 'onFretTap', 'onPickup', 'onGuitarKnob', 'onResetGuitar']) o[name] = (...args) => calls.push([name, ...args]);
+    'onPlayGuitar', 'onChord', 'onStrum', 'onMuteStrings', 'onFretDown', 'onFretUp', 'onFretTap', 'onPickup', 'onGuitarKnob', 'onPedal', 'onResetGuitar']) o[name] = (...args) => calls.push([name, ...args]);
   return { o, calls };
 }
+
+/** The guitar's pedals all off, as they come. */
+const PEDALS_OFF = { wah: false, overdrive: false, chorus: false, tremolo: false };
 
 /** The arpeggiator off, as it comes. */
 const OFF = { mode: null, range: 1, hold: false };
@@ -320,22 +324,28 @@ test("the rack's filter, its mode a slider along its three, its cutoff in hertz,
   }
 });
 
-test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is (but a sound of its own module\'s); the board\'s with the drums, the synth\'s with it, the rack\'s with it, the keyboard\'s with it', async () => {
+test('the cables: each input a choice of the outputs of its kind, or nothing, as the patch is (but a sound of its own module\'s); the board\'s with the drums, the synth\'s with it, the rack\'s with it, the keyboard\'s and the guitar\'s with them', async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
     const ins = JACKS.filter((j) => j.dir === 'in');
     assert.deepEqual([...o.plugs.keys()], ins.map((j) => j.id));
-    const boxes = [o.cablesBox, o.synthCablesBox, o.rackCablesBox, o.keysCablesBox];
+    const boxes = [o.cablesBox, o.synthCablesBox, o.rackCablesBox, o.keysCablesBox, o.guitarCablesBox];
     const rack = ['seq', 'rackdelay', 'env', 'mixer', 'filter', 'reverb'];
     for (const j of ins) {
       const select = o.plugs.get(j.id);
       assert.equal(select.parentNode.children[0].textContent, j.name, 'its label');
       const options = select.children.map((c) => [c.getAttribute('value'), c.textContent]);
       assert.deepEqual(options, [['', 'Nothing'], ...JACKS.filter((x) => x.dir === 'out' && x.kind === j.kind && !(x.kind === 'audio' && x.module === j.module)).map((x) => [x.id, x.name])]);
-      const here = j.module === 'synth' ? o.synthCablesBox : rack.includes(j.module) ? o.rackCablesBox : j.module === 'keys' ? o.keysCablesBox : o.cablesBox;
+      const here = j.module === 'synth' ? o.synthCablesBox : rack.includes(j.module) ? o.rackCablesBox : j.module === 'keys' ? o.keysCablesBox : j.module === 'guitar' ? o.guitarCablesBox : o.cablesBox;
       assert.deepEqual(boxes.map((box) => box.findAll((c) => c === select).length), boxes.map((box) => (box === here ? 1 : 0)), j.id);
     }
+    // The guitar's: its WAH and its CLOCK in, last in Guitar; its sound into whatever takes sound, its notes into the synth's and the envelope's.
+    assert.deepEqual(o.guitarCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), ['guitar.wah', 'guitar.clock']);
+    assert.equal(o.guitarPart.children.at(-1), o.guitarCablesBox, 'last in Guitar');
+    assert.deepEqual(['guitar.wah', 'guitar.clock'].map((id) => o.plugs.get(id).parentNode.children[0].textContent), ['Wah in', 'Guitar clock in']);
+    assert.deepEqual(o.plugs.get('guitar.clock').children.map((c) => c.getAttribute('value')), ['', 'clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d2', 'rack.d4']);
+    for (const id of ['delay.in', 'rackdelay.in', 'reverb.in', 'filter.in', 'mixer.in1']) assert.ok(o.plugs.get(id).children.some((c) => c.getAttribute('value') === 'guitar.out'), id);
     assert.deepEqual(o.rackCablesBox.findAll((c) => c.tagName === 'SELECT').map((s) => s.getAttribute('name')), [
       'seq.clock', 'rackdelay.in', 'env.clock', 'env.notes', 'mixer.in1', 'mixer.in2', 'mixer.in3', 'mixer.in4', 'filter.in', 'filter.cutoff', 'reverb.in',
     ], "the sequencer's clock in, the delay's in, the envelope's ins, the mixer's, the filter's and the reverb's, the rack's");
@@ -355,8 +365,9 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
     assert.deepEqual(o.plugs.get('synth.pitch').children.map((c) => c.textContent), mods);
     assert.deepEqual(o.plugs.get('keys.rotary').children.map((c) => c.textContent), mods, 'whose each is, said');
     assert.deepEqual(o.plugs.get('filter.cutoff').children.map((c) => c.textContent), mods);
+    assert.deepEqual(o.plugs.get('guitar.wah').children.map((c) => c.textContent), mods);
     assert.deepEqual(o.plugs.get('keys.rotary').parentNode.children[0].textContent, 'Rotary speed in');
-    for (const id of ['synth.notes', 'env.notes']) assert.deepEqual(o.plugs.get(id).children.map((c) => c.textContent), ['Nothing', 'Sequencer notes out', 'Keyboard notes out'], id);
+    for (const id of ['synth.notes', 'env.notes']) assert.deepEqual(o.plugs.get(id).children.map((c) => c.textContent), ['Nothing', 'Sequencer notes out', 'Keyboard notes out', 'Guitar notes out'], id);
     for (const id of ['seq.clock', 'env.clock']) assert.deepEqual(o.plugs.get(id).children.map((c) => c.getAttribute('value')), ['', 'clock.x1', 'clock.d2', 'clock.d4', 'rack.x1', 'rack.d2', 'rack.d4'], `${id}: the board's clock or the rack's`);
     const patch = new Patch({ storage: null });
     patch.plug('pad.snare', 'delay.in');
@@ -381,8 +392,13 @@ test('the cables: each input a choice of the outputs of its kind, or nothing, as
     o.plugs.get('keys.rotary').fire('change');
     o.plugs.get('synth.notes').value = 'keys.notes';
     o.plugs.get('synth.notes').fire('change');
+    o.plugs.get('guitar.wah').value = 'env.out';
+    o.plugs.get('guitar.wah').fire('change');
+    o.plugs.get('reverb.in').value = 'guitar.out';
+    o.plugs.get('reverb.in').fire('change');
     assert.deepEqual(calls, [['onPlug', 'drums.clock', 'clock.d4'], ['onPlug', 'delay.in', null], ['onPlug', 'synth.amp', 'synth.env'], ['onPlug', 'seq.clock', 'clock.d2'],
-      ['onPlug', 'rackdelay.in', 'synth.out'], ['onPlug', 'synth.cutoff', 'lfo.out'], ['onPlug', 'keys.rotary', 'synth.env'], ['onPlug', 'synth.notes', 'keys.notes']]);
+      ['onPlug', 'rackdelay.in', 'synth.out'], ['onPlug', 'synth.cutoff', 'lfo.out'], ['onPlug', 'keys.rotary', 'synth.env'], ['onPlug', 'synth.notes', 'keys.notes'],
+      ['onPlug', 'guitar.wah', 'env.out'], ['onPlug', 'reverb.in', 'guitar.out']]);
   } finally {
     remove();
   }
@@ -701,7 +717,7 @@ test('with no 3D view, the drums, the synth, the rack, the keys, the guitar and 
     assert.equal(o.keysPart.findAll((c) => c === o.playKeys).length, 0);
     for (const box of [o.keysRow, o.keysSoundBox, o.percBox, ...o.keysSectionBoxes, o.keysCablesBox]) assert.equal(o.keysPart.findAll((c) => c === box).length, 1, 'the keys, the sound, the percussion, the drawbars, the knobs and the cables');
     assert.equal(o.guitarPart.findAll((c) => c === o.playGuitar).length, 0);
-    for (const box of [o.chordsBox, o.fretsBox, o.pickupBox]) assert.equal(o.guitarPart.findAll((c) => c === box).length, 1, 'the chords, the strings and the pickup');
+    for (const box of [o.chordsBox, o.fretsBox, o.pickupBox, o.pedalsBox, o.guitarCablesBox]) assert.equal(o.guitarPart.findAll((c) => c === box).length, 1, 'the chords, the strings, the pickup, the pedals and the cables');
   } finally {
     remove();
   }
@@ -724,10 +740,10 @@ test('the guitar\'s chords: the strings open, then a choice each, four to a row 
       assert.deepEqual(label.children.slice(1).map((x) => [x.tagName, x.className]), [['SPAN', 'sr-only'], ['KBD', '']]);
     }
     assert.deepEqual(CHORDS.map((c, i) => keyLabel(CHORD_KEYS[i])).join(''), '12345678QWERTYUI');
-    o.setGuitar({ chord: 'Am', chordName: 'A minor', pickup: 'both' });
+    o.setGuitar({ chord: 'Am', chordName: 'A minor', pickup: 'both', pedals: PEDALS_OFF });
     assert.equal(o.chordsBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Chord: A minor');
     assert.deepEqual([...o.chordInputs].filter(([, i]) => i.checked).map(([id]) => id), ['Am']);
-    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'both' });
+    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'both', pedals: PEDALS_OFF });
     assert.deepEqual([...o.chordInputs].filter(([, i]) => i.checked).map(([id]) => id), ['']);
     const g = o.chordInputs.get('G');
     g.checked = true;
@@ -806,18 +822,19 @@ test('the guitar\'s strings: a row each, the high E\'s at the top, a button for 
   }
 });
 
-test('the guitar\'s pickup, three to a row, and its knobs and its amp\'s: a section each, sliders set in words, turned, and As it comes', async () => {
+test('the guitar\'s pickup, three to a row, and its knobs, its amp\'s and its pedals\': a section each, sliders set in words, turned, and As it comes', async () => {
   const remove = installDom();
   try {
     const { o, calls } = await card();
     assert.deepEqual([...o.pickupInputs.keys()], PICKUPS.map((p) => p.id));
     assert.deepEqual([...o.pickupInputs.values()].map((i) => [i.getAttribute('type'), i.getAttribute('name'), i.parentNode.textContent]),
       [['radio', 'guitar-pickup', 'Neck'], ['radio', 'guitar-pickup', 'Both'], ['radio', 'guitar-pickup', 'Bridge']]);
-    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'bridge' });
+    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'bridge', pedals: PEDALS_OFF });
     assert.equal(o.pickupBox.findAll((c) => c.tagName === 'LEGEND')[0].textContent, 'Pickup: Bridge pickup');
     assert.deepEqual([...o.pickupInputs].filter(([, i]) => i.checked).map(([id]) => id), ['bridge']);
-    const sections = o.guitarPart.children.filter((c) => c.className === 'section');
+    const sections = o.guitarPart.children.filter((c) => c.className.split(' ')[0] === 'section');
     assert.deepEqual(sections.map((b) => b.findAll((c) => c.tagName === 'LEGEND')[0].textContent), GUITAR_SECTIONS.map((s) => s.name));
+    assert.equal(sections[2], o.pedalsBox);
     assert.deepEqual([...o.guitarInputs.keys()], GUITAR_KNOBS.map((k) => k.id));
     for (const [i, s] of GUITAR_SECTIONS.entries()) {
       const sliders = sections[i].findAll((c) => c.tagName === 'INPUT' && c.getAttribute('type') === 'range');
@@ -827,7 +844,7 @@ test('the guitar\'s pickup, three to a row, and its knobs and its amp\'s: a sect
     for (const k of GUITAR_KNOBS) {
       const { input, out } = o.guitarInputs.get(k.id);
       const v = k.id === 'gain' ? 0.8 : k.id === 'treble' ? 0.25 : DEFAULT_GUITAR[k.id];
-      assert.equal(input.parentNode.children[0].textContent, k.name, 'its label');
+      assert.equal(input.parentNode.children[0].textContent, k.section === 'pedals' ? guitarKnobName(k.id) : k.name, 'its label');
       assert.equal(input.value, String(Math.round(v * 100)), k.id);
       assert.deepEqual([out.textContent, input.getAttribute('aria-valuetext')], [guitarText(k.id, v), guitarText(k.id, v)], k.id);
     }
@@ -840,6 +857,41 @@ test('the guitar\'s pickup, three to a row, and its knobs and its amp\'s: a sect
     master.fire('input');
     o.resetGuitar.fire('click');
     assert.deepEqual(calls, [['onPickup', 'neck'], ['onGuitarKnob', 'master', 0.45], ['onResetGuitar']]);
+  } finally {
+    remove();
+  }
+});
+
+test('the guitar\'s pedals, as on its panel: each switched on or off, then its knob, named by its pedal; as they are', async () => {
+  const remove = installDom();
+  try {
+    const { o, calls } = await card();
+    assert.deepEqual([...o.pedalInputs.keys()], PEDALS.map((p) => p.id));
+    // In its order: each one's switch, then its knob.
+    const rows = o.pedalsBox.children.slice(1);
+    assert.deepEqual(rows.map((r) => r.className), PEDALS.flatMap(() => ['check', 'slider']));
+    for (const [i, p] of PEDALS.entries()) {
+      const input = o.pedalInputs.get(p.id);
+      assert.deepEqual([input.getAttribute('type'), input.getAttribute('name'), input.parentNode.textContent], ['checkbox', `guitar-${p.id}`, p.name]);
+      assert.equal(rows[2 * i], input.parentNode);
+      assert.equal(rows[2 * i + 1], o.guitarInputs.get(p.knob).input.parentNode);
+      assert.equal(o.guitarInputs.get(p.knob).input.parentNode.children[0].textContent, guitarKnobName(p.knob));
+    }
+    assert.deepEqual(PEDALS.map((p) => guitarKnobName(p.knob)), ['Wah pedal', 'Overdrive drive', 'Chorus rate', 'Tremolo speed']);
+    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'both', pedals: { ...PEDALS_OFF, overdrive: true, tremolo: true } });
+    assert.deepEqual([...o.pedalInputs].filter(([, i]) => i.checked).map(([id]) => id), ['overdrive', 'tremolo']);
+    o.setGuitar({ chord: null, chordName: 'Open strings', pickup: 'both', pedals: { ...PEDALS_OFF, wah: true } });
+    assert.deepEqual([...o.pedalInputs].filter(([, i]) => i.checked).map(([id]) => id), ['wah']);
+    const chorus = o.pedalInputs.get('chorus');
+    chorus.checked = true;
+    chorus.fire('change');
+    const wah = o.pedalInputs.get('wah');
+    wah.checked = false;
+    wah.fire('change');
+    const drive = o.guitarInputs.get('drive').input;
+    drive.value = '80';
+    drive.fire('input');
+    assert.deepEqual(calls, [['onPedal', 'chorus', true], ['onPedal', 'wah', false], ['onGuitarKnob', 'drive', 0.8]]);
   } finally {
     remove();
   }
@@ -863,8 +915,10 @@ test('playing at the guitar: its button steps away, the others go there, and the
     assert.deepEqual([o.playGuitar.textContent, o.playKeys.textContent, o.play.textContent], ['Step away from the guitar', 'Play at the keys', 'Play at the board']);
     assert.match(o.hint.textContent, /^Press 1–8 and Q–I for a chord, Z–N to pluck a string, the down and up arrows to strum, M to mute · .* · Esc steps away$/);
     assert.ok(!o.hint.classList.contains('gone'), 'shown again');
-    for (const [how, words] of [['touch', /^Swipe across the strings over the body · press a string on the neck at a fret/], ['gamepad', /A plucks the string in the middle, presses it at its fret, chooses a chord/],
-      ['tv', /^Left, right: choose a chord · OK or down: strum down · up: strum up · Back: step away · Menu: its chords and knobs$/]]) {
+    assert.match(o.hint.textContent, / · click a pedal to switch it · /);
+    for (const [how, words] of [['touch', /^Swipe across the strings over the body · press a string on the neck at a fret.* · tap a chord or a pedal · /],
+      ['gamepad', /A plucks the string in the middle, presses it at its fret, chooses a chord, switches a pedal/],
+      ['tv', /^Left, right: choose a chord · OK or down: strum down · up: strum up · Back: step away · Menu: its chords, knobs and pedals$/]]) {
       o.setHint(how, 0);
       assert.match(o.hint.textContent, words, how);
     }

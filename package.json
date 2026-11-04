@@ -1,7 +1,7 @@
 {
   "name": "instruments",
   "version": "0.1.0",
-  "description": "A WebXR room of instruments behind the Hallway's door: a drum board of twelve analog pads, a six-voice analog synth with a rack of modules, a keyboard with an organ and an electric piano, and an electric guitar with its amp, synthesized in the browser. In VR, on a desktop or on a phone.",
+  "description": "A WebXR room of instruments behind the Hallway's door: a drum board of twelve analog pads, a six-voice analog synth with a rack of modules, a keyboard with an organ and an electric piano, and an electric guitar with its amp and pedals, synthesized in the browser. In VR, on a desktop or on a phone.",
   "keywords": ["webxr", "virtual-reality", "threejs", "meta-quest", "music", "instruments"],
   "homepage": "https://ariamokr.github.io/instruments/",
   "repository": {

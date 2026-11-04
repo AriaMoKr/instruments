@@ -1,18 +1,25 @@
 // The electric guitar on its desk by the right wall (guitarboard.js lays it out, guitarkit.js builds
 // it): six strings modelled as they are plucked, nothing to download (strings.js, on the audio thread:
 // strings-worklet.js), heard through its pickups (the neck's, the bridge's or both), its TONE (the
-// pickups' resonance, darker turned down) and VOLUME, then its amp: a valve's drive (GAIN, clean
-// through crunch to lead: its curve clips the tops a little sooner than the bottoms, as a valve does,
-// worked out four times as finely as heard so its harmonics don't fold back), a tone stack (BASS,
-// MIDDLE, TREBLE), MASTER, and a speaker cabinet's sound (a 12-inch speaker's: no deep lows, a thump,
-// a bite, nothing much over 5 kHz). It is played as a guitarist plays: a chord fretted (its buttons;
-// none, the strings open), a string plucked or all strummed, down or up; a string pressed at a fret
-// is fretted there and plucked, slid along the neck to another fret, bent up to a tone; let go, the
-// finger lifting mutes it, and a chord changed mutes the strings it fingers anew. A MIDI keyboard's
-// notes go to the strings where they fall under a hand (a free string, at its lowest fret). The knobs
-// (0…1 each), the pickup and the chord are kept for the next visit (localStorage).
+// pickups' resonance, darker turned down) and VOLUME, then two pedals as a guitarist lays them on the
+// floor: a wah (a band swept from heel down to toe down by its PEDAL, or by what its WAH in brings)
+// and an overdrive (all but the lows clipped, beside the guitar itself, as a Tube Screamer does:
+// DRIVE); then its amp: a valve's drive (GAIN, clean through crunch to lead: its curve clips the tops
+// a little sooner than the bottoms, as a valve does, worked out four times as finely as heard so its
+// harmonics don't fold back), a tone stack (BASS, MIDDLE, TREBLE), MASTER, and a speaker cabinet's
+// sound (a 12-inch speaker's: no deep lows, a thump, a bite, nothing much over 5 kHz); then two more,
+// as in an amp's loop: a chorus (a delay to each side, swaying at its RATE) and a tremolo (its SPEED).
+// Each pedal is on or off. It is played as a guitarist plays: a chord fretted (its buttons; none, the
+// strings open), a string plucked or all strummed, down or up; a string pressed at a fret is fretted
+// there and plucked, slid along the neck to another fret, bent up to a tone; let go, the finger
+// lifting mutes it, and a chord changed mutes the strings it fingers anew. A MIDI keyboard's notes go
+// to the strings where they fall under a hand (a free string, at its lowest fret). Its notes go out
+// as they are played (NOTES, onNoteOut): each string's from its pluck till it is damped, plucked
+// again or has died away (ringOut). The knobs (0…1 each), the pedals, the pickup and the chord are
+// kept for the next visit (localStorage).
 import { pageStorage } from './sound.js';
 import { PICK, TUNING, ringSeconds } from './strings.js';
+import { tanhCurve } from './synth.js';
 
 /** @typedef {import('./sound.js').Sound} Sound */
 /** @typedef {import('./sound.js').Store} Store */
@@ -74,16 +81,21 @@ export const STRING_KEYS = Object.freeze(['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB'
 /** The key that mutes every string (a palm laid on them). */
 export const MUTE_KEY = 'KeyM';
 
-/** @typedef {'guitar' | 'amp'} GuitarSection */
+/** @typedef {'guitar' | 'amp' | 'pedals'} GuitarSection */
 
-/** Its sections: the guitar's own knobs (on its body), then its amp's (on the panel). @type {readonly { id: GuitarSection, label: string, name: string }[]} */
+/** Its sections: the guitar's own knobs (on its body), then its amp's and its pedals' (on the panel). @type {readonly { id: GuitarSection, label: string, name: string }[]} */
 export const GUITAR_SECTIONS = Object.freeze([
   { id: 'guitar', label: 'GUITAR', name: 'Guitar' },
   { id: 'amp', label: 'AMP', name: 'Amp' },
+  { id: 'pedals', label: 'PEDALS', name: 'Pedals' },
 ]);
 
-/** The knobs as it comes: the guitar full up, its tone a little down; the amp at the edge of breaking up, its tone stack flat, the treble a little up. */
-const DEFAULTS = { volume: 1, tone: 0.75, gain: 0.3, bass: 0.5, middle: 0.5, treble: 0.6, master: 0.6 };
+/**
+ * The knobs as it comes: the guitar full up, its tone a little down; the amp at the edge of breaking
+ * up, its tone stack flat, the treble a little up; the wah halfway down, the overdrive's drive
+ * halfway, the chorus slow, the tremolo at a waver.
+ */
+const DEFAULTS = { volume: 1, tone: 0.75, gain: 0.3, bass: 0.5, middle: 0.5, treble: 0.6, master: 0.6, pedal: 0.5, drive: 0.5, rate: 0.4, speed: 0.5 };
 
 /** @typedef {keyof typeof DEFAULTS} GuitarKnob */
 /** The knobs, each 0…1. @typedef {Record<GuitarKnob, number>} GuitarKnobs */
@@ -93,7 +105,7 @@ export const DEFAULT_GUITAR = Object.freeze({ ...DEFAULTS });
 
 /** A knob: its id, its section, what it is called on it and in words. @typedef {{ id: GuitarKnob, section: GuitarSection, label: string, name: string }} GuitarKnobSpec */
 
-/** The knobs, the guitar's then the amp's, in the order they are shown. @type {readonly GuitarKnobSpec[]} */
+/** The knobs, the guitar's, the amp's, then a knob on each pedal, in the order they are shown. @type {readonly GuitarKnobSpec[]} */
 export const GUITAR_KNOBS = Object.freeze([
   { id: 'volume', section: 'guitar', label: 'VOLUME', name: 'Volume' },
   { id: 'tone', section: 'guitar', label: 'TONE', name: 'Tone' },
@@ -102,10 +114,29 @@ export const GUITAR_KNOBS = Object.freeze([
   { id: 'middle', section: 'amp', label: 'MIDDLE', name: 'Middle' },
   { id: 'treble', section: 'amp', label: 'TREBLE', name: 'Treble' },
   { id: 'master', section: 'amp', label: 'MASTER', name: 'Master' },
+  { id: 'pedal', section: 'pedals', label: 'PEDAL', name: 'Pedal' },
+  { id: 'drive', section: 'pedals', label: 'DRIVE', name: 'Drive' },
+  { id: 'rate', section: 'pedals', label: 'RATE', name: 'Rate' },
+  { id: 'speed', section: 'pedals', label: 'SPEED', name: 'Speed' },
 ]);
 
 /** The knobs' ids. @type {readonly GuitarKnob[]} */
 const IDS = GUITAR_KNOBS.map((k) => k.id);
+
+/** @typedef {'wah' | 'overdrive' | 'chorus' | 'tremolo'} PedalId */
+/** A pedal: its id, what it is called on it and in words, and its knob. @typedef {{ id: PedalId, label: string, name: string, knob: GuitarKnob }} Pedal */
+
+/**
+ * Its pedals, in the order its sound goes through them, left to right on its panel: the wah and the
+ * overdrive before the amp, the chorus and the tremolo after it. Each on or off, with a knob.
+ * @type {readonly Pedal[]}
+ */
+export const PEDALS = Object.freeze([
+  { id: 'wah', label: 'WAH', name: 'Wah', knob: 'pedal' },
+  { id: 'overdrive', label: 'OVERDRIVE', name: 'Overdrive', knob: 'drive' },
+  { id: 'chorus', label: 'CHORUS', name: 'Chorus', knob: 'rate' },
+  { id: 'tremolo', label: 'TREMOLO', name: 'Tremolo', knob: 'speed' },
+]);
 
 /** @typedef {'neck' | 'both' | 'bridge'} Pickup */
 
@@ -139,6 +170,28 @@ export const masterGain = (k) => 2.25 * clamp(k, 0, 1) ** 2;
 /** What the amp's GAIN makes of the guitar, in words. @param {number} k */
 export const ampWords = (k) => (k < 0.35 ? 'clean' : k < 0.7 ? 'crunch' : 'lead');
 
+/** Where the wah's band is heel down and toe down (Hz), a pedal's sweep. */
+const WAH_LOW = 350, WAH_HIGH = 2400;
+/** The wah's PEDAL: where its band is, from heel down to toe down (its sweep's octaves alike). @param {number} k */
+export const wahHz = (k) => WAH_LOW * (WAH_HIGH / WAH_LOW) ** clamp(k, 0, 1);
+/** How far a modulation of 1 into its WAH in moves the band (cents): all of the pedal's sweep. */
+export const WAH_CENTS = 1200 * Math.log2(WAH_HIGH / WAH_LOW);
+/** The overdrive's DRIVE: how much it drives its clipping, 3 dB to 36 dB. @param {number} k */
+export const overdriveGain = (k) => 10 ** ((3 + 33 * clamp(k, 0, 1)) / 20);
+/**
+ * …and how loud it is made after: less the harder it is driven, as its clipping grows with DRIVE and
+ * then holds, so that on it is about as loud as the guitar without it (driven hard, a dB or two
+ * louder, pushing the amp: K-weighted, BS.1770's, a strum through the amp as it comes).
+ * @param {number} k
+ */
+export const overdriveLevel = (k) => 0.12 + 0.84 * overdriveGain(k) ** -0.94;
+/** The chorus's RATE: how fast its delays sway, 0.15 Hz to 4.5 Hz. @param {number} k */
+export const chorusHz = (k) => 0.15 * 30 ** clamp(k, 0, 1);
+/** …and how far (seconds either way): less the faster, so that its pitch wavers by no more than 12 cents. @param {number} hz */
+export const chorusSwing = (hz) => Math.min(0.0025, 0.0011 / hz);
+/** The tremolo's SPEED: how fast it beats, 1.5 Hz to 10 Hz. @param {number} k */
+export const tremoloHz = (k) => 1.5 * (10 / 1.5) ** clamp(k, 0, 1);
+
 /** How wide the amp's curve reaches, and how far off the middle its valve is biased (its tops clip sooner than its bottoms). */
 const AMP_REACH = 4, AMP_BIAS = 0.15;
 
@@ -153,26 +206,36 @@ export function ampCurve(n = 2049) {
 export const AMP_SLOPE = (AMP_REACH * (1 - Math.tanh(AMP_BIAS) ** 2)) / Math.max(Math.tanh(AMP_BIAS) - Math.tanh(AMP_BIAS - AMP_REACH), Math.tanh(AMP_BIAS + AMP_REACH) - Math.tanh(AMP_BIAS));
 
 /**
- * A knob's name in words standing alone ('Amp gain', 'Guitar tone').
+ * A knob's name in words standing alone ('Amp gain', 'Guitar tone', 'Chorus rate').
  * @param {GuitarKnob} id
  */
 export function guitarKnobName(id) {
   const k = GUITAR_KNOBS.find((x) => x.id === id);
   if (!k) return String(id);
-  return `${k.section === 'amp' ? 'Amp' : 'Guitar'} ${k.name.toLowerCase()}`;
+  const pedal = PEDALS.find((p) => p.knob === id);
+  return `${pedal ? pedal.name : k.section === 'amp' ? 'Amp' : 'Guitar'} ${k.name.toLowerCase()}`;
 }
 
 /** @param {number} k */
 const percent = (k) => `${Math.round(clamp(k, 0, 1) * 100)}%`;
+/** @param {number} f */
+const hertz = (f) => `${f < 1 ? f.toFixed(2) : f.toFixed(1)} Hz`;
 
 /**
  * How a knob reads, in words: the gain with what it makes of the guitar, the tone stack in dB, the
- * rest in percent (or off).
+ * wah heel or toe down at its ends, the chorus's and the tremolo's in Hz, the rest in percent (or
+ * off).
  * @param {GuitarKnob} id
  * @param {number} k
  */
 export function guitarText(id, k) {
   switch (id) {
+    case 'pedal':
+      return k <= 0 ? 'heel down' : k >= 1 ? 'toe down' : percent(k);
+    case 'rate':
+      return hertz(chorusHz(k));
+    case 'speed':
+      return hertz(tremoloHz(k));
     case 'gain':
       return `${percent(k)}, ${ampWords(k)}`;
     case 'bass':
@@ -203,10 +266,24 @@ export const FINGER = 0.08, PALM = 0.12, MUTED = Object.freeze({ ring: 0.03, vel
 const SLIDE = 0.012, BEND = 0.02;
 /** How long what is played waits, at most, for the strings to be made (seconds): what waited longer is let go. */
 const WAIT = 0.5;
-/** How long a knob takes to get where it is turned (a time constant, in seconds), as the synth's. */
+/** How long a knob takes to get where it is turned, or a pedal switched (a time constant, in seconds), as the synth's. */
 const EASE = 0.012;
 /** The amp's: a high-pass before its valve (Hz), so the lows don't muddy what it drives. */
 const TIGHT_HZ = 90;
+/** The wah on: how sharp its band is, how loud it is made (the band alone is quieter than all of the guitar), and how much of the guitar beside it. */
+const WAH_Q = 4, WAH_LEVEL = 3, WAH_DRY = 0.08;
+/**
+ * The overdrive on: under what its clipping hears nothing (Hz: the lows stay clean, and don't muddy
+ * it), how wide its clipping's curve reaches, and what it is rolled off over (Hz). How loud it is:
+ * overdriveLevel.
+ */
+const DRIVE_LOW = 720, DRIVE_REACH = 2.5, DRIVE_HIGH = 3200;
+/** The chorus on: its delays (seconds; a side each, swaying opposite ways), and how much of them is heard, and of the guitar beside them. */
+const CHORUS_DELAYS = [0.0085, 0.0115], CHORUS_WET = 0.7, CHORUS_DRY = 0.85;
+/** The tremolo on: how deep it beats (its gain from 1 down to 1 − this), and how much louder it is made, as loud as without it (a strum's loudness over a second, K-weighted). */
+const TREMOLO_DEPTH = 0.7, TREMOLO_LEVEL = 1.45;
+/** When a note out (NOTES) is over by itself: once its string has died away this much of its ring (to −30 dB). */
+const NOTE_FADE = 0.5;
 
 /** Where its strings' processor is: beside this module. */
 const WORKLET_URL = new URL('./strings-worklet.js', import.meta.url).href;
@@ -222,19 +299,37 @@ function pageWorklet() {
 /** Whether s is a string's index. @param {number} s */
 const isString = (s) => Number.isInteger(s) && s >= 0 && s < TUNING.length;
 
+/** A param to v from t: eased there (a knob turned, a pedal switched), or set (the graph made). @type {(param: AudioParam, v: number, t: number, ease: boolean) => void} */
+function setParam(param, v, t, ease) {
+  if (!ease) {
+    param.value = v;
+    return;
+  }
+  param.cancelScheduledValues(t);
+  param.setTargetAtTime(v, t, EASE);
+}
+
 /**
  * Its sound's way, from the strings' processor to its channel: the pickups' resonance (TONE), VOLUME,
- * the amp's drive (into its valve, and out), its tone stack, MASTER, and out.
+ * the wah (beside the guitar, `dry`, its band, `wet`, moved by `cv`: its WAH in), the overdrive
+ * (around it, `dry`, its clipping, driven by `pre`, `wet`), the amp's drive (into its valve, and out),
+ * its tone stack, MASTER, the chorus (beside the guitar, its delays swayed by `sway`, each through its
+ * `swings`, into its `wets`, a side each) and the tremolo (its gain, beaten by `sway` through its
+ * `depth`), and out.
  * @typedef {object} GuitarGraph
  * @property {AudioWorkletNode} strings
  * @property {BiquadFilterNode} tone
  * @property {GainNode} volume
+ * @property {{ dry: GainNode, band: BiquadFilterNode, wet: GainNode, cv: GainNode }} wah
+ * @property {{ dry: GainNode, pre: GainNode, wet: GainNode }} overdrive
  * @property {GainNode} pre
  * @property {GainNode} post
  * @property {BiquadFilterNode} bass
  * @property {BiquadFilterNode} middle
  * @property {BiquadFilterNode} treble
  * @property {GainNode} master
+ * @property {{ dry: GainNode, sway: OscillatorNode, swings: GainNode[], wets: GainNode[] }} chorus
+ * @property {{ gain: GainNode, sway: OscillatorNode, depth: GainNode }} tremolo
  */
 
 /** A string as last heard, for its look: when it was plucked, how hard, how long it rings, and when it was damped and how much. @typedef {{ at: number, velocity: number, ring: number, damped: number, dampRing: number }} Rang */
@@ -250,6 +345,10 @@ export class Guitar {
     this.knobs = { ...DEFAULT_GUITAR };
     /** @type {Pickup} */
     this.pickup = 'both';
+    /** Which of its pedals are on. @type {Record<PedalId, boolean>} */
+    this.pedals = { wah: false, overdrive: false, chorus: false, tremolo: false };
+    /** What its WAH in brings (a modulation, −1…1 or 0…1: main.js's), else null. @type {AudioNode | null} */
+    this.wahIn = null;
     /** The chord fretted (CHORDS' id), else null: the strings open. @type {string | null} */
     this.chord = null;
     /** Each string's fret a finger presses it at (the desk, the card, a MIDI note), else -1. @type {number[]} */
@@ -258,12 +357,24 @@ export class Guitar {
     this.bends = TUNING.map(() => 0);
     /** When the chord, or a string pressed or bent, changes (to show them). */
     this.onStrings = () => {};
+    /** Once its strings and its amp are made: its sound can go where its cables go (main.js's route). */
+    this.onBuilt = () => {};
+    /**
+     * Its notes out (NOTES, main.js's: into the synth or the envelope): string s's `note` (MIDI, its
+     * fret's, not its bend) from `at` on the audio clock, plucked `velocity` 0…1 hard (whatever it
+     * played before ended there), or null where it was slid there from the note it played; note -1:
+     * the string's note ended at `at` (damped, its pluck a muted string's thud, or died away).
+     * @type {(s: number, note: number, velocity: number | null, at: number) => void}
+     */
+    this.onNoteOut = () => {};
     /** Whether its strings can't sound here: the page has no AudioWorklet (one not served securely, an old browser). */
     this.broken = false;
     /** @private the chord's frets (all 0: none) */
     this._frets = TUNING.map(() => 0);
     /** @private @type {Rang[]} */
     this._rang = TUNING.map(() => ({ at: -Infinity, velocity: 0, ring: 1, damped: Infinity, dampRing: 1 }));
+    /** @private each string's note out as last told (onNoteOut): the note (-1 none), from when, and when it will have died away @type {{ note: number, at: number, until: number }[]} */
+    this._sent = TUNING.map(() => ({ note: -1, at: 0, until: Infinity }));
     /** @private a MIDI note's string, and the order they came in @type {Map<number, { string: number, n: number }>} */
     this._midi = new Map();
     /** @private */
@@ -303,9 +414,24 @@ export class Guitar {
     return PICKUPS.find((p) => p.id === this.pickup)?.name ?? '';
   }
 
-  /** Its sound, after its amp, for a cable (before the mixer's channel): made once its strings are, null before. */
+  /** Its sound, after its amp and its pedals, for a cable (its OUT, before the mixer's channel): made once its strings are, null before. */
   output() {
     return this._graph ? this._out : null;
+  }
+
+  /**
+   * What its WAH in brings (a modulation: 1 moves the wah's band from heel down to toe down), else
+   * nothing; connected once the graph is made.
+   * @param {AudioNode | null} source
+   */
+  setWahIn(source) {
+    const to = source ?? null, was = this.wahIn;
+    if (to === was) return;
+    this.wahIn = to;
+    const g = this._graph;
+    if (!g) return;
+    was?.disconnect(g.wah.cv);
+    to?.connect(g.wah.cv);
   }
 
   /**
@@ -368,7 +494,8 @@ export class Guitar {
   /**
    * String s plucked as it is fretted, `velocity` 0…1 hard, at `at` (the audio clock's; now if
    * sooner), the pick `pick` of its length from the bridge; one the chord mutes is heard as a short
-   * thud. Waking the sound: whether it is heard (no Web Audio, or no AudioWorklet: not).
+   * thud. Its note out from then (one muted, none). Waking the sound: whether it is heard (no Web
+   * Audio, or no AudioWorklet: not).
    * @param {number} s
    * @param {number} [velocity]
    * @param {{ at?: number, pick?: number }} [o]
@@ -381,9 +508,15 @@ export class Guitar {
     if (note === null) {
       this._post({ type: 'pluck', string: s, note: TUNING[s], at: t, velocity: v * MUTED.velocity, pick, ring: MUTED.ring });
       this._rang[s] = { at: t, velocity: v * MUTED.velocity, ring: MUTED.ring, damped: Infinity, dampRing: 1 };
+      this._unsend(s, t);
     } else {
       this._post({ type: 'pluck', string: s, note, at: t, velocity: v, pick });
       this._rang[s] = { at: t, velocity: v, ring: ringSeconds(note), damped: Infinity, dampRing: 1 };
+      const sent = this._sent[s];
+      sent.note = TUNING[s] + this.fretOf(s);
+      sent.at = t;
+      sent.until = t + NOTE_FADE * ringSeconds(note);
+      this.onNoteOut(s, sent.note, v, t);
     }
     return !this.broken;
   }
@@ -449,6 +582,12 @@ export class Guitar {
     if (f === this.pressed[s]) return;
     this.pressed[s] = f;
     this._pitch(s, SLIDE);
+    // Its note out carried on there, if it still sounds.
+    const sent = this._sent[s], t = this.sound.ctx?.currentTime;
+    if (sent.note >= 0 && t !== undefined && sent.note !== TUNING[s] + f) {
+      sent.note = TUNING[s] + f;
+      this.onNoteOut(s, sent.note, null, Math.max(t, sent.at));
+    }
     this.onStrings();
   }
 
@@ -482,7 +621,7 @@ export class Guitar {
 
   /**
    * A string's ringing cut short (every string's, s -1: a palm laid on them), to `ring` seconds; one
-   * that rings no longer already is let be.
+   * that rings no longer already is let be. Its note out ended (one plucked ahead of now, not).
    * @param {number} [s]
    * @param {number} [ring]
    */
@@ -491,6 +630,7 @@ export class Guitar {
     if (t === undefined) return;
     for (let i = 0; i < TUNING.length; i++) {
       if (s >= 0 && i !== s) continue;
+      this._unsend(i, t);
       const r = this._rang[i];
       if (Math.min(r.ring, r.damped <= t ? r.dampRing : Infinity) <= ring) continue;
       this._post({ type: 'damp', string: i, at: t, ring });
@@ -550,7 +690,7 @@ export class Guitar {
     this.release(m.string);
   }
 
-  /** Every string let go and muted (the page put away). */
+  /** Every string let go and muted (the page put away), and every note out ended. */
   allOff() {
     for (const timer of this._taps.values()) clearTimeout(timer);
     this._taps.clear();
@@ -559,7 +699,17 @@ export class Guitar {
     this.pressed.fill(-1);
     this.bends.fill(0);
     this.damp(-1, PALM);
+    const t = this.sound.ctx?.currentTime ?? 0;
+    for (let s = 0; s < TUNING.length; s++) this._unsend(s, Math.max(t, this._sent[s].at));
     if (had) this.onStrings();
+  }
+
+  /**
+   * Its notes out that have died away by t ended (main.js: its timer's, every 25 ms).
+   * @param {number} t
+   */
+  ringOut(t) {
+    for (let s = 0; s < TUNING.length; s++) if (this._sent[s].until <= t) this._unsend(s, t);
   }
 
   /**
@@ -585,12 +735,29 @@ export class Guitar {
     return true;
   }
 
-  /** The knobs and the pickup as they come, and no chord. */
+  /**
+   * A pedal switched on or off (PEDALS' id), heard at once (eased); kept a moment later. Whether it
+   * is one.
+   * @param {string} id
+   * @param {boolean} on
+   */
+  setPedal(id, on) {
+    const p = PEDALS.find((x) => x.id === id);
+    if (!p) return false;
+    if (this.pedals[p.id] === !!on) return true;
+    this.pedals[p.id] = !!on;
+    this._applyPedal(p.id);
+    this._saveSoon();
+    return true;
+  }
+
+  /** The knobs and the pickup as they come, the pedals off, and no chord. */
   reset() {
     for (const id of IDS) {
       this.knobs[id] = DEFAULT_GUITAR[id];
       this._apply(id);
     }
+    for (const p of PEDALS) this.setPedal(p.id, false);
     this.setPickup('both');
     this.choose(null);
     this._saveSoon();
@@ -600,6 +767,20 @@ export class Guitar {
   _untap(s) {
     clearTimeout(this._taps.get(s));
     this._taps.delete(s);
+  }
+
+  /**
+   * String s's note out ended at t, if it had begun by then.
+   * @private
+   * @param {number} s
+   * @param {number} t
+   */
+  _unsend(s, t) {
+    const sent = this._sent[s];
+    if (sent.note < 0 || sent.at > t) return;
+    sent.note = -1;
+    sent.until = Infinity;
+    this.onNoteOut(s, -1, null, t);
   }
 
   /**
@@ -652,15 +833,24 @@ export class Guitar {
     if (!ctx || !g) return;
     const t = ctx.currentTime, k = this.knobs[id];
     /** @type {(param: AudioParam, v: number) => void} */
-    const to = (param, v) => {
-      if (!ease) {
-        param.value = v;
-        return;
-      }
-      param.cancelScheduledValues(t);
-      param.setTargetAtTime(v, t, EASE);
-    };
+    const to = (param, v) => setParam(param, v, t, ease);
     switch (id) {
+      case 'pedal':
+        to(g.wah.band.frequency, wahHz(k));
+        break;
+      case 'drive':
+        to(g.overdrive.pre.gain, overdriveGain(k) / DRIVE_REACH);
+        if (this.pedals.overdrive) to(g.overdrive.wet.gain, overdriveLevel(k));
+        break;
+      case 'rate': {
+        const hz = chorusHz(k);
+        to(g.chorus.sway.frequency, hz);
+        g.chorus.swings.forEach((swing, side) => to(swing.gain, side ? -chorusSwing(hz) : chorusSwing(hz)));
+        break;
+      }
+      case 'speed':
+        to(g.tremolo.sway.frequency, tremoloHz(k));
+        break;
       case 'volume':
         to(g.volume.gain, volumeGain(k));
         break;
@@ -686,6 +876,42 @@ export class Guitar {
   }
 
   /**
+   * A pedal heard at once, on or off: eased there (switched), or set (the graph made). Off, the
+   * guitar goes by it as it came; on, through it, beside the guitar as each one keeps it.
+   * @private
+   * @param {PedalId} id
+   * @param {boolean} [ease]
+   */
+  _applyPedal(id, ease = true) {
+    const ctx = this.sound.ctx, g = this._graph;
+    if (!ctx || !g) return;
+    const t = ctx.currentTime, on = this.pedals[id];
+    /** @type {(param: AudioParam, v: number) => void} */
+    const to = (param, v) => setParam(param, v, t, ease);
+    switch (id) {
+      case 'wah':
+        to(g.wah.dry.gain, on ? WAH_DRY : 1);
+        to(g.wah.wet.gain, on ? WAH_LEVEL : 0);
+        break;
+      case 'overdrive':
+        to(g.overdrive.dry.gain, on ? 0 : 1);
+        to(g.overdrive.wet.gain, on ? overdriveLevel(this.knobs.drive) : 0);
+        break;
+      case 'chorus':
+        to(g.chorus.dry.gain, on ? CHORUS_DRY : 1);
+        for (const wet of g.chorus.wets) to(wet.gain, on ? CHORUS_WET : 0);
+        break;
+      case 'tremolo':
+        // Its gain beating from TREMOLO_LEVEL down by TREMOLO_DEPTH of it.
+        to(g.tremolo.gain.gain, on ? TREMOLO_LEVEL * (1 - TREMOLO_DEPTH / 2) : 1);
+        to(g.tremolo.depth.gain, on ? (TREMOLO_LEVEL * TREMOLO_DEPTH) / 2 : 0);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
    * Its way into the mixer, made once there is sound; null before.
    * @private
    */
@@ -699,9 +925,9 @@ export class Guitar {
   }
 
   /**
-   * The strings' processor and the amp after it, its knobs and its pickup set; then what was played
-   * while they were made, from now (its first now, the rest as far after it as they were), what
-   * waited longer than WAIT let go.
+   * The strings' processor, the pedals and the amp after it, its knobs, its pedals and its pickup
+   * set; then what was played while they were made, from now (its first now, the rest as far after
+   * it as they were), what waited longer than WAIT let go.
    * @private
    * @param {BaseAudioContext} ctx
    * @param {WorkletNode} Worklet
@@ -721,22 +947,72 @@ export class Guitar {
       f.gain.value = gain;
       return f;
     };
+    const t = ctx.currentTime;
     const tone = biquad('lowpass', 4000), volume = ctx.createGain();
+    strings.connect(tone).connect(volume);
+    // The wah: the guitar beside a band, swept by its PEDAL (its frequency) and its WAH in (its detune).
+    const wahDry = ctx.createGain(), band = biquad('bandpass', wahHz(this.knobs.pedal), WAH_Q), wahWet = ctx.createGain(), cv = ctx.createGain();
+    const drive = ctx.createGain();
+    volume.connect(wahDry).connect(drive);
+    volume.connect(band).connect(wahWet).connect(drive);
+    cv.gain.value = WAH_CENTS;
+    cv.connect(band.detune);
+    this.wahIn?.connect(cv);
+    // The overdrive: around it, or through it: the guitar itself beside its clipping of all but the
+    // lows (driven into a tanh, worked out four times as finely), rolled off over DRIVE_HIGH.
+    const driveDry = ctx.createGain(), clipped = ctx.createGain(), driveWet = ctx.createGain();
+    const drivePre = ctx.createGain(), clip = ctx.createWaveShaper();
+    clip.curve = tanhCurve(DRIVE_REACH);
+    clip.oversample = '4x';
     // The amp's valve: the lows tightened, driven into its curve, made as loud again.
     const pre = ctx.createGain(), tight = biquad('highpass', TIGHT_HZ, -3), valve = ctx.createWaveShaper(), post = ctx.createGain();
     valve.curve = ampCurve();
     valve.oversample = '4x';
+    drive.connect(driveDry).connect(pre);
+    drive.connect(clipped);
+    drive.connect(biquad('highpass', DRIVE_LOW, -3)).connect(drivePre).connect(clip).connect(clipped);
+    clipped.connect(biquad('lowpass', DRIVE_HIGH, -3)).connect(driveWet).connect(pre);
     const bass = biquad('lowshelf', 120), middle = biquad('peaking', 650, 0.8), treble = biquad('highshelf', 2600);
     const master = ctx.createGain();
     // The cabinet: a 12-inch speaker's lows rolled off under 75 Hz, a thump at 120, a bite at 2.2 kHz,
     // and little over 5 kHz.
     const cabinet = [biquad('highpass', 75, 0), biquad('peaking', 120, 1.4, 3), biquad('peaking', 2200, 1.2, 3), biquad('lowpass', 4500, 3), biquad('lowpass', 6500, -3)];
     /** @type {AudioNode} */
-    let at = strings;
-    for (const node of [tone, volume, pre, tight, valve, post, bass, middle, treble, master, ...cabinet]) at = at.connect(node);
-    at.connect(out);
-    this._graph = { strings, tone, volume, pre, post, bass, middle, treble, master };
+    let at = pre;
+    for (const node of [tight, valve, post, bass, middle, treble, master, ...cabinet]) at = at.connect(node);
+    // The chorus: the guitar to both sides, beside a delay to each, swaying opposite ways.
+    const sides = ctx.createChannelMerger(2), chorusDry = ctx.createGain(), sway = ctx.createOscillator();
+    at.connect(chorusDry);
+    chorusDry.connect(sides, 0, 0);
+    chorusDry.connect(sides, 0, 1);
+    /** @type {GainNode[]} */
+    const swings = [];
+    /** @type {GainNode[]} */
+    const wets = [];
+    CHORUS_DELAYS.forEach((time, side) => {
+      const delay = ctx.createDelay(0.05), swing = ctx.createGain(), wet = ctx.createGain();
+      delay.delayTime.value = time;
+      sway.connect(swing).connect(delay.delayTime);
+      at.connect(delay).connect(wet).connect(sides, 0, side);
+      swings.push(swing);
+      wets.push(wet);
+    });
+    sway.start(t);
+    // The tremolo: its gain beaten by a sine.
+    const tremolo = ctx.createGain(), beat = ctx.createOscillator(), depth = ctx.createGain();
+    sides.connect(tremolo).connect(out);
+    beat.connect(depth).connect(tremolo.gain);
+    beat.start(t);
+    this._graph = {
+      strings, tone, volume,
+      wah: { dry: wahDry, band, wet: wahWet, cv },
+      overdrive: { dry: driveDry, pre: drivePre, wet: driveWet },
+      pre, post, bass, middle, treble, master,
+      chorus: { dry: chorusDry, sway, swings, wets },
+      tremolo: { gain: tremolo, sway: beat, depth },
+    };
     for (const id of IDS) this._apply(id, false);
+    for (const p of PEDALS) this._applyPedal(p.id, false);
     const p = PICKUPS.find((x) => x.id === this.pickup) ?? PICKUPS[1];
     /** @type {StringEvent[]} */
     const told = [{ type: 'pickups', neck: p.neck, bridge: p.bridge }];
@@ -745,6 +1021,7 @@ export class Guitar {
     const later = first < now ? now - first : 0;
     for (const e of waiting) if (e.type !== 'pickups') told.push({ ...e, at: e.at + later });
     strings.port.postMessage(told);
+    this.onBuilt();
   }
 
   /** @private */
@@ -757,6 +1034,7 @@ export class Guitar {
         if (Number.isFinite(v)) this.knobs[id] = clamp(v, 0, 1);
       }
       if (PICKUPS.some((p) => p.id === s.pickup)) this.pickup = s.pickup;
+      for (const p of PEDALS) if (typeof s.pedals?.[p.id] === 'boolean') this.pedals[p.id] = s.pedals[p.id];
       const c = CHORDS.find((x) => x.id === s.chord);
       if (c) {
         this.chord = c.id;
@@ -773,11 +1051,11 @@ export class Guitar {
     this._saving = setTimeout(() => this.save(), 400);
   }
 
-  /** Keeps the knobs, the pickup and the chord now (localStorage). */
+  /** Keeps the knobs, the pedals, the pickup and the chord now (localStorage). */
   save() {
     clearTimeout(this._saving);
     try {
-      this._storage?.setItem(this._key, JSON.stringify({ knobs: this.knobs, pickup: this.pickup, chord: this.chord }));
+      this._storage?.setItem(this._key, JSON.stringify({ knobs: this.knobs, pedals: this.pedals, pickup: this.pickup, chord: this.chord }));
     } catch {
       // storage full or blocked: they last this visit
     }

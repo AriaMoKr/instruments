@@ -605,12 +605,14 @@ export class Synth {
   }
 
   /**
-   * A key pressed: its note (MIDI) played, `velocity` 0…1 loud, waking the sound (with the
+   * A key pressed: its note (MIDI) played, `velocity` 0…1 loud, from `at` on the audio clock (now if
+   * sooner: a note played ahead, as the guitar's strings are strummed), waking the sound (with the
    * arpeggiator on, into its chord): whether it is heard (no Web Audio: not).
    * @param {number} note
    * @param {number} [velocity]
+   * @param {number} [at]
    */
-  noteOn(note, velocity = 0.8) {
+  noteOn(note, velocity = 0.8, at = 0) {
     if (!Number.isFinite(note)) return false;
     clearTimeout(this._taps.get(note));
     this._taps.delete(note);
@@ -624,7 +626,7 @@ export class Synth {
     }
     this.onNotes();
     if (!ctx || !built) return false;
-    const t = ctx.currentTime, v = clamp(velocity, 0, 1);
+    const t = Math.max(Number.isFinite(at) ? at : 0, ctx.currentTime), v = clamp(velocity, 0, 1);
     if (this.mono) {
       const legato = this._held.length > 0 || this._voices.some((x) => x.held);
       this._held = this._held.filter((n) => n !== note);
@@ -652,11 +654,13 @@ export class Synth {
   }
 
   /**
-   * A key let go: its note released (with the sustain pedal down, held until the pedal is let go); in
-   * mono the last key still held sounds again, gliding there.
+   * A key let go: its note released at `at` on the audio clock (now if sooner; with the sustain
+   * pedal down, held until the pedal is let go); in mono the last key still held sounds again,
+   * gliding there.
    * @param {number} note
+   * @param {number} [at]
    */
-  noteOff(note) {
+  noteOff(note, at = 0) {
     clearTimeout(this._taps.get(note));
     this._taps.delete(note);
     const was = this.down.delete(note);
@@ -671,7 +675,7 @@ export class Synth {
       this._held = this._held.filter((n) => n !== note);
       return;
     }
-    const t = ctx.currentTime;
+    const t = Math.max(Number.isFinite(at) ? at : 0, ctx.currentTime);
     if (this.mono) {
       // Not a key held here (its note-on went elsewhere, or came before Mono): the voices are another's.
       if (!this._held.includes(note)) return;

@@ -235,6 +235,23 @@ test('poly: a note a voice, the same note its own voice, one let go taken next, 
   assert.ok(voices.find((v) => v.note === 84).filterEnv.base > low, 'higher notes open the filter more');
 });
 
+test("a note set ahead (the guitar's, strummed): started then and let go when it says, as a key's; a time gone, now", () => {
+  const { sound, synth } = make();
+  sound.wake().currentTime = 1;
+  synth.noteOn(60, 0.8, 1.04);
+  const voice = synth._voices.find((v) => v.note === 60);
+  assert.equal(voice.started, 1.04);
+  assert.ok(voice.gate, 'held from now, as a key');
+  synth.noteOff(60, 1.6);
+  assert.ok(!voice.ampEnv.released(1.59) && voice.ampEnv.released(1.6));
+  // Set for a time gone: now.
+  sound.ctx.currentTime = 2;
+  synth.noteOn(62, 0.8, 1.5);
+  assert.equal(synth._voices.find((v) => v.note === 62).started, 2);
+  synth.noteOff(62, NaN);
+  assert.ok(synth._voices.find((v) => v.note === 62).ampEnv.released(2));
+});
+
 test('the sustain pedal holds the notes let go until it is let go', () => {
   const { sound, synth } = make();
   synth.setSustain(true);

@@ -164,6 +164,27 @@ test("the keyboard's notes: each starts it now, as high as it is played; held wh
   assert.equal(offset.events.length, n + 3, 'they hold it no longer');
 });
 
+test("the guitar's notes, set ahead (a strum's): each starts it when it is plucked, held while any rings, let go when the last ends; a time gone, now", () => {
+  const { env, ctx, offset } = made();
+  ctx.currentTime = 1;
+  env.noteOn(1000, 0.9, 1.02);
+  assert.deepEqual(offset.events.slice(0, 4), started(1.02, velocityLevel(0.9)));
+  env.noteOn(1005, 0.9, 1.05);
+  assert.deepEqual(offset.events.slice(-4).map((e) => [e[0], e[2]]), [['cancel', 1.05], ['set', 1.05], ['linear', 1.05 + A], ['target', 1.05 + A]]);
+  let n = offset.events.length;
+  env.noteOff(1000, 1.5);
+  assert.equal(offset.events.length, n, 'the other still rings');
+  env.noteOff(1005, 1.6);
+  assert.deepEqual(offset.events.slice(n).map((e) => [e[0], e[2]]), [['cancel', 1.6], ['set', 1.6], ['target', 1.6]]);
+  // A time gone: now.
+  ctx.currentTime = 2;
+  env.noteOn(1001, 1, 1.9);
+  assert.equal(offset.events.at(-4)[2], 2);
+  ctx.currentTime = 2.1;
+  env.noteOff(1001, NaN);
+  assert.deepEqual(offset.events.slice(-3).map((e) => [e[0], e[2]]), [['cancel', 2.1], ['set', 2.1], ['target', 2.1]]);
+});
+
 test('where it is, for its light: the shape heard then, not the one set ahead of it; nothing before any', () => {
   const { env } = made();
   assert.equal(env.valueAt(0.5), 0);

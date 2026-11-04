@@ -1,13 +1,14 @@
 // The rack's envelope: a shape that rises from nothing to its top over ATTACK, falls over DECAY to
 // SUSTAIN (of its top), stays there until it is let go, then falls back to nothing over RELEASE, as a
 // synth's envelope does; out of its OUT (patch.js `env.out`) as a modulation, as the LFOs' are, into
-// any modulation in (the synth's pitch, cutoff or amp, the keyboard's ROTARY, the filter's CUTOFF), as
-// much of it as DEPTH says (its square, as the LFO's depth). What is patched into its ins starts it:
-// the clock's pulses into CLOCK (`env.clock`), each starting it and letting it go half its step later
-// (ENV_GATE); or notes into NOTES (`env.notes`), the sequencer's or the keyboard's, each starting it as
-// it begins, as high as it is played hard (an accented step higher), and letting it go as it ends. A
-// step slid on into the next carries it on there without starting it again, as the synth's notes
-// are; a key held keeps it held while another is let go. Started again before it has fallen, it rises
+// any modulation in (the synth's pitch, cutoff or amp, the keyboard's ROTARY, the filter's CUTOFF, the
+// guitar's WAH), as much of it as DEPTH says (its square, as the LFO's depth). What is patched into
+// its ins starts it: the clock's pulses into CLOCK (`env.clock`), each starting it and letting it go
+// half its step later (ENV_GATE); or notes into NOTES (`env.notes`), the sequencer's, the keyboard's or
+// the guitar's, each starting it as it begins, as high as it is played hard (an accented step higher),
+// and letting it go as it ends. A step slid on into the next carries it on there without starting it
+// again, as the synth's notes are; a key held (a string ringing) keeps it held while another is let
+// go. Started again before it has fallen, it rises
 // from where it is. Its shape is set ahead on the audio clock, as the clock's pulses and the
 // sequencer's notes are, as the synth's envelopes are (synth.js Envelope), on a ConstantSource's
 // offset, out through its depth. Its ATTACK, DECAY and SUSTAIN are heard from its next start, RELEASE
@@ -156,26 +157,33 @@ export class Adsr {
   }
 
   /**
-   * A note from the keyboard through its NOTES in, its key just gone down: started now, as high as
-   * `velocity`, held while it or another is.
+   * A note through its NOTES in (the keyboard's, its key just gone down; a string of the guitar's,
+   * plucked): started at `at` on the audio clock (now if sooner), as high as `velocity`, held while
+   * it or another is. Which note, it doesn't mind: what holds it.
    * @param {number} note
    * @param {number} velocity 0…1
+   * @param {number} [at]
    */
-  noteOn(note, velocity) {
+  noteOn(note, velocity, at = 0) {
     const ctx = this.sound.ctx;
     if (!ctx || !Number.isFinite(note)) return;
     this._keys.add(note);
-    this._start(ctx.currentTime, velocityLevel(velocity));
+    this._start(Math.max(Number.isFinite(at) ? at : 0, ctx.currentTime), velocityLevel(velocity));
   }
 
-  /** That note ended (its key up, the keyboard's sustain let go): let go now, unless another holds it. @param {number} note */
-  noteOff(note) {
+  /**
+   * That note ended (its key up, the keyboard's sustain let go, the string damped or died away): let
+   * go at `at` (now if sooner), unless another holds it.
+   * @param {number} note
+   * @param {number} [at]
+   */
+  noteOff(note, at = 0) {
     const ctx = this.sound.ctx;
     if (!this._keys.delete(note) || this._keys.size > 0 || !ctx) return;
-    this._stop(ctx.currentTime);
+    this._stop(Math.max(Number.isFinite(at) ? at : 0, ctx.currentTime));
   }
 
-  /** The keyboard's notes no longer come (its cable pulled out): let go now, if they held it. */
+  /** The keyboard's notes, or the guitar's, no longer come (its cable pulled out): let go now, if they held it. */
   allOff() {
     const ctx = this.sound.ctx, held = this._keys.size > 0;
     this._keys.clear();
