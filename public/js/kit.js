@@ -554,6 +554,8 @@ export class Kit {
     this._tints = PADS.map((p) => lin(p.color));
     /** How lit up each pad is, 1 just struck, fading. */
     this.glow = new Float32Array(PADS.length);
+    /** @private the colour each pad glows in, when another played it (flash), else null: its own @type {(readonly number[] | null)[]} */
+    this._glowTint = PADS.map(() => null);
     /** @private what the faces were last written with: glow, and the pad pointed at */
     this._shown = new Float32Array(PADS.length);
     /** The pad pointed at, else -1. */
@@ -785,14 +787,20 @@ export class Kit {
   }
 
   /**
-   * Lights pad i up, as hard as it was played (velocity 0…1); with less motion, more softly.
+   * Lights pad i up, as hard as it was played (velocity 0…1), in its colour or, played by another in a
+   * shared session, in theirs (`tint`, linear); with less motion, more softly.
    * @param {number} i
    * @param {number} velocity
    * @param {boolean} [reduce]
+   * @param {readonly number[] | null} [tint]
    */
-  flash(i, velocity, reduce = false) {
+  flash(i, velocity, reduce = false, tint = null) {
     const g = reduce ? 0.25 + 0.3 * velocity : 0.35 + 0.65 * velocity;
-    if (i >= 0 && i < this.glow.length) this.glow[i] = Math.max(this.glow[i], g);
+    if (i < 0 || i >= this.glow.length) return;
+    this.glow[i] = Math.max(this.glow[i], g);
+    if (this._glowTint[i] === tint) return;
+    this._glowTint[i] = tint;
+    this._shown[i] = -1; // written again in its new colour
   }
 
   /**
@@ -1156,14 +1164,15 @@ export class Kit {
   }
 
   /**
-   * Pad i's face: its baked light, a little brighter pointed at, and its colour as it glows.
+   * Pad i's face: its baked light, a little brighter pointed at, and its colour as it glows (or the
+   * colour of whoever played it).
    * @private
    * @param {number} i
    * @param {number} glow
    * @param {boolean} hovered
    */
   _light(i, glow, hovered) {
-    const [first, n] = this._spans[i], [r, g, b] = this._tints[i];
+    const [first, n] = this._spans[i], [r, g, b] = this._glowTint[i] ?? this._tints[i];
     const lift = hovered ? 1.25 : 1, k = glow * BOOST;
     const c = /** @type {Float32Array} */ (this._colors.array), base = this._base;
     for (let v = first * 3; v < (first + n) * 3; v += 3) {

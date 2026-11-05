@@ -682,6 +682,11 @@ export class Guitar {
     return this.press(s, n - TUNING[s], velocity);
   }
 
+  /** The string a MIDI note plays (noteOn), else -1. @param {number} note */
+  midiString(note) {
+    return this._midi.get(Math.round(note))?.string ?? -1;
+  }
+
   /** A MIDI note let go: its string, if it still plays it. @param {number} note */
   noteOff(note) {
     const m = this._midi.get(Math.round(note));

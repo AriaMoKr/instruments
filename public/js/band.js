@@ -209,6 +209,24 @@ export class Band {
     if (again) this._setClock(s, again);
   }
 
+  /**
+   * What changed here shared now, before what is played here goes to the others (jam.js), so that
+   * they hear it as it was played: a chord fretted, then strummed, is that chord's.
+   */
+  share() {
+    if (!this.playing || !this._session) return;
+    this._nextPoll = this._now() + POLL_MS;
+    this._poll(this._session);
+  }
+
+  /**
+   * What another changed set here now, before what they played is played here (jam.js): what came
+   * before it, before it.
+   */
+  catchUp() {
+    if (this.playing && this._session) this._reconcile(this._session);
+  }
+
   /** @private @param {BandState} state */
   _setState(state) {
     if (state === this.state) return;

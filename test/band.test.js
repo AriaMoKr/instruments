@@ -7,7 +7,7 @@
 // page can't take is left be; and leaving keeps the band.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createShared, getValue, mergeSnapshot, setLocal, snapshot } from 'layersharedsession/shared.js';
+import { FakeSession, Net } from './helpers/session.js';
 import { Band, SEED_AFTER, SEED_ALONE } from '../public/js/band.js';
 import { bandParts, stepCode } from '../public/js/bandparts.js';
 import { Beat } from '../public/js/beat.js';
@@ -26,114 +26,6 @@ import { Reverb } from '../public/js/reverb.js';
 import { Seq } from '../public/js/seq.js';
 import { Sound } from '../public/js/sound.js';
 import { Synth } from '../public/js/synth.js';
-
-/** The messages between sessions, delivered in order on flush(). */
-class Net {
-  constructor() {
-    this.queue = [];
-  }
-
-  send(from, to, kind, data) {
-    this.queue.push({ from, to, kind, data: JSON.parse(JSON.stringify(data)) });
-  }
-
-  flush() {
-    while (this.queue.length) {
-      const m = this.queue.shift();
-      m.to.receive(m.from, m.kind, m.data);
-    }
-  }
-
-  /** Two sessions find each other: each says who it is (join), then sends what it shares. */
-  connect(a, b) {
-    a.meet(b);
-    b.meet(a);
-  }
-
-  part(a, b) {
-    a.lose(b);
-    b.lose(a);
-  }
-}
-
-/** A session as layersharedsession's session.js has it, what it shares by its shared.js. */
-class FakeSession {
-  constructor(net, memberId, name, page = 'instruments') {
-    this.net = net;
-    this.self = { selfId: `peer-${memberId}`, memberId, name, color: '#336699', page };
-    this.peers = new Map();
-    this.shared = createShared();
-    this.fns = new Map();
-    this.channels = new Map();
-    /** The keys it wrote, in order. */
-    this.writes = [];
-  }
-
-  on(type, fn) {
-    if (!this.fns.has(type)) this.fns.set(type, new Set());
-    this.fns.get(type).add(fn);
-    return () => this.fns.get(type).delete(fn);
-  }
-
-  emit(type, detail) {
-    for (const fn of [...(this.fns.get(type) ?? [])]) fn(detail);
-  }
-
-  get(key, fallback) {
-    return getValue(this.shared, key, fallback);
-  }
-
-  set(key, value) {
-    const entry = setLocal(this.shared, key, value, this.self.memberId);
-    this.writes.push(key);
-    this.emit('shared', { key, value, by: this.self.memberId, from: null, initial: false });
-    for (const p of this.peers.values()) this.net.send(this, p.session, 'state', { k: 'write', e: { [key]: entry } });
-  }
-
-  channel(name) {
-    if (!this.channels.has(name)) {
-      const fns = new Set();
-      this.channels.set(name, {
-        fns,
-        send: (data, peerId) => {
-          for (const p of this.peers.values()) if (!peerId || p.peerId === peerId) this.net.send(this, p.session, `x:${name}`, data);
-          return Promise.resolve();
-        },
-        on: (fn) => {
-          fns.add(fn);
-          return () => fns.delete(fn);
-        },
-      });
-    }
-    return this.channels.get(name);
-  }
-
-  meet(other) {
-    const p = { peerId: other.self.selfId, memberId: other.self.memberId, name: other.self.name, color: other.self.color, page: other.self.page, session: other };
-    this.peers.set(p.peerId, p);
-    this.emit('join', p);
-    if (this.shared.entries.size) this.net.send(this, other, 'state', { k: 'snapshot', e: snapshot(this.shared) });
-  }
-
-  lose(other) {
-    const p = this.peers.get(other.self.selfId);
-    if (!p) return;
-    this.peers.delete(p.peerId);
-    this.emit('leave', p);
-  }
-
-  receive(from, kind, data) {
-    const p = this.peers.get(from.self.selfId);
-    if (!p) return;
-    if (kind === 'state') {
-      const initial = data.k === 'snapshot';
-      for (const key of mergeSnapshot(this.shared, data.e)) {
-        const e = this.shared.entries.get(key);
-        this.emit('shared', { key, value: e.value, by: e.by, from: p, initial });
-      }
-    } else for (const fn of this.channels.get(kind.slice(2))?.fns ?? []) fn(data, p);
-  }
-}
 
 /** The time: performance.now() and the wall clock. */
 const T = { now: 0, wall: 1.75e12 };
@@ -370,6 +262,46 @@ test('a change anywhere is everyone\'s a moment later, shown, and doesn\'t come 
   assert.deepEqual(a.read(), b.read(), 'all one band');
   a.band.detach();
   b.band.detach();
+});
+
+test('what changed just before something is played goes before it (share) and is set before it is played elsewhere (catchUp)', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const net = new Net(), a = page('Ana', 'a'), b = page('Bo', 'b');
+  const sa = new FakeSession(net, 'aaaaaaaaaaaa', 'Ana'), sb = new FakeSession(net, 'bbbbbbbbbbbb', 'Bo');
+  a.band.attach(sa, here);
+  b.band.attach(sb, here);
+  net.connect(sa, sb);
+  go(net, [a, b], SEED_AFTER + 200);
+  assert.ok(a.band.playing && b.band.playing);
+  // Bo's page plays what Ana's sends on a channel (as jam.js's playing), the chord as it is then.
+  const strummed = [];
+  sb.channel('play').on(() => {
+    b.band.catchUp();
+    strummed.push(b.guitar.chord);
+  });
+  // Ana frets a chord and strums at once, between two looks at what changed: without share, the
+  // strum comes first, and Bo strums the chord before.
+  a.guitar.choose('Em');
+  sa.channel('play').send('strum');
+  net.flush();
+  go(net, [a, b], 100);
+  const writes = sa.writes.length;
+  a.guitar.choose('Am');
+  a.band.share();
+  sa.channel('play').send('strum');
+  net.flush();
+  assert.deepEqual(strummed, [null, 'Am']);
+  assert.equal(sa.writes.length, writes + 1, 'the chord written once');
+  go(net, [a, b], 100);
+  assert.equal(sa.writes.length, writes + 1, 'and not again');
+  assert.equal(b.guitar.chord, 'Am');
+  // Out of the session, neither does anything.
+  a.band.detach();
+  b.band.detach();
+  a.guitar.choose('C');
+  a.band.share();
+  b.band.catchUp();
+  assert.equal(sa.writes.length, writes + 1);
 });
 
 test('two bands begun at once (each alone a while): everyone settles on the one begun first, said', (t) => {

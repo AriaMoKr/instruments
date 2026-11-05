@@ -11,7 +11,16 @@ class Element {
     this.listeners = {};
     this._text = '';
     this._classes = new Set();
-    this.style = { cssText: '', setProperty: (k, v) => { this.style[k] = v; } };
+    this.style = {
+      cssText: '',
+      setProperty: (k, v) => { this.style[k] = String(v); },
+      getPropertyValue: (k) => (typeof this.style[k] === 'string' ? this.style[k] : ''),
+      removeProperty: (k) => {
+        const v = this.style.getPropertyValue(k);
+        delete this.style[k];
+        return v;
+      },
+    };
     this.classList = {
       add: (c) => this._classes.add(c),
       remove: (c) => this._classes.delete(c),

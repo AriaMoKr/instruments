@@ -181,16 +181,32 @@ function labelKeys(keys, lowest) {
 }
 
 /**
- * The keys whose notes sound, marked (seen, not said, as the step playing).
+ * The keys whose notes sound, marked (seen, not said, as the step playing); one another holds in a
+ * shared session with a bar in their colour (`color`: a note's, else null).
  * @param {HTMLElement[]} keys
  * @param {number} lowest the first one's note
  * @param {ReadonlySet<number>} notes
+ * @param {((note: number) => string | null) | null} color
  */
-function markKeys(keys, lowest, notes) {
+function markKeys(keys, lowest, notes, color) {
   for (const [k, b] of keys.entries()) {
     const down = notes.has(lowest + k);
     if (b.classList.contains('down') !== down) b.classList.toggle('down', down);
+    markBy(b, down && color ? color(lowest + k) : null);
   }
+}
+
+/**
+ * A key or a fret marked as another's in a shared session, by a bar in their colour ('#rrggbb'), or
+ * not (null).
+ * @param {HTMLElement} b
+ * @param {string | null} color
+ */
+function markBy(b, color) {
+  if ((b.style.getPropertyValue('--by') || null) === color) return;
+  if (color) b.style.setProperty('--by', color);
+  else b.style.removeProperty('--by');
+  b.classList.toggle('by', !!color);
 }
 
 /** The frets the card's strings have a button for, after the open string's (0): an octave each. */
@@ -945,6 +961,8 @@ export class Overlay {
     this.fretRows = grid.rows;
     /** @private each string's fret marked, and whether a finger's (setStrings): fret × 2 + finger, NaN none yet */
     this._fretsShown = GUITAR_STRINGS.map(() => NaN);
+    /** @private @type {(string | null)[]} each string's finger's colour, another's in a shared session (setStrings) */
+    this._fretsBy = GUITAR_STRINGS.map(() => null);
     this.fretsBox = el('fieldset', { class: 'frets' }, el('legend', {}, 'Strings'), grid.box);
     // Its pickup, and its knobs and its amp's, a section each, as on it.
     this.pickupName = el('span', {}, PICKUPS[1].name);
@@ -1243,12 +1261,14 @@ export class Overlay {
 
   /**
    * The notes sounding from a key held down (synth.js Synth down), the lowest key's note as it is:
-   * those keys marked. Seen, not said, as the step playing.
+   * those keys marked, those another holds in a shared session in their colour (`color`). Seen, not
+   * said, as the step playing.
    * @param {ReadonlySet<number>} notes
    * @param {number} lowest
+   * @param {((note: number) => string | null) | null} [color]
    */
-  setNotes(notes, lowest) {
-    markKeys(this.keys, lowest, notes);
+  setNotes(notes, lowest, color = null) {
+    markKeys(this.keys, lowest, notes, color);
   }
 
   /**
@@ -1284,9 +1304,14 @@ export class Overlay {
     }
   }
 
-  /** The notes sounding from the keyboard's keys held down (keys.js Keys down): those keys marked. @param {ReadonlySet<number>} notes */
-  setKeysNotes(notes) {
-    markKeys(this.keysKeys, KEYS_LOWEST, notes);
+  /**
+   * The notes sounding from the keyboard's keys held down (keys.js Keys down): those keys marked,
+   * those another holds in a shared session in their colour (`color`).
+   * @param {ReadonlySet<number>} notes
+   * @param {((note: number) => string | null) | null} [color]
+   */
+  setKeysNotes(notes, color = null) {
+    markKeys(this.keysKeys, KEYS_LOWEST, notes, color);
   }
 
   /**
@@ -1320,21 +1345,25 @@ export class Overlay {
   /**
    * Where each string is fretted now (guitar.js fretOf: -1 muted, 0 open), and whether a finger
    * presses it there (else the chord frets it): that fret's button marked, the chord's or a finger's
-   * (an open string's only where a finger presses it), a muted string's open one struck through. Seen,
-   * not said, as the step playing.
+   * (an open string's only where a finger presses it), a muted string's open one struck through, a
+   * finger another's in a shared session in their colour (`colors`, a string's, else null). Seen, not
+   * said, as the step playing.
    * @param {readonly number[]} frets
    * @param {readonly boolean[]} fingers
+   * @param {readonly (string | null)[] | null} [colors]
    */
-  setStrings(frets, fingers) {
+  setStrings(frets, fingers, colors = null) {
     for (const [s, row] of this.frets.entries()) {
-      const shown = frets[s] * 2 + (fingers[s] ? 1 : 0);
-      if (shown === this._fretsShown[s]) continue;
+      const shown = frets[s] * 2 + (fingers[s] ? 1 : 0), by = (fingers[s] && colors?.[s]) || null;
+      if (shown === this._fretsShown[s] && by === this._fretsBy[s]) continue;
       this._fretsShown[s] = shown;
+      this._fretsBy[s] = by;
       for (const [f, b] of row.entries()) {
         const at = frets[s] === f && (f > 0 || fingers[s]), finger = at && fingers[s], chord = at && !fingers[s], muted = !f && frets[s] < 0;
         if (b.classList.contains('finger') !== finger) b.classList.toggle('finger', finger);
         if (b.classList.contains('chord') !== chord) b.classList.toggle('chord', chord);
         if (b.classList.contains('muted') !== muted) b.classList.toggle('muted', muted);
+        markBy(b, finger ? by : null);
       }
     }
   }

@@ -43,7 +43,8 @@
 // computer's keys and a MIDI keyboard, and in the card.
 // In a shared session everyone here plays one band (band.js, bandparts.js): every instrument's and
 // module's settings, the cables, the pattern, the sequencer's line, the tempo and RUN are the
-// session's, anyone changes them, and the clocks keep one beat (beat.js).
+// session's, anyone changes them, and the clocks keep one beat (beat.js). What each plays live is
+// heard by the others as it arrives, and shown in the player's colour (jam.js).
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -52,7 +53,7 @@ import { buildRoom } from './scene.js';
 import { Controls } from './controls.js';
 import { Overlay } from './overlay.js';
 import { layoutBoard } from './board.js';
-import { Kit } from './kit.js';
+import { Kit, lin } from './kit.js';
 import { Sound } from './sound.js';
 import { Drums, PADS, movePad, padForNote } from './drums.js';
 import { Clock, LOOKAHEAD, TEMPO, clockEvery, stepSeconds } from './clock.js';
@@ -74,13 +75,15 @@ import { RackKit } from './rackkit.js';
 import { KEYS_COUNT, KEYS_LOWEST, KEYS_SWITCHES, Keys, isDrawbar, keysText, switchWords } from './keys.js';
 import { KEYBOARD, layoutKeyboard } from './keysboard.js';
 import { KeysKit } from './keyskit.js';
-import { CHORDS, GUITAR_STRINGS, Guitar, PEDALS, PICKUPS, guitarText } from './guitar.js';
+import { CHORDS, FRETS, GUITAR_STRINGS, Guitar, PEDALS, PICKUPS, guitarText } from './guitar.js';
+import { PICK } from './strings.js';
 import { GUITAR, layoutGuitar, roomXZ } from './guitarboard.js';
 import { GuitarKit } from './guitarkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
 import { Band } from './band.js';
 import { bandParts } from './bandparts.js';
+import { Holds, Jam, MAX_HELD, instrumentOf, kindOf } from './jam.js';
 import { setAnisotropy } from './textures.js';
 import { bandView, deskPoints, renderPreview, renderSocial, previewView } from './preview.js';
 import { hallLink, hallwayViews, keptWay, leaveUrl, readVisit, wayBack, withoutVisit } from 'common/door.js';
@@ -187,6 +190,35 @@ const filter = new Filter(sound, { key: `${ROOM.id}.filter` });
 const reverb = new Reverb(sound, { key: `${ROOM.id}.reverb` });
 const envelope = new Adsr(sound, { key: `${ROOM.id}.envelope` });
 const mixer = new Mixer(sound, { key: `${ROOM.id}.mixer` });
+
+// Who holds what, for playing together in a shared session (jam.js): a note of the synth's or the
+// keyboard's, or a MIDI note on the guitar, sounds while anyone holds it, this visitor (SELF) or
+// another (their page's peerId), and is let go when the last of them lets go of it; a string of the
+// guitar's pressed is the finger's that pressed it last, slid, bent and let go by it alone.
+/** This page's visitor, among those who hold notes. */
+const SELF = '';
+const synthHolds = new Holds(), keysHolds = new Holds(), guitarHolds = new Holds();
+/** Whose finger presses each of the guitar's strings, else null. @type {(string | null)[]} */
+const stringBy = [null, null, null, null, null, null];
+/** Who put the synth's sustain pedal down last ('s'), and the keyboard's ('k'), and who moved the synth's pitch bend and mod wheel from where they rest: else null. */
+const pedalBy = { s: null, k: null }, wheelBy = { bend: null, mod: null };
+/** Each other's colour as their session says it ('#rrggbb'), and linear (kit.js lin), by their page's peerId. @type {Map<string, { color: string, tint: number[] }>} */
+const tints = new Map();
+/** Another's colour, while their session says it or since it last did; null for this visitor, or none. @param {string | null | undefined} who */
+function colorOf(who) {
+  if (!who) return null;
+  const p = together?.session?.peers.get(who);
+  let t = tints.get(who);
+  if (p && (!t || t.color !== p.color)) tints.set(who, (t = { color: p.color, tint: lin(p.color) }));
+  return t ?? null;
+}
+/** Another's colour, linear for the room's things, else null. @param {string | null | undefined} who */
+const tintOf = (who) => colorOf(who)?.tint ?? null;
+/** Who holds a note of the synth's latest, or of the keyboard's: another's colour, linear for the keys in 3D, as it is for the card's; else null. @param {number} note */
+const synthTint = (note) => tintOf(synthHolds.last(note)), synthColor = (note) => colorOf(synthHolds.last(note))?.color ?? null;
+/** @param {number} note */
+const keysTint = (note) => tintOf(keysHolds.last(note)), keysColor = (note) => colorOf(keysHolds.last(note))?.color ?? null;
+
 /** The drum board in 3D (kit.js), once the scene is made. @type {Kit | null} */
 let kit = null;
 /** The rack in 3D (rackkit.js), once the scene is made. @type {RackKit | null} */
@@ -210,11 +242,12 @@ function toggleStep(s) {
   pattern.toggle(drums.selected, s);
   showSteps();
 }
-/** Plays pad i, `velocity` 0…1 loud: heard, lit up on the board, and the one the knobs turn. */
+/** Plays pad i, `velocity` 0…1 loud: heard, lit up on the board, and the one the knobs turn; heard by the others here in a shared session. */
 function play(i, velocity) {
   drums.hit(i, velocity);
   if (kit) kit.flash(i, velocity, reduce);
   if (i !== drums.selected) select(i);
+  sendPlay(['pad', i, velocity]);
 }
 /** A knob of the pad the knobs turn, set 0…1: heard from its next note on. */
 function setKnob(name, value) {
@@ -744,17 +777,40 @@ function noSound() {
   if (!toldNoSound) overlay.toast('This browser makes no sound', 4);
   toldNoSound = true;
 }
-/** A note played until it is let go (noteOff), `velocity` 0…1. */
+/** A note played until it is let go (noteOff), `velocity` 0…1; heard by the others here in a shared session. */
 function noteOn(note, velocity) {
+  synthHolds.on(SELF, note);
   if (!synth.noteOn(note, velocity)) noSound();
+  sendPlay(['on', 's', note, velocity]);
 }
-/** A note let go. */
+/** A note let go: still sounding while another holds it too. */
 function noteOff(note) {
-  synth.noteOff(note);
+  if (synthHolds.off(SELF, note)) synth.noteOff(note);
+  else showNotes(); // in their colour now
+  sendPlay(['off', 's', note]);
 }
 /** A note played for a moment (a click, OK, A, a trigger). */
 function tapNote(note, velocity = 0.85) {
   if (!synth.tap(note, velocity)) noSound();
+  sendPlay(['tap', 's', note, velocity]);
+}
+/** A MIDI keyboard's sustain pedal on the synth, down or let go. */
+function synthSustain(on) {
+  synth.setSustain(on);
+  pedalBy.s = on ? SELF : null;
+  sendPlay(['sus', 's', !!on]);
+}
+/** A MIDI keyboard's pitch bend, -1…1, on the synth. */
+function pitchBend(v) {
+  synth.setBend(v);
+  wheelBy.bend = v ? SELF : null;
+  sendPlay(['bend', v]);
+}
+/** A MIDI keyboard's mod wheel, 0…1, on the synth. */
+function modWheel(v) {
+  synth.setMod(v);
+  wheelBy.mod = v ? SELF : null;
+  sendPlay(['mod', v]);
 }
 /** Key k of the synth (from the lowest) held down, as hard as `velocity`, until keyUp(k). */
 function keyDown(k, velocity) {
@@ -778,11 +834,11 @@ function showSynthKnobs() {
   synthKit?.setKnobs(synth.knobs);
   overlay.setSynthKnobs(synth.knobs);
 }
-/** The keys down (and the arpeggiator's chord), on the synth and in the card; on the synth, the sequencer's note too. */
+/** The keys down (and the arpeggiator's chord), on the synth and in the card; on the synth, the sequencer's note too, and those another holds in their colour. */
 function showNotes() {
   const held = synth.held;
-  synthKit?.setDown(seqSounding >= 0 ? new Set(held).add(seqSounding) : held, synth.lowest);
-  overlay.setNotes(held, synth.lowest);
+  synthKit?.setDown(seqSounding >= 0 ? new Set(held).add(seqSounding) : held, synth.lowest, synthHolds.size ? synthTint : null);
+  overlay.setNotes(held, synth.lowest, synthHolds.size ? synthColor : null);
 }
 synth.onNotes = showNotes;
 /** A knob of the synth set 0…1: heard at once (or from the next note), on its dial and the display, and in the card. */
@@ -938,17 +994,22 @@ const keys = new Keys(sound, { key: `${ROOM.id}.keys` });
 let keysKit = null;
 /** Where each knob of the keyboard's was turned to, 0…1, a drawbar's before it settled on its eighth: a turn smaller than an eighth (the wheel, a stick) adds up. */
 const pulls = { ...keys.knobs };
-/** A note of the keyboard's played until it is let go (keysOff), `velocity` 0…1 (the organ's as loud however hard). */
+/** A note of the keyboard's played until it is let go (keysOff), `velocity` 0…1 (the organ's as loud however hard); heard by the others here in a shared session. */
 function keysOn(note, velocity) {
+  keysHolds.on(SELF, note);
   if (!keys.noteOn(note, velocity)) noSound();
+  sendPlay(['on', 'k', note, velocity]);
 }
-/** A note of the keyboard's let go. */
+/** A note of the keyboard's let go: still sounding while another holds it too. */
 function keysOff(note) {
-  keys.noteOff(note);
+  if (keysHolds.off(SELF, note)) keys.noteOff(note);
+  else showKeysNotes(); // in their colour now
+  sendPlay(['off', 'k', note]);
 }
 /** A note of the keyboard's played for a moment (a click, OK, A, a trigger). */
 function tapKeys(note, velocity = 0.85) {
   if (!keys.tap(note, velocity)) noSound();
+  sendPlay(['tap', 'k', note, velocity]);
 }
 /** The keyboard as it is, on it (its display, its lights) and in the card. */
 function showKeys() {
@@ -961,10 +1022,10 @@ function showKeysKnobs() {
   keysKit?.setKnobs(keys.knobs);
   overlay.setKeysKnobs(keys.knobs);
 }
-/** The keys down, on the keyboard and in the card. */
+/** The keys down, on the keyboard (those another holds in their colour) and in the card. */
 function showKeysNotes() {
-  keysKit?.setDown(keys.down);
-  overlay.setKeysNotes(keys.down);
+  keysKit?.setDown(keys.down, keysHolds.size ? keysTint : null);
+  overlay.setKeysNotes(keys.down, keysHolds.size ? keysColor : null);
 }
 keys.onNotes = showKeysNotes;
 /** The keyboard's notes the synth is playing (its NOTES out patched into the synth's NOTES in). */
@@ -1011,10 +1072,12 @@ function chooseKeys(id) {
   if (!keys.choose(id)) return;
   showKeys();
 }
-/** SUSTAIN down, or let go (the notes it held let go too). */
+/** SUSTAIN down, or let go (the notes it held let go too): the keyboard's, everyone's in a shared session. */
 function setSustain(on) {
   keys.setSustain(on);
+  pedalBy.k = on ? SELF : null;
   showKeys();
+  sendPlay(['sus', 'k', !!on]);
 }
 /** A switch of the keyboard's (keys.js KEYS_SWITCHES): the percussion's, the rotary speaker's. */
 function setKeysSwitch(id, on) {
@@ -1124,31 +1187,87 @@ function unheard() {
     toldNoStrings = true;
   }
 }
-/** String s plucked, `velocity` 0…1, `pick` of its length from the bridge (strings.js PICK), `delay` seconds from now. */
-function pluckString(s, velocity, pick, delay = 0) {
+/** A fret as the guitar takes it: a whole one, on its neck. */
+const fretOn = (fret) => Math.min(FRETS, Math.max(0, Math.round(fret)));
+/** String s, plucked here, lit as it rings in the room's glow (not another's colour). */
+function ringsHere(s) {
+  if (guitarKit) guitarKit.ringTints[s] = null;
+}
+// The guitar played here: heard by the others here too in a shared session. A string pressed is this
+// visitor's finger's (stringBy) till another presses it: slid, bent and let go by it alone.
+/**
+ * String s plucked, `velocity` 0…1, `pick` of its length from the bridge (strings.js PICK), `delay`
+ * seconds from now.
+ * @param {number} s
+ * @param {number} velocity
+ * @param {number} [pick]
+ * @param {number} [delay]
+ */
+function pluckString(s, velocity, pick = PICK.usual, delay = 0) {
   const now = sound.wake()?.currentTime ?? 0;
+  ringsHere(s);
   if (!guitar.pluck(s, velocity, { at: now + delay, pick })) unheard();
+  sendPlay(['pluck', s, velocity, pick, delay]);
 }
 /** Every string strummed, down (the low E first) or up. */
 function strum(down, velocity = 0.85) {
+  guitarKit?.ringTints.fill(null);
   if (!guitar.strum(down, velocity)) unheard();
+  sendPlay(['strum', !!down, velocity]);
 }
 /** String s pressed at `fret` and plucked, held there until releaseString(s). */
 function pressFret(s, fret, velocity = 0.85) {
+  stringBy[s] = SELF;
+  ringsHere(s);
   if (!guitar.press(s, fret, velocity)) unheard();
+  sendPlay(['fret', s, fretOn(fret), velocity]);
 }
 /** String s pressed at `fret` a moment and plucked (a click, OK, A, a trigger). */
 function tapFret(s, fret, velocity = 0.85) {
+  stringBy[s] = SELF;
+  ringsHere(s);
   if (!guitar.tapFret(s, fret, velocity)) unheard();
+  sendPlay(['ftap', s, fretOn(fret), velocity]);
 }
 /** The string pressed slid along the neck to `fret`. */
-const slideFret = (s, fret) => guitar.slide(s, fret);
+function slideFret(s, fret) {
+  if (stringBy[s] !== SELF) return;
+  guitar.slide(s, fret);
+  sendPlay(['slide', s, fretOn(fret)]);
+}
 /** The string pressed bent `semitones` up. */
-const bendString = (s, semitones) => guitar.bend(s, semitones);
-/** The string pressed let go. */
-const releaseString = (s) => guitar.release(s);
+function bendString(s, semitones) {
+  if (stringBy[s] !== SELF) return;
+  guitar.bend(s, semitones);
+  sendPlay(['gbend', s, semitones]);
+}
+/** The string pressed let go (unless another's finger is on it now). */
+function releaseString(s) {
+  if (stringBy[s] === SELF || stringBy[s] === null) guitar.release(s);
+  sendPlay(['lift', s]);
+}
 /** Every string muted: a palm laid on them. */
-const muteStrings = () => guitar.damp();
+function muteStrings() {
+  guitar.damp();
+  sendPlay(['mute']);
+}
+/** A MIDI note played on the guitar, on the string where it falls lowest (guitar.js noteOn), until guitarNoteOff. */
+function guitarNoteOn(note, velocity) {
+  guitarHolds.on(SELF, note);
+  if (!guitar.noteOn(note, velocity)) unheard();
+  const s = guitar.midiString(note);
+  if (s >= 0) {
+    stringBy[s] = SELF;
+    ringsHere(s);
+  }
+  showStrings();
+  sendPlay(['gon', note, velocity]);
+}
+/** A MIDI note on the guitar let go: its string, unless another holds that note too. */
+function guitarNoteOff(note) {
+  if (guitarHolds.off(SELF, note)) guitar.noteOff(note);
+  sendPlay(['goff', note]);
+}
 /** A chord fretted (guitar.js CHORDS' id), or none (null: the strings open): on it and in the card. */
 function chooseChord(id) {
   if (guitar.choose(id)) showGuitar();
@@ -1210,16 +1329,24 @@ function showGuitarKnobs() {
   guitarKit?.setKnobs(guitar.knobs);
   overlay.setGuitarKnobs(guitar.knobs);
 }
-/** Where each string is fretted (-1 muted, 0 open), and whether a finger presses it there rather than the chord. */
+/** Where each string is fretted (-1 muted, 0 open), whether a finger presses it there rather than the chord, and the colour of another whose finger it is (linear, and as it is), else null. */
 const stringFrets = guitar.pressed.map(() => 0), fingered = guitar.pressed.map(() => false);
-/** Where each string is fretted now, and how far it is bent: on the guitar and in the card. */
+/** @type {(number[] | null)[]} */
+const fingerTints = guitar.pressed.map(() => null);
+/** @type {(string | null)[]} */
+const fingerColors = guitar.pressed.map(() => null);
+/** Where each string is fretted now, and how far it is bent: on the guitar and in the card, another's finger in their colour. A string let go is no one's finger's. */
 function showStrings() {
   for (let s = 0; s < stringFrets.length; s++) {
     stringFrets[s] = guitar.fretOf(s);
     fingered[s] = guitar.pressed[s] >= 0;
+    if (!fingered[s]) stringBy[s] = null;
+    const by = colorOf(stringBy[s]);
+    fingerTints[s] = by?.tint ?? null;
+    fingerColors[s] = by?.color ?? null;
   }
-  guitarKit?.setStrings(stringFrets, fingered, guitar.bends);
-  overlay.setStrings(stringFrets, fingered);
+  guitarKit?.setStrings(stringFrets, fingered, guitar.bends, fingerTints);
+  overlay.setStrings(stringFrets, fingered, fingerColors);
 }
 guitar.onStrings = showStrings;
 overlay.onChord = chooseChord;
@@ -1236,10 +1363,11 @@ showGuitar();
 showGuitarKnobs();
 showStrings();
 
-// Any press wakes the sound; with a shared band's clock running here and no sound yet, it makes it.
+// Any press wakes the sound; with a shared band's clock running here, or another's playing heard,
+// and no sound yet, it makes it.
 for (const type of ['pointerup', 'touchend', 'keydown']) {
   addEventListener(type, () => {
-    if (sound.ctx || clock.running) sound.wake();
+    if (sound.ctx || clock.running || toldPress) sound.wake();
   }, { capture: true, passive: true });
 }
 // Put away: what each was to keep a moment after its last change kept now (the page may not come
@@ -1247,11 +1375,23 @@ for (const type of ['pointerup', 'touchend', 'keydown']) {
 // waiting to), and the sound asleep. Only what waits is written, so a page left open elsewhere with
 // nothing changed keeps nothing over what another has kept since.
 const KEPT_SOON = [drums, clock, pattern, delay, synth, seq, rackDelay, lfo, filter, reverb, envelope, mixer, keys, guitar];
-function putAway() {
-  for (const k of KEPT_SOON) k.flush();
+/** Every note let go here, whoever held it (the page put away, a MIDI device's all notes off), and who held what forgotten. */
+function letGoAll() {
   keys.allOff();
   synth.allOff();
   guitar.allOff();
+  synthHolds.clear();
+  keysHolds.clear();
+  guitarHolds.clear();
+  stringBy.fill(null);
+  showNotes();
+  showKeysNotes();
+  showStrings();
+}
+function putAway() {
+  for (const k of KEPT_SOON) k.flush();
+  sendPlay(['all']); // what this visitor holds let go on the others' pages too
+  letGoAll();
   sound.sleep();
 }
 addEventListener('pagehide', putAway);
@@ -1265,8 +1405,8 @@ document.addEventListener('visibilitychange', () => {
 // and RUN, the clocks on one beat (beat.js). The first here brings their band into the session (at
 // once, if they began it); whoever comes after takes the session's in place of their own, said in a
 // toast, and keeps it when they leave. Anyone changes anything, and the last change is everyone's:
-// shown here as it comes, the clock started or stopped by another said too. What one plays is one's
-// own still.
+// shown here as it comes, the clock started or stopped by another said too. What each plays live
+// goes to the others as it is played (below, "Playing together").
 
 /** A part of the band set as another set it (bandparts.js), shown on it and in the card. */
 function shownBand(part) {
@@ -1331,7 +1471,183 @@ const band = new Band({
   },
   onState: showBand,
 });
-setInterval(() => band.tick(), 25);
+
+// ── Playing together, in a shared session ────────────────────────────────────
+// What each plays live is heard by the others in this room as it arrives (jam.js), behind the beat
+// by the network's delay, and shown on the instruments as one's own playing is, in the player's
+// colour: a pad lit, keys down, a finger on a string, a string ringing. Played here, it goes after
+// what was changed here just before it (band.js share: a chord fretted, then strummed, is that
+// chord's everywhere); another's is played here after what they changed just before it (catchUp).
+// It sounds once this page's sound is awake (a press: said once); the first time each is heard on an
+// instrument, said. What another holds is let go when they let go of it, put their page away, leave
+// this room or the session, or this page leaves it.
+
+/** This visitor's playing, for the others in this room while the band is the session's (what lets go, anyway), after what was changed here before it. */
+function sendPlay(play) {
+  if (!jam.attached) return;
+  band.share();
+  jam.send(play);
+}
+/** The instruments in words, for what another plays. */
+const PLAYS = { drums: 'the drums', synth: 'the synth', keys: 'the keyboard', guitar: 'the guitar' };
+/** The instruments each other has been heard playing (each said once), by their page's peerId. @type {Map<string, Set<string>>} */
+const heardOn = new Map();
+/** Another's playing came with this page's sound asleep: said, and a press anywhere wakes it. */
+let toldPress = false;
+/** Another's playing (jam.js), checked, as it arrives: played here as they played it, shown in their colour. */
+function heard(play, p) {
+  band.catchUp();
+  const who = p.peerId, what = instrumentOf(play);
+  if (kindOf(play) === 'start') {
+    if (sound.ctx?.state !== 'running') {
+      if (!toldPress && !document.hidden) overlay.toast(`${p.name ?? 'Someone'} is playing: press anything to hear them`, 5);
+      toldPress = true;
+      return;
+    }
+    toldPress = false;
+    let said = heardOn.get(who);
+    if (!said) heardOn.set(who, (said = new Set()));
+    if (what && !said.has(what)) {
+      said.add(what);
+      overlay.toast(`${p.name ?? 'Someone'} plays ${PLAYS[what]}`, 3);
+    }
+  }
+  switch (play[0]) {
+    case 'pad':
+      drums.hit(play[1], play[2]);
+      kit?.flash(play[1], play[2], reduce, tintOf(who));
+      return;
+    case 'on': {
+      const [, on, note, v] = play, holds = on === 's' ? synthHolds : keysHolds;
+      if (!holds.has(who, note) && holds.count(who) >= MAX_HELD) return;
+      holds.on(who, note);
+      if (on === 's') synth.noteOn(note, v);
+      else keys.noteOn(note, v);
+      break;
+    }
+    case 'off': {
+      const [, on, note] = play, holds = on === 's' ? synthHolds : keysHolds;
+      if (!holds.has(who, note)) return;
+      if (holds.off(who, note)) {
+        if (on === 's') synth.noteOff(note);
+        else keys.noteOff(note);
+      }
+      break;
+    }
+    case 'tap':
+      if (play[1] === 's') synth.tap(play[2], play[3]);
+      else keys.tap(play[2], play[3]);
+      break;
+    case 'sus':
+      pedalBy[play[1]] = play[2] ? who : null;
+      if (play[1] === 's') synth.setSustain(play[2]);
+      else {
+        keys.setSustain(play[2]);
+        showKeys();
+      }
+      return;
+    case 'bend':
+      wheelBy.bend = play[1] ? who : null;
+      synth.setBend(play[1]);
+      return;
+    case 'mod':
+      wheelBy.mod = play[1] ? who : null;
+      synth.setMod(play[1]);
+      return;
+    case 'pluck':
+      if (guitarKit) guitarKit.ringTints[play[1]] = tintOf(who);
+      guitar.pluck(play[1], play[2], { at: (sound.ctx?.currentTime ?? 0) + play[4], pick: play[3] });
+      return;
+    case 'strum':
+      guitarKit?.ringTints.fill(tintOf(who));
+      guitar.strum(play[1], play[2]);
+      return;
+    case 'fret':
+    case 'ftap': {
+      const [, s, fret, v] = play;
+      stringBy[s] = who;
+      if (guitarKit) guitarKit.ringTints[s] = tintOf(who);
+      if (play[0] === 'fret') guitar.press(s, fret, v);
+      else guitar.tapFret(s, fret, v);
+      break;
+    }
+    case 'slide':
+      if (stringBy[play[1]] === who) guitar.slide(play[1], play[2]);
+      return;
+    case 'gbend':
+      if (stringBy[play[1]] === who) guitar.bend(play[1], play[2]);
+      return;
+    case 'lift':
+      if (stringBy[play[1]] === who) guitar.release(play[1]);
+      return;
+    case 'mute':
+      guitar.damp();
+      return;
+    case 'gon': {
+      const [, note, v] = play;
+      if (!guitarHolds.has(who, note) && guitarHolds.count(who) >= GUITAR_STRINGS.length) return;
+      guitarHolds.on(who, note);
+      guitar.noteOn(note, v);
+      const s = guitar.midiString(note);
+      if (s >= 0) {
+        stringBy[s] = who;
+        if (guitarKit) guitarKit.ringTints[s] = tintOf(who);
+      }
+      break;
+    }
+    case 'goff':
+      if (guitarHolds.has(who, play[1]) && guitarHolds.off(who, play[1])) guitar.noteOff(play[1]);
+      return;
+    case 'all':
+      letGo(who);
+      return;
+  }
+  // Their colour on what they hold now (or on what another holds, as the latest to).
+  if (what === 'synth') showNotes();
+  else if (what === 'keys') showKeysNotes();
+  else showStrings();
+}
+/** What another holds here let go: their notes, their fingers on the strings, and the pedals and wheels they moved, back where they rest. */
+function letGo(who) {
+  for (const note of synthHolds.of(who)) if (synthHolds.off(who, note)) synth.noteOff(note);
+  for (const note of keysHolds.of(who)) if (keysHolds.off(who, note)) keys.noteOff(note);
+  for (const note of guitarHolds.of(who)) if (guitarHolds.off(who, note)) guitar.noteOff(note);
+  for (let s = 0; s < stringBy.length; s++) if (stringBy[s] === who) guitar.release(s);
+  if (pedalBy.s === who) {
+    pedalBy.s = null;
+    synth.setSustain(false);
+  }
+  if (pedalBy.k === who) {
+    pedalBy.k = null;
+    keys.setSustain(false);
+    showKeys();
+  }
+  if (wheelBy.bend === who) {
+    wheelBy.bend = null;
+    synth.setBend(0);
+  }
+  if (wheelBy.mod === who) {
+    wheelBy.mod = null;
+    synth.setMod(0);
+  }
+  showNotes();
+  showKeysNotes();
+  showStrings();
+}
+const jam = new Jam({
+  prefix: `${ROOM.id}:`,
+  onPlay: heard,
+  onGone: (who) => {
+    letGo(who);
+    heardOn.delete(who);
+    tints.delete(who);
+  },
+  ready: () => band.playing,
+});
+setInterval(() => {
+  band.tick();
+  jam.tick();
+}, 25);
 
 // From a MIDI device (midi.js): asked for with the card's button, or at once when the visitor has
 // let this site use MIDI before. Its notes on channel 10 are the General MIDI drums' (drums.js
@@ -1367,22 +1683,21 @@ async function listen() {
           keysOn(m.note, m.velocity);
         } else if (playingAt === 'guitar') {
           midiGuitar.add(m.note);
-          if (!guitar.noteOn(m.note, m.velocity)) unheard();
+          guitarNoteOn(m.note, m.velocity);
         } else noteOn(m.note, m.velocity);
       } else if (m.type === 'off') {
         if (midiKeys.delete(m.note)) keysOff(m.note);
-        else if (midiGuitar.delete(m.note)) guitar.noteOff(m.note);
+        else if (midiGuitar.delete(m.note)) guitarNoteOff(m.note);
         else noteOff(m.note);
       } else if (m.type === 'sustain') {
         if (m.on) pedalOnKeys = playingAt === 'keys';
         if (pedalOnKeys) setSustain(m.on);
-        else synth.setSustain(m.on);
-      } else if (m.type === 'mod') synth.setMod(m.value);
-      else if (m.type === 'bend') synth.setBend(m.value);
+        else synthSustain(m.on);
+      } else if (m.type === 'mod') modWheel(m.value);
+      else if (m.type === 'bend') pitchBend(m.value);
       else {
-        keys.allOff();
-        synth.allOff();
-        guitar.allOff();
+        sendPlay(['all']);
+        letGoAll();
         midiKeys.clear();
         midiGuitar.clear();
       }
@@ -2129,13 +2444,15 @@ controls.onTeleport = (move) => {
 
 together = createTogether({ appId: APP_ID, page: ROOM.id, camera, renderer, hands: () => controls.hands, avatars: { parent: scene } });
 // The band: played in each session joined (those here share its clock's beat), this page's at once
-// in one it began, and kept as it is on leaving it.
+// in one it began, and kept as it is on leaving it; and what each here plays, heard by the others.
 together.on('session', (session) => {
   band.attach(session, (p) => p.page === ROOM.id, { first: began });
+  jam.attach(session, (p) => p.page === ROOM.id);
   began = false;
 });
 together.on('change', () => {
   if (band.state !== 'off' && !together.session) band.detach();
+  if (jam.attached && !together.session) jam.detach();
   showPanel();
   overlay.setInvite(together.active ? together.inviteLink : '');
   overlay.setTogether(together.active, together.active ? statusText(together.company(), together.condition()) : '', together.self);
@@ -2286,6 +2603,7 @@ window.__room = {
   keys, keysDesk, keysKit, keysOn, keysOff, tapKeys, chooseKeys, setKeysKnob, setKeysSwitch, setSustain, setKeysOctave, resetKeys,
   guitar, guitarDesk, guitarKit, pluckString, strum, pressFret, tapFret, slideFret, bendString, releaseString, muteStrings, chooseChord, pressChord, pickChord,
   setGuitarKnob, setPickup, setPedal, pressPedal, resetGuitar, band,
+  jam, holds: { synth: synthHolds, keys: keysHolds, guitar: guitarHolds }, stringBy, synthSustain, pitchBend, modWheel, guitarNoteOn, guitarNoteOff,
   /** On a TV at the synth, the key the arrows chose. */
   get chosenKey() {
     return chosenKey;

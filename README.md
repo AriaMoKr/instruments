@@ -19,8 +19,8 @@ beside the rack, an electric guitar lies on its desk, to pluck, strum and fret a
 its six strings modelled as they are played, heard through its pickups, four pedals (a wah, an
 overdrive, a chorus and a tremolo) and its amp, with jacks of its own: its sound, its notes for the
 synth to play along, its wah to move and the clock to strum it (below, "The guitar"). More modules
-come in time. In a shared session everyone in here plays one band, on one beat (below, "One
-band"). The room is the one
+come in time. In a shared session everyone in here plays one band, on one beat, and hears what the
+others play (below, "One band"). The room is the one
 [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty) makes: a floor, four
 walls, a ceiling with its lamps, a window onto the afternoon sky, and the doorway back to the
 Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay walls, and is a little
@@ -631,9 +631,9 @@ the reverb, the keyboard's sound, drawbars, switches and knobs, the guitar's kno
 and chord, and every cable. So are the tempo and RUN: start the clock and everyone's starts, on the
 same beat. Anyone changes anything, and a moment later it has changed for everyone; the last change
 wins. What stays yours: the volume and Mute, a MIDI device, and the octave the computer's keys play
-in. Notes played live, a pad struck, a key held, a string plucked, are heard only where they are
-played; what the clock plays (the pattern, the sequencer's line, the arpeggiator, the guitar
-strummed by the clock) everyone hears.
+in. What the clock plays (the pattern, the sequencer's line, the arpeggiator, the guitar strummed by
+the clock) everyone hears on the beat, and what each plays live everyone hears as it comes (below,
+"Hearing each other").
 
 The one who starts a session brings their band into it as it is. Come in after, by the invite link
 or from the Hallway in a session, and you take the session's band in place of yours: a toast says
@@ -647,6 +647,27 @@ audio clock as its sound comes out, and nudges its clock a little at a time to k
 clocks drift. What the clock plays at random (the LFO's random shape, the arpeggiator's random
 order) is drawn from its run and the pulse's number, so it is the same for everyone. As browsers
 ask, the sound starts once you press something: come in to a band playing and a toast says so.
+
+### Hearing each other
+
+What each plays live, everyone in here hears as it comes: a pad struck and how hard, the synth's
+and the keyboard's keys held and let go, the sustain pedal, the pitch bend and the mod wheel of a
+MIDI device, the guitar's strings plucked and strummed, pressed at a fret, slid, bent and let go,
+and muted, and a note tapped in or out of the arpeggiator's chord under HOLD. It comes a little
+after the beat, by as long as the network takes. No sound is sent: each page plays what comes on its
+own instruments, and works out what follows from it there (the notes a NOTES cable carries, the
+arpeggiator, the envelope), as the band is set up, so nothing is heard twice. A chord chosen and
+then strummed is that chord strummed everywhere.
+
+There is one of each instrument in this too: a note two people hold sounds until the last of them
+lets go, and a string pressed is the finger's that pressed it last, which alone slides it, bends it
+or lets it go. What another plays shows as what you play does, in their colour in the session: a pad
+lit, keys down, a finger on a string and the strings ringing, and in the card the keys and the frets
+they hold ringed in it. The first time someone plays an instrument, a toast says who. What they
+hold is let go when they let go of it, put their page away, leave this room or leave the session.
+If your sound hasn't started yet, a toast says to press anything to hear them. So that no one can
+flood the others, each one's notes are checked and kept to so many a second, and so many held at
+once.
 
 ## On the walls
 

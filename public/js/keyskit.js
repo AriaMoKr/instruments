@@ -35,7 +35,7 @@ import { GOLD, SANS } from './textures.js';
 
 const WOOD = lin('#3b2a1d'), TOP = lin('#23211f'), RIM = lin('#151413');
 /** The keys' colours (linear): ivory and ebony, and the room's glow a key sounding takes; as the synth's. */
-const IVORY = lin('#ece6da'), EBONY = lin('#1c1a18'), GLOW = lin('#5cc8a8');
+const IVORY = lin('#ece6da'), EBONY = lin('#1c1a18'), ROOM_GLOW = lin('#5cc8a8');
 /** The drawbars' tabs (linear), as an organ's: brown, white and black. */
 const TAB = { brown: lin('#7a3f22'), white: lin('#e9e3d5'), black: lin('#1e1c1a') };
 /** Which drawbars' tabs are brown (the 16′ and the 5⅓′) and which white (the note's and its octaves'); the rest black. @type {Readonly<Partial<Record<KeysKnob, 'brown' | 'white'>>>} */
@@ -303,6 +303,10 @@ export class KeysKit {
     this._keyShown = new Int8Array(KEYS_COUNT).fill(-1);
     /** @private which keys' notes sound (setDown) */
     this._down = new Uint8Array(KEYS_COUNT);
+    /** @private the colour each key is lit in down, when another holds it (setDown), else null: the room's glow; and as last shown @type {(readonly number[] | null)[]} */
+    this._tint = new Array(KEYS_COUNT).fill(null);
+    /** @private @type {(readonly number[] | null)[]} */
+    this._tintShown = new Array(KEYS_COUNT).fill(null);
     /** The key pointed at (or chosen with a TV's arrows), else -1. */
     this.hovered = -1;
 
@@ -454,11 +458,18 @@ export class KeysKit {
   }
 
   /**
-   * The keys whose notes sound now (keys.js Keys down: from anywhere): those keys go down, lit.
+   * The keys whose notes sound now (keys.js Keys down: from anywhere): those keys go down, lit in the
+   * room's glow, or in the colour of another who holds them in a shared session (`tint`: a note's,
+   * linear, else null).
    * @param {ReadonlySet<number>} notes
+   * @param {((note: number) => readonly number[] | null) | null} [tint]
    */
-  setDown(notes) {
-    for (let k = 0; k < KEYS_COUNT; k++) this._down[k] = notes.has(KEYS_LOWEST + k) ? 1 : 0;
+  setDown(notes, tint = null) {
+    for (let k = 0; k < KEYS_COUNT; k++) {
+      const down = notes.has(KEYS_LOWEST + k);
+      this._down[k] = down ? 1 : 0;
+      this._tint[k] = down && tint ? tint(KEYS_LOWEST + k) : null;
+    }
   }
 
   /**
@@ -499,14 +510,17 @@ export class KeysKit {
   }
 
   /**
-   * Key k as it is now, if that changed: up, or down and lit; lighter pointed at. Whether it was written.
+   * Key k as it is now, if that changed: up, or down and lit (in the room's glow, or the colour of
+   * another who holds it); lighter pointed at. Whether it was written.
    * @private
    * @param {number} k
    */
   _writeKey(k) {
-    const code = this._down[k] | (this.hovered === k ? 2 : 0);
-    if (code === this._keyShown[k]) return false;
+    const code = this._down[k] | (this.hovered === k ? 2 : 0), tint = this._tint[k];
+    if (code === this._keyShown[k] && tint === this._tintShown[k]) return false;
     this._keyShown[k] = code;
+    this._tintShown[k] = tint;
+    const hue = tint ?? ROOM_GLOW;
     const S = SYNTH.key, q = this.desk.keys[k], o = this._dummy, pressed = (code & 1) === 1;
     const sink = pressed ? S.travel : 0;
     if (q.black) {
@@ -521,7 +535,7 @@ export class KeysKit {
     this.keys.setMatrixAt(k, this._mat.multiplyMatrices(this._top.matrix, o.matrix));
     const base = q.black ? EBONY : IVORY, glow = q.black ? 0.8 : 0.6, lift = code & 2 ? (q.black ? 2.6 : 1.12) : 1;
     const c = this._color;
-    if (pressed) c.setRGB(base[0] * (1 - glow) + GLOW[0] * glow * 1.3, base[1] * (1 - glow) + GLOW[1] * glow * 1.3, base[2] * (1 - glow) + GLOW[2] * glow * 1.3);
+    if (pressed) c.setRGB(base[0] * (1 - glow) + hue[0] * glow * 1.3, base[1] * (1 - glow) + hue[1] * glow * 1.3, base[2] * (1 - glow) + hue[2] * glow * 1.3);
     else c.setRGB(base[0] * lift, base[1] * lift, base[2] * lift);
     this.keys.setColorAt(k, c);
     return true;

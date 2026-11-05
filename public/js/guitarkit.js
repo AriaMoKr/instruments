@@ -581,8 +581,12 @@ export class GuitarKit {
     turned.add(this.strings);
     /** How much each string moves now (main.js: guitar.js level), 0…1. */
     this.levels = new Float32Array(6);
-    /** @private what each string was last written as: its level (-1 never) and whether pointed at */
+    /** The colour each string lights up in as it rings, when another plucked it in a shared session (linear), else null: the room's glow. @type {(readonly number[] | null)[]} */
+    this.ringTints = [null, null, null, null, null, null];
+    /** @private what each string was last written as: its level (-1 never) and whether pointed at; and its colour */
     this._stringShown = new Float32Array(6).fill(-1);
+    /** @private @type {(readonly number[] | null)[]} */
+    this._ringShown = [null, null, null, null, null, null];
     /** Less motion: a string ringing lit, not blurred. */
     this.still = false;
     /** The string pointed at (a pointer over it), else -1; and the fret a press there would press it at (0: over the body). */
@@ -593,8 +597,8 @@ export class GuitarKit {
     this.dots = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: light }), 7);
     this.dots.name = 'guitar dots';
     turned.add(this.dots);
-    /** @private each string's fret (-1 muted), whether a finger presses it, and its bend, as last shown @type {{ fret: number, finger: boolean, bend: number }[]} */
-    this._strings = [0, 1, 2, 3, 4, 5].map(() => ({ fret: 0, finger: false, bend: 0 }));
+    /** @private each string's fret (-1 muted), whether a finger presses it (and the colour of another's, else null), and its bend, as last shown @type {{ fret: number, finger: boolean, tint: readonly number[] | null, bend: number }[]} */
+    this._strings = [0, 1, 2, 3, 4, 5].map(() => ({ fret: 0, finger: false, tint: null, bend: 0 }));
     /** @private */
     this._dotsDirty = true;
     /** @private the hover dot as last written: string × 32 + fret, -1 hidden, -2 never */
@@ -772,17 +776,20 @@ export class GuitarKit {
 
   /**
    * Where each string is fretted now (guitar.js fretOf: -1 muted, 0 open), whether a finger presses it
-   * there (not the chord), and how far it is bent: its dot.
+   * there (not the chord), and how far it is bent: its dot, in the room's glow for a finger, or in the
+   * colour of another whose finger it is in a shared session (`tints`, linear).
    * @param {readonly number[]} frets
    * @param {readonly boolean[]} fingers
    * @param {readonly number[]} bends
+   * @param {readonly (readonly number[] | null)[] | null} [tints]
    */
-  setStrings(frets, fingers, bends) {
+  setStrings(frets, fingers, bends, tints = null) {
     for (let s = 0; s < 6; s++) {
-      const t = this._strings[s];
-      if (t.fret === frets[s] && t.finger === fingers[s] && t.bend === bends[s]) continue;
+      const t = this._strings[s], tint = tints?.[s] ?? null;
+      if (t.fret === frets[s] && t.finger === fingers[s] && t.tint === tint && t.bend === bends[s]) continue;
       t.fret = frets[s];
       t.finger = fingers[s];
+      t.tint = tint;
       t.bend = bends[s];
       this._dotsDirty = true;
     }
@@ -813,16 +820,19 @@ export class GuitarKit {
   }
 
   /**
-   * String s as it is now, if that changed: as wide as it rings (unless still), lit as it rings, a
-   * little lighter pointed at. Whether it was written.
+   * String s as it is now, if that changed: as wide as it rings (unless still), lit as it rings (in
+   * the room's glow, or the colour of another who plucked it), a little lighter pointed at. Whether it
+   * was written.
    * @private
    * @param {number} s
    */
   _writeString(s) {
-    const G = this.desk, level = this.levels[s], lift = this.hoverString === s ? 1 : 0;
+    const G = this.desk, level = this.levels[s], lift = this.hoverString === s ? 1 : 0, tint = this.ringTints[s];
     const shown = Math.round(level * 200) + lift * 1000 + (this.still ? 2000 : 0);
-    if (shown === this._stringShown[s]) return false;
+    if (shown === this._stringShown[s] && tint === this._ringShown[s]) return false;
     this._stringShown[s] = shown;
+    this._ringShown[s] = tint;
+    const hue = tint ?? GLOW;
     const b0 = stringB(G, s, G.nut), b1 = stringB(G, s, G.bridge), len = Math.hypot(GUITAR.scale, b1 - b0);
     const wide = GAUGE[s] + (this.still ? 0 : BLUR * level), o = this._dummy;
     o.position.set((G.nut + G.bridge) / 2, GUITAR.body + GUITAR.string - GAUGE[s] / 2, -(b0 + b1) / 2);
@@ -832,9 +842,9 @@ export class GuitarKit {
     this.strings.setMatrixAt(s, this._mat.multiplyMatrices(this._top.matrix, o.matrix));
     const base = s < 3 ? WOUND : STEEL, glow = Math.min(1, level * 1.6) * 0.75, up = lift ? 1.25 : 1, l = this._light, c = this._color;
     c.setRGB(
-      (base[0] * (1 - glow) * up + GLOW[0] * glow * 1.4) * l[0],
-      (base[1] * (1 - glow) * up + GLOW[1] * glow * 1.4) * l[1],
-      (base[2] * (1 - glow) * up + GLOW[2] * glow * 1.4) * l[2],
+      (base[0] * (1 - glow) * up + hue[0] * glow * 1.4) * l[0],
+      (base[1] * (1 - glow) * up + hue[1] * glow * 1.4) * l[1],
+      (base[2] * (1 - glow) * up + hue[2] * glow * 1.4) * l[2],
     );
     this.strings.setColorAt(s, c);
     return true;
@@ -856,7 +866,7 @@ export class GuitarKit {
         const a = fretPlace(G, Math.min(t.fret, FRETS)), sp = spacingAt(G, a), way = s < 3 ? 1 : -1;
         o.position.set(a, STR + 0.0006, -(stringB(G, s, a) + way * t.bend * sp * 0.4));
         o.scale.set(0.0058, 1, 0.0058);
-        const c = t.finger ? DOT.finger : DOT.chord;
+        const c = t.finger ? t.tint ?? DOT.finger : DOT.chord;
         this.dots.setColorAt(s, this._color.setRGB(c[0], c[1], c[2]));
       } else if (t.fret < 0) {
         o.position.set(G.nut - 0.013, HEAD + 0.0006, -stringB(G, s, G.nut));

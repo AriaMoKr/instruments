@@ -461,6 +461,14 @@ test('the synth\'s keys: a button each, named for its note, the Cs by the note w
     // The notes down marked on their keys, the octave as it is.
     o.setNotes(new Set([LOWEST + 12, LOWEST + 16]), LOWEST);
     assert.deepEqual(marked(o.keys, 'down'), [12, 16]);
+    // Those another holds in a shared session ringed in their colour, till they let go of them.
+    const by = (n) => (n === LOWEST + 16 ? '#aa3366' : null);
+    o.setNotes(new Set([LOWEST + 12, LOWEST + 16]), LOWEST, by);
+    assert.deepEqual([marked(o.keys, 'down'), marked(o.keys, 'by')], [[12, 16], [16]]);
+    assert.equal(o.keys[16].style.getPropertyValue('--by'), '#aa3366');
+    o.setNotes(new Set([LOWEST + 12]), LOWEST, by);
+    assert.deepEqual(marked(o.keys, 'by'), [], 'let go: no longer theirs');
+    assert.equal(o.keys[16].style.getPropertyValue('--by'), '');
     o.setNotes(new Set([LOWEST + 12]), LOWEST - 12);
     assert.deepEqual(marked(o.keys, 'down'), [24], 'an octave down, middle C is higher on the keys');
   } finally {
@@ -815,6 +823,13 @@ test('the guitar\'s strings: a row each, the high E\'s at the top, a button for 
     o.setStrings([-1, 3, 2, 0, 1, 0], [false, false, false, false, true, false]);
     const shown = (c) => o.frets.flatMap((row, s) => marked(row, c).map((f) => [s, f]));
     assert.deepEqual([shown('chord'), shown('finger'), shown('muted')], [[[1, 3], [2, 2]], [[4, 1]], [[0, 0]]]);
+    // Another's finger in a shared session ringed in their colour (the chord's frets never), and not
+    // once the finger there is this visitor's.
+    o.setStrings([-1, 3, 2, 0, 1, 0], [false, false, false, false, true, false], [null, '#aa3366', null, null, '#aa3366', null]);
+    assert.deepEqual(shown('by'), [[4, 1]]);
+    assert.equal(o.frets[4][1].style.getPropertyValue('--by'), '#aa3366');
+    o.setStrings([-1, 3, 2, 0, 1, 0], [false, false, false, false, true, false]);
+    assert.deepEqual(shown('by'), [], 'the same fret, this visitor\'s finger now');
     o.setStrings([0, 0, 0, 0, 0, 0], [false, false, false, false, false, true]);
     assert.deepEqual([shown('chord'), shown('finger'), shown('muted')], [[], [[5, 0]], []], 'an open string marked only where a finger presses it');
   } finally {
@@ -957,8 +972,10 @@ test('the keyboard\'s keys: sixty-one from C2, as the synth\'s, sounding while p
     assert.equal(o.keys.findIndex((b) => b.getAttribute('tabindex') === '0'), 0, 'the synth\'s stop where it was');
     o.setKeysNotes(new Set([60, 64, 67, 20]));
     assert.deepEqual(marked(o.keysKeys, 'down'), [24, 28, 31], 'a note off the keyboard marks nothing');
+    o.setKeysNotes(new Set([60, 64]), (n) => (n === 64 ? '#33aa66' : null));
+    assert.deepEqual([marked(o.keysKeys, 'down'), marked(o.keysKeys, 'by')], [[24, 28], [28]], 'another\'s in their colour');
     o.setKeysNotes(new Set());
-    assert.deepEqual(marked(o.keysKeys, 'down'), []);
+    assert.deepEqual([marked(o.keysKeys, 'down'), marked(o.keysKeys, 'by')], [[], []]);
   } finally {
     remove();
   }
