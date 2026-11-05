@@ -13,7 +13,8 @@
 // into its own in, or into the mixer that goes into it), as no sound can go round so. The page draws
 // the cables and connects the sound as they change (onChange). The patch is kept for the next visit
 // (localStorage) at every change, an input left empty on purpose too; an input added since comes as
-// the patch comes.
+// the patch comes. In a shared session the band's patch is taken all at once (adopt), the same for
+// everyone however the cables came.
 import { PADS } from './drums.js';
 import { MIXER_KNOBS } from './mixer.js';
 import { pageStorage } from './sound.js';
@@ -191,6 +192,36 @@ export class Patch {
    * @param {string} to
    */
   loops(from, to) {
+    return this._loopsIn(this._from, from, to);
+  }
+
+  /**
+   * Every input's cable at once, as a shared session's band has them (band.js): `desired(input)`,
+   * the output for it, null for none, or undefined to keep its own. Each is taken in the jacks'
+   * order where a cable can join them and brings no sound back round with those taken before it,
+   * else the input is left empty, so that everyone given the same comes to the same patch. Kept,
+   * then onChange told of each input that changed: whether any did.
+   * @param {(input: string) => string | null | undefined} desired
+   */
+  adopt(desired) {
+    /** @type {Map<string, string | null>} */
+    const next = new Map();
+    for (const to of this._from.keys()) next.set(to, null);
+    for (const to of this._from.keys()) {
+      const want = desired(to), from = want === undefined ? this._from.get(to) ?? null : want;
+      if (typeof from === 'string' && this._ends(from, to)?.from === from && !this._loopsIn(next, from, to)) next.set(to, from);
+    }
+    return this._set([...next]);
+  }
+
+  /**
+   * loops, with the cables `cables` (each input's output, else null) in place of the patch's.
+   * @private
+   * @param {ReadonlyMap<string, string | null>} cables
+   * @param {string} from
+   * @param {string} to
+   */
+  _loopsIn(cables, from, to) {
     const out = this._byId.get(from), into = this._byId.get(to);
     if (!out || !into || out.kind !== 'audio' || into.kind !== 'audio') return false;
     const next = [into.module], seen = new Set();
@@ -201,9 +232,10 @@ export class Patch {
       seen.add(m);
       for (const j of this.jacks) {
         if (j.module !== m || j.dir !== 'out' || j.kind !== 'audio') continue;
-        for (const t of this.targets(j.id)) {
+        for (const [t, f] of cables) {
+          if (f !== j.id || t === to) continue;
           const on = this._byId.get(t)?.module;
-          if (t !== to && on) next.push(on);
+          if (on) next.push(on);
         }
       }
     }

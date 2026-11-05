@@ -14,6 +14,7 @@
     "public/js/rackboard.js", "public/js/lfo.js", "public/js/keys.js", "public/js/keysboard.js",
     "public/js/filter.js", "public/js/reverb.js", "public/js/mixer.js", "public/js/envelope.js",
     "public/js/strings.js", "public/js/strings-worklet.js", "public/js/guitar.js", "public/js/guitarboard.js",
+    "public/js/beat.js", "public/js/band.js", "public/js/bandparts.js",
     "types/*.d.ts"
   ]
 }

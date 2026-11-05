@@ -372,6 +372,26 @@ test('the presets set every knob and Mono at once; a knob turned after is a chan
   assert.equal(synth.title, 'Own sound, poly');
 });
 
+test("the preset as another in a shared session has it (its knobs and Mono set as theirs): what it is called, changed or not, and nothing heard changes; kept", (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const storage = memoryStorage();
+  const { synth } = make({ storage });
+  synth.setKnob('cutoff', 0.2);
+  const knobs = { ...synth.knobs };
+  synth.setPreset('acid', false);
+  assert.deepEqual([synth.preset, synth.edited, synth.title], ['acid', false, 'Acid, poly']);
+  assert.deepEqual([synth.knobs, synth.mono], [knobs, false], 'no knob turned, nor Mono');
+  synth.setPreset('acid', true);
+  assert.equal(synth.title, 'Acid (changed), poly');
+  synth.setPreset('theremin', true);
+  assert.deepEqual([synth.preset, synth.title], [null, 'Own sound, poly'], 'one it has not: none');
+  synth.setPreset(null, false);
+  assert.equal(synth.title, 'As it comes, poly');
+  synth.setPreset('bass', false);
+  t.mock.timers.tick(400);
+  assert.deepEqual([make({ storage }).synth.preset, make({ storage }).synth.edited], ['bass', false], 'kept a moment later');
+});
+
 test('the octave the keys play in, within its reach', () => {
   const { synth } = make();
   assert.equal(synth.lowest, LOWEST);
@@ -597,6 +617,24 @@ test('the arpeggiator: the keys make its chord, and each step plays its next not
   assert.equal(synth._voices.find((v) => v.ampEnv.t0 === 5)?.note, 65);
   assert.equal(synth.arpRun(5.05, 5.17, 0.125), 1, 'the next a step later');
   assert.ok(synth._voices.some((v) => v.ampEnv.t0 === 5.125));
+  // At random on the room's clock: each step's note from its number and the run's seed (arp.js next),
+  // whatever the synth's own dice.
+  const notes = (seed, roll) => {
+    const other = new Synth(new Sound({ Context: FakeContext, storage: null }), { storage: null, random: () => roll });
+    other.setArp('random');
+    for (const n of [60, 63, 67, 70]) other.noteOn(n);
+    other.arp.seed = seed;
+    other.sound.ctx.currentTime = 1;
+    return Array.from({ length: 24 }, (_, k) => {
+      const at = 1 + k * 0.125;
+      assert.equal(other.arpStep(at, 0.125, k), true);
+      return other._voices.find((v) => v.ampEnv.t0 === at)?.note;
+    });
+  };
+  const run = notes(99, 0.1);
+  assert.equal(new Set(run).size, 4, `${run}`);
+  assert.deepEqual(notes(99, 0.9), run, 'the same run, the same notes');
+  assert.notDeepEqual(notes(100, 0.1), run, 'another run, others');
 });
 
 test('the arpeggiator: HOLD keeps the chord and taps come into it or leave; another way plays on; on or off lets every note go', () => {

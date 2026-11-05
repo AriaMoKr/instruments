@@ -1,12 +1,12 @@
 // The room's clock (clock.js): a pulse a 16th note at the tempo, and which pulses each output
 // sends; the pulses handed out ahead of the audio clock, in order and each once, never further
 // ahead than the lookahead, however the frames come; stopping and starting again; the tempo changed
-// while running; the pulses missed in a stall skipped but counted; and the tempo kept for the next
-// visit.
+// while running; the pulses missed in a stall skipped but counted; the tempo kept for the next
+// visit; and in a band, its dice, standing by and following the band's beat.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CLOCK_OUTS, Clock, LATE, LOOKAHEAD, RACK_CLOCK_OUTS, START_LEAD, STEPS_PER_BEAT, TEMPO, clockEvery, clockSends, stepSeconds,
+  CLOCK_OUTS, Clock, LATE, LOOKAHEAD, RACK_CLOCK_OUTS, START_LEAD, STEPS_PER_BEAT, TEMPO, clockEvery, clockSends, dice, newSeed, stepSeconds,
 } from '../public/js/clock.js';
 import { memoryStorage } from './helpers/audio.js';
 
@@ -185,4 +185,57 @@ test('what was kept but is not a tempo is as it comes, one out of range within i
   blocked.setTempo(150);
   blocked.save();
   assert.equal(blocked.tempo, 150);
+});
+
+test('the dice: a number 0…1 from a seed and a count, the same every time and everywhere, spread evenly, neighbours unlike; a seed a whole number', () => {
+  // Wellons' lowbias32, so these in every browser (a page drawing otherwise would play apart).
+  assert.deepEqual([dice(0, 1), dice(1, 0), dice(12345, 678), dice(4294967295, 2147483647)], [0.3921251413412392, 0.5266567736398429, 0.5739043157082051, 0.74217937188223]);
+  assert.equal(dice(12345, 678), dice(12345, 678));
+  // Ten thousand counts from a seed, and a count from ten thousand seeds: within 0…1, a tenth in each tenth.
+  for (const draw of [(k) => dice(99, k), (k) => dice(k, 99)]) {
+    const tenths = new Array(10).fill(0);
+    for (let k = 0; k < 10000; k++) {
+      const v = draw(k);
+      assert.ok(v >= 0 && v < 1, `${v}`);
+      tenths[Math.floor(v * 10)]++;
+    }
+    assert.ok(tenths.every((n) => n > 850 && n < 1150), `${tenths}`);
+  }
+  // A count and the next as far apart as any two (within 0.05 of each other about a tenth of the time).
+  let close = 0;
+  for (let k = 0; k < 2000; k++) if (Math.abs(dice(5, k) - dice(5, k + 1)) < 0.05) close++;
+  assert.ok(close > 120 && close < 280, `${close} of 2000`);
+  assert.deepEqual([newSeed(() => 0), newSeed(() => 0.5), newSeed(() => 0.9999999999)], [0, 2147483648, 4294967295]);
+});
+
+test("in a band: a new seed at each start; standing by on the band's, running with nothing to hand out until placed on its beat; then on from there at the tempo, placed again and again", () => {
+  const rolls = [0.25, 0.5, 0.75];
+  let r = 0;
+  const clock = new Clock({ storage: memoryStorage({ clock: JSON.stringify({ tempo: 120 }) }), random: () => rolls[r++] });
+  assert.equal(clock.seed, 2 ** 30, 'one to begin with');
+  clock.start(1);
+  assert.equal(clock.seed, 2 ** 31, 'a new one at each start');
+  assert.deepEqual([clock.nextPulse, clock.nextAt], [0, 1 + START_LEAD]);
+  pulses(clock, 1);
+  assert.deepEqual([clock.nextPulse, clock.nextAt], [1, 1.175]);
+  // Another started the band's clock: this one stands by on its run's seed.
+  clock.standBy(-1);
+  assert.deepEqual([clock.running, clock.seed, clock.nextPulse], [true, 4294967295, 1]);
+  assert.ok(Number.isNaN(clock.nextAt));
+  assert.deepEqual(pulses(clock, 1.2), [], 'nothing to hand out');
+  assert.deepEqual(pulses(clock, 60), [], 'however long');
+  // Placed: on from pulse 40 at 60.08, a step apart at the tempo.
+  clock.follow(40, 60.08);
+  assert.deepEqual([clock.nextPulse, clock.nextAt], [40, 60.08]);
+  const at = (got) => got.map(([n, time]) => [n, +time.toFixed(6)]);
+  assert.deepEqual(at(pulses(clock, 60)), [[40, 60.08]]);
+  assert.deepEqual(at(pulses(clock, 60.1)), [[41, 60.205]]);
+  // Placed again a little later (the clocks under it drifting apart): on from there.
+  clock.follow(42, 60.331);
+  assert.deepEqual(at(pulses(clock, 60.25)), [[42, 60.331]]);
+  for (const [n, time] of [[-1, 61], [1.5, 61], [NaN, 61], [2 ** 53, 61], [43, NaN], [43, Infinity]]) clock.follow(n, time);
+  assert.deepEqual([clock.nextPulse, +clock.nextAt.toFixed(6)], [43, 60.456], 'nonsense ignored');
+  assert.equal(clock.seed, 4294967295, 'the band\'s run still');
+  clock.start(70);
+  assert.equal(clock.seed, 0.75 * 2 ** 32, 'a run of its own: its own seed');
 });

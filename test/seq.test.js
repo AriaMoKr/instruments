@@ -1,7 +1,7 @@
 // The rack's sequencer (seq.js): the line it comes with, what a step plays (its note, how hard,
-// whether it slides on), steps played or rested, accented and slid, their notes and the line's
-// octave set, cleared and reset, and the line kept for the next visit (what was kept but isn't a
-// line's, as it comes).
+// whether it slides on), steps played or rested, accented and slid, or set all at once, their notes
+// and the line's octave set, cleared and reset, and the line kept for the next visit (what was kept
+// but isn't a line's, as it comes).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_LINE, SEQ_GATE, SEQ_LOWEST, SEQ_OCTAVES, SEQ_RANGE, SEQ_VELOCITY, Seq } from '../public/js/seq.js';
@@ -70,6 +70,24 @@ test('steps played or rested, accented and slid, each toggled; their notes set w
   }
   assert.deepEqual(written(seq), before);
   assert.equal(seq.steps.length, STEPS);
+});
+
+test("a step set all at once, as another's in a shared session: played, its note whole within reach, accented, slid; whether it changed; kept a moment later", (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const storage = memoryStorage();
+  const seq = new Seq({ storage });
+  const step3 = seq.steps[3];
+  assert.equal(seq.setStep(3, true, 14, true, true), true);
+  assert.deepEqual(seq.steps[3], { on: true, note: 14, accent: true, slide: true });
+  assert.equal(seq.steps[3], step3, 'the same object, changed');
+  assert.equal(seq.setStep(3, true, 14.2, true, true), false, 'as it was: 14, the nearest');
+  assert.equal(seq.setStep(3, false, 30, false, false), true);
+  assert.deepEqual(seq.steps[3], { on: false, note: SEQ_RANGE, accent: false, slide: false });
+  const before = written(seq);
+  for (const [s, note] of [[-1, 3], [STEPS, 3], [1.5, 3], [NaN, 3], [3, NaN], [3, Infinity]]) assert.equal(seq.setStep(s, true, note, true, true), false, `${s}, ${note}`);
+  assert.deepEqual(written(seq), before, 'nonsense ignored');
+  t.mock.timers.tick(400);
+  assert.deepEqual(written(new Seq({ storage })), before);
 });
 
 test('the octave: the line moved by whole octaves, within its reach; every note goes with it', (t) => {

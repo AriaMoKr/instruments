@@ -19,7 +19,8 @@ beside the rack, an electric guitar lies on its desk, to pluck, strum and fret a
 its six strings modelled as they are played, heard through its pickups, four pedals (a wah, an
 overdrive, a chorus and a tremolo) and its amp, with jacks of its own: its sound, its notes for the
 synth to play along, its wah to move and the clock to strum it (below, "The guitar"). More modules
-come in time. The room is the one
+come in time. In a shared session everyone in here plays one band, on one beat (below, "One
+band"). The room is the one
 [AriaMoKr/RoomTemplateEmpty](https://github.com/AriaMoKr/RoomTemplateEmpty) makes: a floor, four
 walls, a ceiling with its lamps, a window onto the afternoon sky, and the doorway back to the
 Hallway. It has a rehearsal room's colours, a dark wooden floor and warm clay walls, and is a little
@@ -621,6 +622,32 @@ its address (on a TV the card shows it, to open on a phone or a computer), **Wav
 VR) waves to everyone in it, and the card has your name in it, to change. The doorway back carries
 the session into the Hallway.
 
+### One band
+
+Everyone in here in a session plays one band, as a band in one room does. Every instrument's and
+module's settings are the session's: the drums' knobs and pattern, both delays, the synth's knobs,
+Mono, sound and arpeggiator, the sequencer's line, the LFO, the envelope, the mixer, the filter,
+the reverb, the keyboard's sound, drawbars, switches and knobs, the guitar's knobs, pedals, pickup
+and chord, and every cable. So are the tempo and RUN: start the clock and everyone's starts, on the
+same beat. Anyone changes anything, and a moment later it has changed for everyone; the last change
+wins. What stays yours: the volume and Mute, a MIDI device, and the octave the computer's keys play
+in. Notes played live, a pad struck, a key held, a string plucked, are heard only where they are
+played; what the clock plays (the pattern, the sequencer's line, the arpeggiator, the guitar
+strummed by the clock) everyone hears.
+
+The one who starts a session brings their band into it as it is. Come in after, by the invite link
+or from the Hallway in a session, and you take the session's band in place of yours: a toast says
+so, and while you play it the card says it is everyone's. It is yours from then on: leave the
+session and you keep it as it was. Two who bring in a band at once, each alone before they found
+each other, end up playing the one begun first.
+
+The clocks keep one beat: each page measures how far the others' clocks are from its own (a ping
+at a time, as NTP does, trusting the quickest of the last ten), places the band's pulses on its own
+audio clock as its sound comes out, and nudges its clock a little at a time to keep on them as the
+clocks drift. What the clock plays at random (the LFO's random shape, the arpeggiator's random
+order) is drawn from its run and the pulse's number, so it is the same for everyone. As browsers
+ask, the sound starts once you press something: come in to a band playing and a toast says so.
+
 ## On the walls
 
 What hangs on a room's walls is in its config, `pieces`: none in this room so far. Each is a framed
@@ -735,7 +762,7 @@ You need Node.js 22 or newer.
 ```bash
 npm install       # three.js, common, the shared-session layer, Trystero and IWER, copied into public/vendor/ by common's tools/vendor.mjs from vendor.json
 npm start         # http://localhost:8100/
-npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, its LFO, its envelope, its mixer, its filter and its reverb, where it stands and its keys), the keyboard (its organ and its electric piano, its drawbars and knobs, its jacks, where it stands and what a ray meets on it), the guitar (its strings, its chords, its pickups and its amp, where it stands and what a ray meets on it), MIDI, the card, and tsc's check of public/js/
+npm test          # node --test: the config, where you may walk, the way back's address, the vendor list, the page, the drums (their sound, the clock, the pattern, the cables and the delay, the board), the synth (its voices, its knobs and presets, its patch bay and arpeggiator, where it stands and its keys), the rack (its sequencer, its LFO, its envelope, its mixer, its filter and its reverb, where it stands and its keys), the keyboard (its organ and its electric piano, its drawbars and knobs, its jacks, where it stands and what a ray meets on it), the guitar (its strings, its chords, its pickups and its amp, where it stands and what a ray meets on it), MIDI, the card, one band in a shared session (its settings and its beat), and tsc's check of public/js/
 npm run types     # tsc's checks alone
 npm run preview   # public/hallway-preview.jpg and public/social.jpg, in headless Chrome
 ```
@@ -754,7 +781,7 @@ library leaves out is in `types/globals.d.ts`. `strict` comes a file at a time:
 `room.js`, `controls.js`, `sound.js`, `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`,
 `board.js`, `midi.js`, `synth.js`, `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js`, `lfo.js`,
 `keys.js`, `keysboard.js`, `filter.js`, `reverb.js`, `mixer.js`, `envelope.js`, `strings.js`,
-`strings-worklet.js`, `guitar.js` and `guitarboard.js`), and
+`strings-worklet.js`, `guitar.js`, `guitarboard.js`, `beat.js`, `band.js` and `bandparts.js`), and
 `npm test` runs it too. A file joins its `include` when a change makes it pass. `tools/` and
 `test/` come later.
 

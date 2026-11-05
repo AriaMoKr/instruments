@@ -1,7 +1,8 @@
 // The rack's LFO (lfo.js): its knobs (a rate in note values, a shape, a depth) and in words; its
 // shapes over a cycle; its wave written ahead a step at a time with the clock's pulses, in time with
 // them (a cycle starting again with the clock, a rate turned to falling on the beat at once, a jump
-// set as one), and on by itself while the clock is stopped; what it reads at a time, for its light;
+// set as one, random alike for one band), and on by itself while the clock is stopped; what it reads
+// at a time, for its light;
 // its output once the sound has woken, its depth eased; and the knobs kept for the next visit. On
 // test/helpers/audio.js's fake Web Audio.
 import { test } from 'node:test';
@@ -141,6 +142,21 @@ test('a jump in the wave set as one, at a step\'s edge or within it; random a ne
   for (let n = 0; n < 8; n++) random.lfo.step(n, n * 0.1, 0.1);
   assert.deepEqual(random.offset.events.filter((e) => e[0] === 'set').map(read), [['set', 0.5, 0], ['set', -0.8, 0.4]]);
   assert.ok(near(random.lfo.valueAt(0.25), 0.5) && near(random.lfo.valueAt(0.65), -0.8));
+});
+
+test("random on the clock's run: each cycle's value drawn from its number and the run's seed, so one band's LFOs move alike, whatever their own dice", () => {
+  const sets = (seed, rolls) => {
+    const m = make({ knobs: { shape: 1, rate: 4 / 6 }, rolls });
+    m.lfo.seed = seed;
+    for (let n = 0; n < 32; n++) m.lfo.step(n, n * 0.1, 0.1);
+    return m.offset.events.filter((e) => e[0] === 'set').map(read);
+  };
+  const a = sets(4242, [0.75, 0.1]);
+  assert.deepEqual(a.map((e) => e[2]), [0, 0.4, 0.8, 1.2, 1.6, 2, 2.4, 2.8], 'a value a cycle, held through it');
+  assert.ok(a.every((e) => e[1] >= -1 && e[1] <= 1) && new Set(a.map((e) => e[1])).size === 8, `${a.map((e) => e[1])}`);
+  assert.deepEqual(sets(4242, [0.2]), a, 'alike');
+  assert.notDeepEqual(sets(4243, [0.75, 0.1]), a, 'another run, other values');
+  assert.deepEqual(sets(NaN, [0.75, 0.1]).slice(0, 2).map((e) => e[1]), [0.5, -0.8], 'no run: its own dice');
 });
 
 test('while the clock is stopped: on by itself at the tempo, set ahead from where it got to, or from now if that has passed; the clock started, set afresh from its first step', () => {

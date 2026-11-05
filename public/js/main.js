@@ -41,6 +41,9 @@
 // through its pickups and its amp (guitar.js), played as a guitarist plays, a chord fretted, a string
 // plucked or all strummed, a string pressed at a fret, slid and bent, on every device, from a
 // computer's keys and a MIDI keyboard, and in the card.
+// In a shared session everyone here plays one band (band.js, bandparts.js): every instrument's and
+// module's settings, the cables, the pattern, the sequencer's line, the tempo and RUN are the
+// session's, anyone changes them, and the clocks keep one beat (beat.js).
 // Outside's main.js, without its garden and its book.
 import * as THREE from 'three';
 import { ROOM } from './config.js';
@@ -76,6 +79,8 @@ import { GUITAR, layoutGuitar, roomXZ } from './guitarboard.js';
 import { GuitarKit } from './guitarkit.js';
 import { hasMidi, listenMidi, midiGranted } from './midi.js';
 import { APP_ID, noticeText, statusText } from './presence.js';
+import { Band } from './band.js';
+import { bandParts } from './bandparts.js';
 import { setAnisotropy } from './textures.js';
 import { bandView, deskPoints, renderPreview, renderSocial, previewView } from './preview.js';
 import { hallLink, hallwayViews, keptWay, leaveUrl, readVisit, wayBack, withoutVisit } from 'common/door.js';
@@ -307,6 +312,8 @@ let seqSounding = -1;
 function pulse(n, time) {
   let step = -1, pads = 0, seqStep = -1, note = -1;
   const d = stepSeconds(clock.tempo);
+  // What is drawn at random on the pulses, drawn from the run's seed (a band's alike).
+  lfo.seed = synth.arp.seed = clock.seed;
   lfo.step(n, time, d);
   if (drumsEvery && n % drumsEvery === 0) {
     step = stepOf(n / drumsEvery);
@@ -316,7 +323,7 @@ function pulse(n, time) {
       pads |= 1 << i;
     }
   }
-  if (synthEvery && n % synthEvery === 0) synth.arpStep(time, synthEvery * d);
+  if (synthEvery && n % synthEvery === 0) synth.arpStep(time, synthEvery * d, n / synthEvery);
   if (seqEvery && n % seqEvery === 0) {
     seqStep = stepOf(n / seqEvery);
     if (seqPlays || envSeq) {
@@ -350,6 +357,7 @@ function pulse(n, time) {
 function schedule() {
   const ctx = sound.ctx;
   if (!ctx) return;
+  band.beat.follow(clock, ctx); // in a shared session, on the band's beat
   if (clock.running) clock.advance(ctx.currentTime, pulse);
   else lfo.run(ctx.currentTime, ctx.currentTime + LOOKAHEAD, stepSeconds(clock.tempo));
   if (synth.arp.on && !(clock.running && synthEvery)) synth.arpRun(ctx.currentTime, ctx.currentTime + LOOKAHEAD, stepSeconds(clock.tempo));
@@ -411,13 +419,10 @@ setInterval(() => {
   showPulses();
 }, 25);
 
-/** Starts the clock (waking the sound: this is a press), or stops it (the sequencer's note slid on let go, on the synth and the envelope). */
+/** Starts the clock (waking the sound: this is a press), or stops it. */
 function toggleClock() {
-  if (clock.running) {
-    clock.stop();
-    synth.seqEnd();
-    envelope.seqEnd();
-  } else {
+  if (clock.running) stopClock();
+  else {
     const ctx = sound.wake();
     if (!ctx) {
       overlay.toast('This browser makes no sound', 4);
@@ -426,6 +431,16 @@ function toggleClock() {
     clock.start(ctx.currentTime);
     schedule();
   }
+  showRunning();
+}
+/** The clock stopped: the sequencer's note slid on let go, on the synth and the envelope. */
+function stopClock() {
+  clock.stop();
+  synth.seqEnd();
+  envelope.seqEnd();
+}
+/** Whether the clock runs, on RUN's light on the board and the rack, and in the card. */
+function showRunning() {
   kit?.setRunning(clock.running);
   rackKit?.setRunning(clock.running);
   overlay.setRunning(clock.running);
@@ -1221,9 +1236,10 @@ showGuitar();
 showGuitarKnobs();
 showStrings();
 
+// Any press wakes the sound; with a shared band's clock running here and no sound yet, it makes it.
 for (const type of ['pointerup', 'touchend', 'keydown']) {
   addEventListener(type, () => {
-    if (sound.ctx) sound.wake();
+    if (sound.ctx || clock.running) sound.wake();
   }, { capture: true, passive: true });
 }
 // Put away: what each was to keep a moment after its last change kept now (the page may not come
@@ -1242,6 +1258,80 @@ addEventListener('pagehide', putAway);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) putAway();
 });
+
+// ── The band, in a shared session ────────────────────────────────────────────
+// Everyone in this room in a shared session plays one band (band.js): every instrument's and
+// module's settings, the cables, the pads' steps and the sequencer's line (bandparts.js), the tempo
+// and RUN, the clocks on one beat (beat.js). The first here brings their band into the session (at
+// once, if they began it); whoever comes after takes the session's in place of their own, said in a
+// toast, and keeps it when they leave. Anyone changes anything, and the last change is everyone's:
+// shown here as it comes, the clock started or stopped by another said too. What one plays is one's
+// own still.
+
+/** A part of the band set as another set it (bandparts.js), shown on it and in the card. */
+function shownBand(part) {
+  if (part === 'drums') select(drums.selected);
+  else if (part === 'pattern') showSteps();
+  else if (part === 'delay') showDelay();
+  else if (part === 'synth') {
+    showSynthKnobs();
+    showSynth();
+    showNotes();
+  } else if (part === 'seq') {
+    syncNoteTurns();
+    showSeq();
+  } else if (part === 'rackdelay') showRackDelay();
+  else if (part === 'lfo') showLfo();
+  else if (part === 'env') showEnvelope();
+  else if (part === 'mixer') showMixer();
+  else if (part === 'filter') showFilter();
+  else if (part === 'reverb') showReverb();
+  else if (part === 'keys') {
+    Object.assign(pulls, keys.knobs);
+    showKeysKnobs();
+    showKeys();
+  } else if (part === 'guitar') {
+    showGuitarKnobs();
+    showGuitar();
+  }
+  // The patch shows itself as it changes (patch.onChange).
+}
+/**
+ * The band's clock as another set it, or as the band has it on arriving: its tempo; running,
+ * standing by until placed on its beat (a run of its own let go); or stopped. Started or stopped by
+ * another, said.
+ */
+function bandClock(v, was, who, initial) {
+  setTempo(v.bpm);
+  if (v.on && (!clock.running || clock.seed !== v.seed)) {
+    if (clock.running) {
+      synth.seqEnd();
+      envelope.seqEnd();
+    }
+    clock.standBy(v.seed);
+  } else if (!v.on && clock.running) stopClock();
+  showRunning();
+  if (!initial && (was?.on ?? false) !== v.on) overlay.toast(`${who} ${v.on ? 'started' : 'stopped'} the clock`, 3);
+}
+/** The band in words, in the card's part on the shared session. */
+function showBand() {
+  overlay.setBand(band.state === 'waiting' ? 'Finding the session’s band…' : band.state === 'playing' ? 'One band: its knobs, steps, cables and clock are everyone’s' : '');
+}
+const { settings: bandSettings, parts: bandPartsList } = bandParts({ drums, pattern, delay, synth, seq, rackDelay, lfo, envelope, mixer, filter, reverb, keys, guitar, patch }, shownBand);
+const band = new Band({
+  prefix: `${ROOM.id}:`,
+  settings: bandSettings,
+  parts: bandPartsList,
+  clock,
+  onClock: bandClock,
+  onAdopt: (changed, joining) => {
+    if (!changed) return;
+    const hear = clock.running && !sound.ctx ? ' Press anything to hear it.' : '';
+    overlay.toast(joining ? `Now playing the session’s band: its settings are yours from now on.${hear}` : `Two bands began at once: now playing the one begun first.${hear}`, 6);
+  },
+  onState: showBand,
+});
+setInterval(() => band.tick(), 25);
 
 // From a MIDI device (midi.js): asked for with the card's button, or at once when the visitor has
 // let this site use MIDI before. Its notes on channel 10 are the General MIDI drums' (drums.js
@@ -1981,12 +2071,16 @@ function showPanel() {
   overlay.setSession(!!together?.room);
 }
 showPanel();
+/** This page began the session it is joining (a new room): its band is the session's at once. */
+let began = false;
 /** Starts a shared session, or leaves the one this is in. */
 function toggleSession() {
   if (together.room) {
+    began = false;
     together.stop();
     overlay.toast('You left the shared session');
   } else {
+    began = true;
     together.start();
     overlay.toast(tv ? 'Shared session started: the card (Menu) shows the link that brings others in here' : 'Shared session started: Copy invite link to bring others in here', 5);
   }
@@ -2034,7 +2128,14 @@ controls.onTeleport = (move) => {
 // This page is ROOM.id in the session; the others in here are drawn by the layer's avatars.js.
 
 together = createTogether({ appId: APP_ID, page: ROOM.id, camera, renderer, hands: () => controls.hands, avatars: { parent: scene } });
+// The band: played in each session joined (those here share its clock's beat), this page's at once
+// in one it began, and kept as it is on leaving it.
+together.on('session', (session) => {
+  band.attach(session, (p) => p.page === ROOM.id, { first: began });
+  began = false;
+});
 together.on('change', () => {
+  if (band.state !== 'off' && !together.session) band.detach();
   showPanel();
   overlay.setInvite(together.active ? together.inviteLink : '');
   overlay.setTogether(together.active, together.active ? statusText(together.company(), together.condition()) : '', together.self);
@@ -2184,7 +2285,7 @@ window.__room = {
   envelope, setEnvelopeKnob, mixer, setMixerKnob, filter, setFilterKnob, reverb, setReverbKnob, route,
   keys, keysDesk, keysKit, keysOn, keysOff, tapKeys, chooseKeys, setKeysKnob, setKeysSwitch, setSustain, setKeysOctave, resetKeys,
   guitar, guitarDesk, guitarKit, pluckString, strum, pressFret, tapFret, slideFret, bendString, releaseString, muteStrings, chooseChord, pressChord, pickChord,
-  setGuitarKnob, setPickup, setPedal, pressPedal, resetGuitar,
+  setGuitarKnob, setPickup, setPedal, pressPedal, resetGuitar, band,
   /** On a TV at the synth, the key the arrows chose. */
   get chosenKey() {
     return chosenKey;

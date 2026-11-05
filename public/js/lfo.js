@@ -9,8 +9,13 @@
 // while the clock is stopped it keeps on at the tempo by itself (run). Its wave is written ahead as
 // the corners of its shape, the param ramping straight between them (a sine's sixteen to a cycle,
 // near enough), into a ConstantSource's offset, out through its depth. The knobs are kept for the
-// next visit (localStorage).
+// next visit (localStorage). Random's value for a cycle is drawn from the clock's run (its seed)
+// and the cycle's number (clock.js dice), so that everyone playing one band hears the same.
+import { dice } from './clock.js';
 import { pageStorage } from './sound.js';
+
+/** What random's draws are told apart from the arpeggiator's by, from the same seed. */
+const SALT = 0x6c666f;
 
 /** @typedef {import('./sound.js').Sound} Sound */
 /** @typedef {import('./sound.js').Store} Store */
@@ -133,6 +138,11 @@ export class Lfo {
     this._key = key;
     /** @private */
     this._random = random;
+    /**
+     * The clock's run's seed (main.js sets it with each pulse): random's value for a cycle drawn
+     * from it and the cycle's number (clock.js dice); NaN, from `random` instead.
+     */
+    this.seed = NaN;
     /** @private @type {ReturnType<typeof setTimeout> | undefined} */
     this._saving = undefined;
     /** The step after the last one written, counting as the clock does (from its start), or on by itself. @private */
@@ -275,7 +285,7 @@ export class Lfo {
     }
     if (cycle !== this._cycle) {
       this._cycle = cycle;
-      this._held = this._random() * 2 - 1;
+      this._held = (Number.isFinite(this.seed) ? dice(this.seed + SALT, cycle) : this._random()) * 2 - 1;
     }
     const k = shape === 'random' ? this._held : 1, p0 = i / N, p1 = (i + 1) / N;
     const start = k * shapeAt(shape, p0);

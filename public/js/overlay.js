@@ -1003,8 +1003,10 @@ export class Overlay {
     this.sound = el('div', { class: 'part sound', id: 'sound', hidden: '' }, volume.row, el('label', { class: 'check' }, this.mute, 'Mute'), this.midiBox);
     /** @private where the visitor plays (controls.js at): 'board', 'synth', 'rack', 'keys', 'guitar', or null @type {'board' | 'synth' | 'rack' | 'keys' | 'guitar' | null} */
     this._at = null;
-    // In a shared session: how it's going, the visitor's name in it, and on a TV the invite link.
+    // In a shared session: how it's going, the band played in it, the visitor's name in it, and on
+    // a TV the invite link.
     this.status = el('p', { class: 'together-status' });
+    this.bandLine = el('p', { class: 'together-band', hidden: '' });
     this.myName = el('input', { class: 'my-name', type: 'text', maxlength: '24', autocomplete: 'off', spellcheck: 'false' });
     this.myName.addEventListener('change', () => {
       this.myName.value = this.onName(this.myName.value);
@@ -1015,6 +1017,7 @@ export class Overlay {
     this.inviteText = tv ? el('p', { class: 'invite-text' }) : null;
     this.together = el('div', { class: 'together', hidden: '' },
       this.status,
+      this.bandLine,
       el('label', { class: 'me' }, el('span', {}, 'Your name'), this.myName),
       ...(this.inviteText ? [this.inviteText] : []));
     this.card = el('nav', { class: 'card', 'aria-label': room.title },
@@ -1512,6 +1515,13 @@ export class Overlay {
     if (this.status.textContent !== text) this.status.textContent = text;
     // Not while it is being typed in.
     if (self && document.activeElement !== this.myName && this.myName.value !== self.name) this.myName.value = self.name;
+    this._placeHint();
+  }
+
+  /** The shared session's band (band.js) in words: being found, or played; '' out of a session. */
+  setBand(text) {
+    if (this.bandLine.textContent !== text) this.bandLine.textContent = text;
+    this.bandLine.hidden = !text;
     this._placeHint();
   }
 

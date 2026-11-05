@@ -34,8 +34,10 @@ slid and bent; and its jacks (its sound out into the delays, the mixer, the filt
 NOTES out into the synth's NOTES in or the envelope's, a WAH in moved by a modulation, a CLOCK in
 strumming it). The plan the user agreed to ("patch the whole band"): the synth semi-modular, its
 rack (more modules to come), then the keyboard and the electric guitar, all patchable; done to the
-guitar's pedals and jacks (6b). Add an instrument, or a module, only once the user has agreed to
-it. What makes it this room is
+guitar's pedals and jacks (6b). Then "play together" (agreed 2026-11-04): in a shared session
+everyone in the room plays one band, its settings, cables and clock the session's, the clocks on
+one beat (7a, done); hearing each other's notes played live (7b) waits for the user's go-ahead. Add
+an instrument, or a module, only once the user has agreed to it. What makes it this room is
 `config.js` (id `instruments`, sign Band Room, 7 × 8 × 3.2 m, a dark wooden floor and clay walls,
 the window in the left wall, port 8100, glow `#5cc8a8`), and `index.html`, `package.json`,
 `.claude/launch.json` and the pictures to match. Like the template it follows the Hallway
@@ -178,14 +180,19 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   into the drums' channel, `out(i)`, its jack, `hit(i, v)` now and `play(i, v, when)` set for a
   time), `clock.js` (`Clock`: the tempo, `instruments.clock`, never running on load; `advance(now,
   onPulse)` hands out pulses `LOOKAHEAD` ahead by the audio clock, counting but skipping those
-  `LATE` behind; `CLOCK_OUTS` ×1, ÷2, ÷4, the rack's `RACK_CLOCK_OUTS` likewise, `clockEvery(id)`),
+  `LATE` behind; `CLOCK_OUTS` ×1, ÷2, ÷4, the rack's `RACK_CLOCK_OUTS` likewise, `clockEvery(id)`;
+  in a band, `seed` (a run's, new at each `start`, `newSeed`), `nextPulse` and `nextAt`,
+  `standBy(seed)` (running on another's run, `nextAt` NaN till placed) and `follow(n, at)` (beat.js
+  places it); `dice(seed, k)`, a number 0…1 the same everywhere, lowbias32),
   `pattern.js` (`Pattern`: 16 steps per pad, `steps[i]` arrays that stay the same,
   `DEFAULT_PATTERN`, `stepOf`, kept as x/. text, `instruments.pattern`), `patch.js` (`JACKS`, the
   board's, the synth's, the rack's, the keyboard's, then the guitar's: id, module, name, label, dir, kind clock,
   audio, mod or notes; `Patch`: an input takes one cable, `plug`, `unplug`, `canPlug`, `source`,
   `cables()`, `onChange(to, from, was)`, `instruments.patch`; `loops(from, to)`, a sound cable that
   would bring a sound back round into its module (the filter's out into its in, or into the mixer
-  going into it), which `canPlug` and `plug` refuse and a kept patch leaves out; `DEFAULT_PATCH`
+  going into it), which `canPlug` and `plug` refuse and a kept patch leaves out; `adopt(desired)`
+  (a band's patch at once: each input's as asked, else its own, in the inputs' order, one that
+  can't join or would loop with those before it empty, so all given the same agree); `DEFAULT_PATCH`
   the clock's ×1 into the drums and into the synth's arpeggiator, the rack's ×1 into the sequencer,
   and its notes into the synth; nothing into the rack's delay, `rackdelay.in`, out of its LFO,
   `lfo.out`, into or out of its envelope, `env.clock`, `env.notes` and `env.out`, or its mixer,
@@ -228,7 +235,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   spread by DETUNE, legato, GLIDE); `noteOn(note, velocity, at)` (whether heard; `at` a time on the
   audio clock, now if sooner: the guitar's notes, set ahead), `noteOff(note, at)` (in mono, only a
   key held there), `tap`, `allOff`, `setSustain`, `setBend` (±200 cents), `setMod` (vibrato),
-  `setKnob`, `setMono`, `setOctave`, `choose(preset)`, `reset`, `down` and `onNotes`, `held` (the
+  `setKnob`, `setMono`, `setOctave`, `choose(preset)`, `setPreset(id, edited)` (what a band's sound
+  is called, its knobs set as theirs), `reset`, `down` and `onNotes`, `held` (the
   keys down and the arpeggiator's chord), `lowest`, `name` and `title`; its patch bay: `output`
   (its sound, for the delays, once `onBuilt`), `modOutput('lfo' | 'env')` (for an input outside it,
   the keyboard's ROTARY: its LFO, or `envs`, the env of the voice started last, each voice's
@@ -238,14 +246,17 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   null) into each voice's `inputs`, `MOD_CENTS` deep, the vca
   at `AMP_MOD` with a cable in AMP (each voice's `env`, a ConstantSource its twin Envelope `envOut`
   drives as the filter's); and its arpeggiator, `arp` (arp.js): `setArp(mode | null)`, `setHold`,
-  `setRange(n?)`, `arpStep(t, length)` (a step of the room's clock) and `arpRun(now, until, step)`
+  `setRange(n?)`, `arpStep(t, length, count)` (a step of the room's clock, its number `count`) and
+  `arpRun(now, until, step)`
   (its own), `onArp` (a chord begun: main.js's `schedule`); its notes in, `seqStep(note, velocity,
   t, until)` (a step of the sequencer's set for its time, a rest -1; `until` Infinity slides on into
   the next, `_tie`, gliding at least `SLIDE`; in poly the voice let go longest ago) and
   `seqEnd()`; kept in `instruments.synth`), `arp.js`
   (pure, strict: `ARP_MODES` up, down, updown, random, `ARP_RANGES`, `ARP_GATE`, `ARP_LATE`;
-  `Arp`: `mode`, `hold`, `range`, `press`/`release` (keys), `toggle` (a tap under HOLD), `next`,
-  `run` (its own clock), `played` (its own clock's next after a step on any clock); `arpWords`),
+  `Arp`: `mode`, `hold`, `range`, `press`/`release` (keys), `toggle` (a tap under HOLD),
+  `next(count)` (at random on the room's clock drawn from `dice(seed, count)`, `seed` main.js's,
+  the clock's run's; else its own dice), `run` (its own clock), `played` (its own clock's next
+  after a step on any clock); `arpWords`),
   `synthboard.js` (pure: `SYNTH`'s measures,
   `layoutSynth(L, board)` right of the board, a Desk as board.js's functions take: its keys
   (`whites`, `blacks`, `bed`), dials in two rows of sections, `deck`, the panel's display, buttons
@@ -263,7 +274,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
 - The rack: `seq.js` (pure, strict: `SEQ_RANGE` 24 semitones up from the line's lowest,
   `SEQ_LOWEST` 36 moved by `SEQ_OCTAVES` −1…2, `SEQ_GATE`, `SEQ_VELOCITY` normal and accent,
   `DEFAULT_LINE` in C minor; `Seq`: `steps` (each `on`, `note`, `accent`, `slide`; objects that stay
-  the same), `toggle`, `toggleAccent`, `toggleSlide`, `setNote`, `setOctave`, `octave`, `lowest`,
+  the same), `toggle`, `toggleAccent`, `toggleSlide`, `setNote`, `setStep(s, on, note, accent,
+  slide)` (a band's, at once), `setOctave`, `octave`, `lowest`,
   `play(s)` (note, velocity, slide; null a rest), `noteOf`, `clear`, `reset`, kept as x/. text and
   notes, `instruments.seq`), `lfo.js` (strict: `LFO_KNOBS` rate, shape, depth; `LFO_RATES` 4 bars
   to a 16th in steps of the clock, `LFO_SHAPES` sine, triangle, saw, square, random, `knobPlace`,
@@ -271,7 +283,8 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   or `before` it); `Lfo`: `output()` (a ConstantSource through its depth, made once there is sound),
   `step(n, t, d)` (the clock's pulse n: that step of the wave written ahead as lines between its
   corners, a jump as a set; a cycle `steps` long counted from the clock's start, so a rate turned to
-  falls on the beat; a step not where the last ended taken back from there), `run(now, until, d)`
+  falls on the beat; a step not where the last ended taken back from there; random's value for a
+  cycle from `dice(seed, cycle)`, `seed` the clock's run's, else its own dice), `run(now, until, d)`
   (on by itself while the clock is stopped), `valueAt(t)` (from a ring of the latest steps, for its
   light), `setKnob`, `reset`, `instruments.lfo`), `envelope.js` (strict: `ENVELOPE_KNOBS` attack,
   decay, sustain, release, depth, `DEFAULT_ENVELOPE`, `ENV_GATE`, `envelopeText` (synth.js's
@@ -439,12 +452,39 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   tip over the body a pick, plucking each string it crosses as fast as it goes (`onPluck`), on the
   neck a finger (`onPress`, `onSlide`, `onBend`, `onRelease` as it lifts), down on the bridge
   `onMute`, on a chord button `onChord`; `endXR`; not in strict).
+- The band, in a shared session: `beat.js` (pure, strict: the clock's value, `ClockValue` `{ on,
+  bpm, n, at, of, seed }`, pulse n at `at` ms on the time line of `of`, the member who wrote it;
+  `readClock`, `sameClock`, `stepMs`, `pulseAt`, `pulseAfter`; `Offsets`, the last `SAMPLES` pings'
+  offsets, the quickest's trusted; `Beat({ origin, clock })`: `now()` (ms, `performance.timeOrigin`
+  + `performance.now()`), `attach(send, self)`, `peer(p, here)`, `gone(p)`, `hear(data, p)` (pings
+  as NTP's over the session's `instruments:time` channel, `PING_MS` apart, a `BURST` at first),
+  `offsetOf(memberId)`, `receive(v)`, `tick()` (pings due; the clock written again when its writer
+  has gone, the next in line `REANCHOR_WAIT` after the one before, those measured first),
+  `differs(clock)`, `write(clock)`, `follow(clock, ctx)` (the band's pulses on the audio clock as
+  heard, `heardAt`/`audioAt` from `getOutputTimestamp` else the latency, eased (`EASE`, `REMAP`);
+  the clock placed on them, nudged `NUDGE` a call within `JUMP`, else placed again; untimed
+  `MEASURE_WAIT` in, an offset of 0)), `band.js` (strict: `Band({ prefix, settings, parts, clock,
+  beat, onClock, onAdopt, onState })`: `attach(session, here, { first })`, `detach()`, `tick()`
+  (main.js's 25 ms timer), `state` 'off', 'waiting' or 'playing', `id`; each setting the session's
+  value `instruments:<band>:<name>`, its mark `…:band` (`{ since }`) written after them, the band
+  played the one begun first (`_first`); a page's own brought in (`_seed`) at once when it began
+  the session (`first`), else `SEED_AFTER` after another said who they are with none there,
+  `SEED_ALONE` alone, `SEED_LATEST` at the latest; one there taken (`_adopt`, `onAdopt(changed,
+  joining)`); what changed here shared every `POLL_MS` (`_poll`, each setting read against what was
+  last shared), what changed elsewhere set here (`_reconcile`, each part's `done` once); the clock's
+  value its own, set here through `onClock(v, was, who, initial)`), and `bandparts.js` (strict:
+  `bandParts(instruments, shown)`, the settings in parts, each a plain value read and written: the
+  drums' knobs, the pattern a pad a 16-step mask, the delay, the synth (its preset's name set at the
+  part's end, `setPreset`), the sequencer's steps (`stepCode`) and octave, the rack's delay, LFO,
+  envelope, mixer, filter and reverb, the keyboard, the guitar, and the patch (`adopt` at the end);
+  `shown(part)` main.js's).
 - `midi.js` (Web MIDI: `readMidi`, a message from its bytes (on, off, sustain, mod, bend, alloff,
   with its channel), `listenMidi`, asked for only from the card's button, at once when `granted`).
 - `panel.js`: the control panel on the wall (outside's), redrawn only on a change. `overlay.js`: the
   card (the page's `<nav>`: the title, ← Hallway, the description, On the walls (a link to where
   each piece leads, `pieceHref`, else a button, `onPiece`), Start / Leave shared session, in
-  a session its status and the visitor's name (`onName`), and Settings with the panel's choices as
+  a session its status, the band played (`setBand`) and the visitor's name (`onName`), and
+  Settings with the panel's choices as
   radio buttons and checkboxes; Drums: Clock (Start or Stop, the tempo), the pads as buttons,
   Steps (the selected pad's sixteen as `aria-pressed` toggles, the step playing marked, Clear, Beat
   as it comes), its knobs as sliders, As it comes, Delay, Cables (a `<select>` for each of the
@@ -582,7 +622,12 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   MIDI (channel 10 the drums', the others the synth's, or the drums' while
   `playingAt` the board, the keyboard's while at the keys (`midiKeys`: a note's off goes where its
   on went) or the guitar's while at it (`midiGuitar`); the sustain pedal where it went down
-  (`pedalOnKeys`); mod and bend the synth's; all off all), and the frame loop.
+  (`pedalOnKeys`); mod and bend the synth's; all off all), the band (`band`, a `Band` of
+  `bandParts`' settings and parts; `shownBand(part)`; `bandClock` (the band's clock set here: the
+  tempo, `clock.standBy` on a run begun elsewhere, `stopClock`, a toast saying who); `showBand`, the
+  card's line; attached on together's 'session', `first` when this page began it (`began`, set by
+  `toggleSession`), and let be when the session ends; `band.beat.follow` in `schedule`; `lfo.seed`
+  and `synth.arp.seed` the clock's run's at each pulse), and the frame loop.
 - `style.css`: the page over the view (a cable's choice under its input's name where the longest
   wouldn't fit beside it; the sequencer's rows, `.seq-step`; the guitar's chords, `.chords`, and
   its strings' frets, `.fretboard` scrolling across (positioned, so the frets' `.sr-only` notes stay
@@ -616,7 +661,7 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `drums.js`, `clock.js`, `pattern.js`, `patch.js`, `delay.js`, `board.js`, `midi.js`, `synth.js`,
   `synthboard.js`, `arp.js`, `seq.js`, `rackboard.js`, `lfo.js`, `keys.js`, `keysboard.js`,
   `filter.js`, `reverb.js`, `mixer.js`, `envelope.js`, `strings.js`, `strings-worklet.js`,
-  `guitar.js` and `guitarboard.js` so far, and
+  `guitar.js`, `guitarboard.js`, `beat.js`, `band.js` and `bandparts.js` so far, and
   `test/types.test.js` runs it too. A file joins its `include` when a change makes it pass; what an
   included file imports is checked strictly with it. The rest has a few hundred errors with it,
   mostly untyped parameters and values that may be null (a canvas's 2D context). `tools/` and
@@ -638,7 +683,7 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   `tapFret(s, fret, velocity)`, `slideFret(s, fret)`, `bendString(s, semitones)`,
   `releaseString(s)`, `muteStrings()`, `chooseChord(id)`, `pressChord(i)`, `pickChord(by)`,
   `setGuitarKnob(id, value)`, `setPickup(id)`, `setPedal(id, on)`, `pressPedal(i)`,
-  `resetGuitar()`, `chosenKey`, `chosenStep`,
+  `resetGuitar()`, band, `chosenKey`, `chosenStep`,
   `chosenNote`, `carried`, access,
   `preview()`, `social()`, `tick(dt, n)`, `ready`,
   true once the pieces' pictures have loaded or failed). Tests fake Web Audio with
@@ -646,7 +691,11 @@ Node 22 or newer; CI runs Node 24 (common's Pages workflow). It runs under MSYS2
   and `disconnect(node)` refuse what a browser's would, and whose `audioWorklet` loads a module
   only when the test says, `settle()` or `refuse()`; `FakeWorkletNode`, made only once one is,
   keeping what its port is sent) and the page
-  with `test/helpers/dom.js`. A hidden browser pane gets no animation frames: drive it with
+  with `test/helpers/dom.js`; a shared session with test/band.test.js's `FakeSession` (on
+  layersharedsession's shared.js), and the beat with test/beat.test.js's pages, their clocks
+  skewed, drifting and jittered. Two pages in one real session: two `launchChrome`s (each its own
+  profile), the second opening the first's invite link, its sound woken (`sound.wake()`) for its
+  clock to be placed. A hidden browser pane gets no animation frames: drive it with
   `tick()` (the clock's timer runs without them). A pane loaded while hidden may have a 0 × 0 view
   (a NaN camera): set its size, then load it. XR frames under `?xr=emulate` need frames too;
   headless Chrome (below) has them, but keeps its AudioContext suspended (IWER's select is no

@@ -7,7 +7,10 @@
 // A pulse that fell too far behind to be heard in time (the page stalled, or was put away) is
 // skipped rather than played late, but counted, so that what follows the count stays in step. Its
 // outputs are jacks for the patch's cables (patch.js): one sends every pulse, one every 2nd and one
-// every 4th, on the drum board and again in the rack beside the synth.
+// every 4th, on the drum board and again in the rack beside the synth. In a shared session it is
+// the band's (band.js): started elsewhere, it stands by on that run until placed on the band's
+// beat, then follows it (beat.js), and what is drawn at random on its pulses is drawn from its
+// run's seed and the pulse's number (dice), alike for everyone.
 import { pageStorage } from './sound.js';
 
 /** @typedef {import('./sound.js').Store} Store */
@@ -83,27 +86,62 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 /** A tempo as the clock keeps it: whole beats per minute, within TEMPO's range. @param {number} bpm */
 const wholeTempo = (bpm) => clamp(Math.round(bpm), TEMPO.min, TEMPO.max);
 
+/**
+ * A number 0…1 drawn from a seed and a count: the same for the same two, every time and in every
+ * browser (an integer hash, Wellons' lowbias32), so that what is drawn at random on the clock's
+ * pulses (the rack's LFO's random shape, the arpeggiator's random order) is drawn alike by everyone
+ * playing one band, from the run's seed and the pulse's number.
+ * @param {number} seed a whole number, 0…2³²−1
+ * @param {number} k a whole number
+ */
+export function dice(seed, k) {
+  let x = (Math.imul(k | 0, 0x9e3779b9) + (seed | 0)) | 0;
+  x ^= x >>> 16;
+  x = Math.imul(x, 0x21f0aaad);
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x735a2d97);
+  x ^= x >>> 15;
+  return (x >>> 0) / 4294967296;
+}
+
+/** A new run's seed: a whole number 0…2³²−1. @param {() => number} [random] 0…1 */
+export const newSeed = (random = Math.random) => Math.floor(random() * 4294967296) >>> 0;
+
 /** The clock: its tempo, kept for the next visit, and its pulses, handed out ahead of the audio clock. */
 export class Clock {
   /**
-   * @param {{ storage?: Store | null, key?: string }} [o] where the tempo is kept (localStorage)
+   * @param {{ storage?: Store | null, key?: string, random?: () => number }} [o] where the tempo is kept (localStorage), and the dice for a run's seed
    */
-  constructor({ storage = pageStorage(), key = 'clock' } = {}) {
+  constructor({ storage = pageStorage(), key = 'clock', random = Math.random } = {}) {
     /** The tempo, in whole beats per minute (setTempo). */
     this.tempo = TEMPO.value;
     /** Whether it is handing out pulses: only once started, whatever it did on the last visit. */
     this.running = false;
+    /** This run's seed (dice): new at each start, the band's while it follows one's. */
+    this.seed = newSeed(random);
+    /** @private */
+    this._random = random;
     /** @private */
     this._storage = storage;
     /** @private */
     this._key = key;
     /** The next pulse to hand out: its number, counting from 0 at start(). @private */
     this._next = 0;
-    /** When that pulse falls, on the audio clock. @private */
+    /** When that pulse falls, on the audio clock: NaN while it stands by. @private */
     this._at = 0;
     /** @private @type {ReturnType<typeof setTimeout> | undefined} */
     this._saving = undefined;
     this._load();
+  }
+
+  /** The number of the next pulse it will hand out. */
+  get nextPulse() {
+    return this._next;
+  }
+
+  /** When that pulse falls, on the audio clock: NaN while it stands by (standBy). */
+  get nextAt() {
+    return this._at;
   }
 
   /**
@@ -129,8 +167,35 @@ export class Clock {
   start(now) {
     if (!Number.isFinite(now)) return;
     this.running = true;
+    this.seed = newSeed(this._random);
     this._next = 0;
     this._at = now + START_LEAD;
+  }
+
+  /**
+   * Running, as the band's clock is (another started it), but with no pulse to hand out until it is
+   * placed on the band's beat (follow): this run's seed is the band's.
+   * @param {number} seed
+   */
+  standBy(seed) {
+    this.running = true;
+    this.seed = seed >>> 0;
+    this._at = NaN;
+  }
+
+  /**
+   * Running on from pulse n at `at` on the audio clock (the band's beat, worked out here: beat.js),
+   * the pulses after it a step apart at the tempo, as ever. Called again and again, a little nearer
+   * each time, it keeps the clock on the beat as the clocks under it drift. Numbers that aren't
+   * finite are ignored.
+   * @param {number} n
+   * @param {number} at
+   */
+  follow(n, at) {
+    if (!Number.isSafeInteger(n) || n < 0 || !Number.isFinite(at)) return;
+    this.running = true;
+    this._next = n;
+    this._at = at;
   }
 
   /** No more pulses, until it is started again. */

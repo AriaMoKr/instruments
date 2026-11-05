@@ -80,9 +80,9 @@ a.piece::after { content: "→" / ""; color: var(--accent); }
   color: var(--text); font-size: 13px;
 }
 .chip:hover, .chip[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
-/* In a shared session: how it's going, the visitor's name in it, and on a TV the invite link. */
+/* In a shared session: how it's going, the band played, the visitor's name in it, and on a TV the invite link. */
 .together { display: grid; gap: 6px; margin-top: 8px; font-size: 13px; }
-.together-status, .invite-text { margin: 0; color: var(--muted); }
+.together-status, .together-band, .invite-text { margin: 0; color: var(--muted); }
 .together .me { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .my-name {
   flex: 1; min-width: 0; min-height: 28px; padding: 3px 9px; border-radius: 8px; border: 1px solid var(--line);

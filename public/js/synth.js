@@ -825,14 +825,16 @@ export class Synth {
   /**
    * The arpeggiator's next note, at time t on the audio clock (or now, if that has gone), sounding
    * ARP_GATE of a step `length` seconds long: whether one played (not with the arpeggiator off,
-   * nothing in its chord, or no sound).
+   * nothing in its chord, or no sound). `count`, the step's number on the room's clock: at random,
+   * its note is drawn from it (arp.js next), so that one band's arpeggiators play alike.
    * @param {number} t
    * @param {number} length
+   * @param {number} [count]
    */
-  arpStep(t, length) {
+  arpStep(t, length, count) {
     const ctx = this.sound.ctx;
     if (!this.arp.on || !this.arp.playing || !ctx || !Number.isFinite(t) || !(length > 0) || !this._build()) return false;
-    const note = this.arp.next();
+    const note = this.arp.next(count);
     this.arp.played(t, length);
     this._playAt(note, this.arp.velocity(note), Math.max(t, ctx.currentTime), length * ARP_GATE);
     return true;
@@ -975,6 +977,21 @@ export class Synth {
     this._set({ ...DEFAULT_SYNTH }, false);
     this.preset = null;
     this.edited = false;
+    this._saveSoon();
+  }
+
+  /**
+   * What its sound is called, as another in a shared session has it (band.js), its knobs and Mono
+   * set as theirs: the preset chosen last (its id in PRESETS, else null) and whether it has been
+   * changed since. Nothing heard changes.
+   * @param {string | null} id
+   * @param {boolean} edited
+   */
+  setPreset(id, edited) {
+    const preset = PRESETS.some((p) => p.id === id) ? id : null;
+    if (preset === this.preset && !!edited === this.edited) return;
+    this.preset = preset;
+    this.edited = !!edited;
     this._saveSoon();
   }
 

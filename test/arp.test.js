@@ -1,7 +1,8 @@
 // The synth's arpeggiator (arp.js): the ways it plays (up, down, up and down, at random) over one to
 // three octaves, the chord as keys go down and up, HOLD (a new chord with a key down and none held,
 // a tap in or out), carrying on when the chord changes, each note as hard as its key went, its own
-// clock (the first step at once, late steps skipped), and the words for it.
+// clock (the first step at once, late steps skipped), at random on the room's clock alike for one
+// band, and the words for it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ARP_GATE, ARP_LATE, ARP_MODES, ARP_RANGES, Arp, arpWords, isArpMode } from '../public/js/arp.js';
@@ -59,6 +60,29 @@ test('at random: every note in time, never the same twice running with another t
   assert.deepEqual(play(one, 3), [62, 62, 62], 'one note: that one');
   const ends = chord('random', [60, 64], { random: () => 0.9999 });
   assert.deepEqual(play(ends, 4), [64, 60, 64, 60], 'dice at the top: still in the chord');
+});
+
+test("at random on the room's clock: each step's note drawn from the step's number and the run's seed, so one band's arpeggiators play alike, whatever their own dice", () => {
+  const notes = [60, 64, 67, 71];
+  const run = (seed, own) => {
+    const arp = chord('random', notes, { random: own });
+    arp.seed = seed;
+    return Array.from({ length: 200 }, (_, k) => arp.next(k));
+  };
+  const a = run(2024, dice(3));
+  assert.deepEqual(run(2024, dice(11)), a, 'alike');
+  for (let i = 1; i < a.length; i++) assert.notEqual(a[i], a[i - 1], `step ${i}`);
+  assert.deepEqual([...new Set(a)].sort(), notes);
+  assert.notDeepEqual(run(2025, dice(3)), a, 'another run, another order');
+  // One that joins the run at step 99: alike once it has played the same note at a step, at once or nearly.
+  const later = chord('random', notes, { random: dice(5) });
+  later.seed = 2024;
+  const tail = Array.from({ length: 101 }, (_, k) => later.next(99 + k));
+  const from = tail.findIndex((n, k) => n === a[99 + k]);
+  assert.ok(from >= 0 && from < 4, `alike from step ${99 + from}`);
+  assert.deepEqual(tail.slice(from), a.slice(99 + from), 'and from then on');
+  // With no step's number (its own clock): its own dice.
+  assert.deepEqual(play(chord('random', notes, { random: dice(7) }), 20), play(chord('random', notes, { random: dice(7) }), 20));
 });
 
 test('keys down make the chord and keys let go leave it; the first note pressed into an empty chord is to play at once', () => {

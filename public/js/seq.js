@@ -156,6 +156,27 @@ export class Seq {
     return this.steps[s].slide;
   }
 
+  /**
+   * Step s all at once, as another in a shared session set it (band.js): whether it plays, its note
+   * (as setNote takes it), its accent and its slide. Whether it changed.
+   * @param {number} s
+   * @param {boolean} on
+   * @param {number} note
+   * @param {boolean} accent
+   * @param {boolean} slide
+   */
+  setStep(s, on, note, accent, slide) {
+    if (!isStep(s) || !Number.isFinite(note)) return false;
+    const step = this.steps[s], n = wholeNote(note);
+    if (step.on === !!on && step.note === n && step.accent === !!accent && step.slide === !!slide) return false;
+    step.on = !!on;
+    step.note = n;
+    step.accent = !!accent;
+    step.slide = !!slide;
+    this._saveSoon();
+    return true;
+  }
+
   /** The octave the line plays in (SEQ_OCTAVES: the nearest within them). @param {number} octave */
   setOctave(octave) {
     if (!Number.isFinite(octave)) return;

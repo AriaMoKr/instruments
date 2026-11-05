@@ -6,9 +6,14 @@
 // held for it) comes into the chord, or leaves it if it was there. Each note is played as hard as its
 // key went down. Its steps come from the room's clock when one is patched into the synth and running
 // (main.js hands them to the synth), else from its own, 16ths at the room's tempo (run), the first
-// at once.
+// at once. At random on the room's clock, each step's note is drawn from the clock's run (its seed)
+// and the step's number (clock.js dice), so that everyone playing one band hears the same.
+import { dice } from './clock.js';
 
 /** @typedef {'up' | 'down' | 'updown' | 'random'} ArpMode */
+
+/** What its draws are told apart from the LFO's by, from the same seed. */
+const SALT = 0x617270;
 
 /**
  * The ways it plays: what each is called on the synth's panel (short) and in words.
@@ -59,6 +64,11 @@ export class Arp {
     this._next = -Infinity;
     /** @private */
     this._random = random;
+    /**
+     * The room's clock's run's seed (main.js sets it with each pulse): RAND's draws on its steps
+     * from it (next).
+     */
+    this.seed = 0;
   }
 
   /** Whether it is on. */
@@ -150,14 +160,20 @@ export class Arp {
     this._changed();
   }
 
-  /** The note to play next, the order moved on to it; -1 with nothing in the chord. */
-  next() {
+  /**
+   * The note to play next, the order moved on to it; -1 with nothing in the chord. At random,
+   * drawn from `count` (the room's clock's step's number) and the seed, else (its own clock) from
+   * the dice.
+   * @param {number} [count]
+   */
+  next(count = NaN) {
     const order = this._sequence(), n = order.length;
     if (!n) return -1;
     if (this.mode === 'random') {
       // Anywhere in the order but the note just played (with another to play).
       const was = order.indexOf(this._last), others = was >= 0 && n > 1;
-      let i = Math.floor(this._random() * (others ? n - 1 : n)) % n;
+      const roll = Number.isFinite(count) ? dice(this.seed + SALT, count) : this._random();
+      let i = Math.floor(roll * (others ? n - 1 : n)) % n;
       if (others && i >= was) i++;
       this._at = i;
     } else this._at = (this._at + 1) % n;

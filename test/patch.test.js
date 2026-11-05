@@ -5,7 +5,8 @@
 // keyboard's sound out, notes out and rotary speed in, the guitar's sound out, notes out, wah in and
 // clock in), the patch the room comes with, what a cable can join (never a sound back round into
 // itself), plugging and unplugging (an input takes one cable, an output feeds any number), onChange,
-// and the patch kept for the next visit (what was kept but can't be plugged, as it comes).
+// a shared session's band's patch taken all at once, and the patch kept for the next visit (what was
+// kept but can't be plugged, as it comes).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_PATCH, JACKS, Patch, padForJack } from '../public/js/patch.js';
@@ -224,6 +225,42 @@ test('onChange: once for each input whose cable changed, after it did, with wher
   patch.unplug('delay.in');
   patch.plug('clock.x1', 'delay.in');
   assert.deepEqual(changes, []);
+});
+
+test("a band's patch taken all at once: each input's cable as asked, or its own kept; one that can't join, or would bring a sound back round with those before it, left empty; kept, onChange told; given the same, every patch the same", () => {
+  const storage = memoryStorage();
+  const patch = new Patch({ storage });
+  const changes = [];
+  patch.onChange = (to, from, was) => changes.push([to, from, was]);
+  patch.plug('pad.rim', 'reverb.in');
+  changes.length = 0;
+  const asked = {
+    'drums.clock': null,
+    'delay.in': 'pad.kick',
+    'synth.clock': 'pad.kick', // not a clock: left empty
+    'synth.notes': undefined, // its own kept, the sequencer's
+    'rackdelay.in': 'theremin.out', // no such jack: empty
+    'mixer.in1': 'filter.out',
+    'filter.in': 'mixer.out', // round again with the one before it: empty
+    'reverb.in': undefined,
+  };
+  const desired = (to) => (to in asked ? asked[to] : undefined);
+  assert.equal(patch.adopt(desired), true);
+  assert.deepEqual(patch.cables(), [{ from: 'pad.kick', to: 'delay.in' }, ...RACK_CABLES, { from: 'filter.out', to: 'mixer.in1' }, { from: 'pad.rim', to: 'reverb.in' }]);
+  assert.deepEqual(changes, [['drums.clock', null, 'clock.x1'], ['delay.in', 'pad.kick', null], ['synth.clock', null, 'clock.x1'], ['mixer.in1', 'filter.out', null]]);
+  assert.deepEqual(JSON.parse(storage.map.get('patch')), kept({ 'drums.clock': null, 'delay.in': 'pad.kick', 'synth.clock': null, 'mixer.in1': 'filter.out', 'reverb.in': 'pad.rim' }));
+  changes.length = 0;
+  assert.equal(patch.adopt(desired), false, 'the same again: nothing changes');
+  assert.deepEqual(changes, []);
+  // Every input asked: whatever each had, the same patch.
+  const every = (to) => asked[to] ?? null;
+  const other = new Patch({ storage: null });
+  other.plug('mixer.out', 'filter.in');
+  other.plug('keys.out', 'mixer.in2');
+  patch.adopt(every);
+  other.adopt(every);
+  assert.deepEqual(other.cables(), patch.cables());
+  assert.deepEqual(patch.cables(), [{ from: 'pad.kick', to: 'delay.in' }, { from: 'filter.out', to: 'mixer.in1' }]);
 });
 
 test('the patch: kept at every change for the next visit, every input (one left empty as null), and read back', () => {
